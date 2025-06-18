@@ -63,18 +63,8 @@ jobs:
           VERSION=${{ inputs.version }}
           IMAGE_NAME="${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}"
 
-          # 生成标签
+          # 只生成用户指定的版本标签
           TAGS="${IMAGE_NAME}:${VERSION}"
-
-          # 如果是语义化版本，添加额外标签
-          if [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            MAJOR_MINOR=$(echo $VERSION | sed 's/v\([0-9]*\.[0-9]*\)\.[0-9]*/v\1/')
-            MAJOR=$(echo $VERSION | sed 's/v\([0-9]*\)\.[0-9]*\.[0-9]*/v\1/')
-            TAGS="${TAGS},${IMAGE_NAME}:${MAJOR_MINOR},${IMAGE_NAME}:${MAJOR}"
-          fi
-
-          # 添加latest标签（如果需要）
-          TAGS="${TAGS},${IMAGE_NAME}:latest"
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
           echo "Generated tags: ${TAGS}"
@@ -94,12 +84,31 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     if: inputs.create_release
+    permissions:
+      contents: write
+      discussions: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check if tag exists
+        id: check_tag
+        run: |
+          VERSION=${{ inputs.version }}
+          if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists locally"
+            git tag -d $VERSION || true
+          fi
+
+          # Check if tag exists on remote
+          if git ls-remote --tags origin | grep -q "refs/tags/$VERSION"; then
+            echo "Tag $VERSION exists on remote, deleting it"
+            git push origin --delete $VERSION || true
+          fi
 
       - name: Create tag
         run: |
@@ -133,6 +142,17 @@ jobs:
             echo "This is the initial release of LMeterX." >> CHANGELOG.md
           fi
 
+      - name: Delete existing release if exists
+        run: |
+          VERSION=${{ inputs.version }}
+          # Check if release exists and delete it
+          if gh release view $VERSION >/dev/null 2>&1; then
+            echo "Release $VERSION exists, deleting it"
+            gh release delete $VERSION --yes
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -142,6 +162,7 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
