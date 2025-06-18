@@ -68,7 +68,3 @@ CREATE TABLE `task_results` (
 ) ENGINE=InnoDB AUTO_INCREMENT=262 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
-
--- V1.1.0
--- ALTER TABLE `tasks` ADD INDEX `idx_model_concurrent_status` (`model`, `concurrent_users`, `status`, `created_at`);
--- ALTER TABLE `task_results` ADD INDEX `idx_task_metric_created` (`task_id`, `metric_type`, `created_at`);

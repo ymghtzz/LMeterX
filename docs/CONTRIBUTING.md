@@ -155,7 +155,7 @@ git clone https://github.com/YOUR_USERNAME/LMeterX.git
 cd LMeterX
 
 # 3. Add upstream repository
-git remote add upstream https://github.com/LuckyYC/LMeterX.git
+git remote add upstream https://github.com/DataEval/LuckyYC/LMeterX.git
 
 # 4. Create development branch
 git checkout -b feature/your-feature-name
@@ -275,7 +275,4 @@ If you need help, you can:
 
 Thank you for contributing to LMeterX! If you have any questions or suggestions, please feel free to reach out to us.
 
-**Let's build a better performance testing platform together!** 🚀 
-
-
-
+**Let's build a better performance testing platform together!** 🚀

@@ -87,7 +87,7 @@ Use pre-built Docker images to start all services with one click:
 
 ```bash
 # Download and run one-click deployment script
-curl -fsSL https://raw.githubusercontent.com/LuckyYC/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/quick-start.sh | bash
 ```
 ### Usage Guide
 
