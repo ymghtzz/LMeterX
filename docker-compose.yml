@@ -1,6 +1,6 @@
 version: '3.8'
 services:
-  # MySQL
+  # MySQL 5.7
   mysql:
     image: charmy1220/lmeterx-mysql:latest
     container_name: lmeterx-mysql
@@ -19,7 +19,7 @@ services:
 
   # backend service
   backend:
-    image: charmy1220/lmeterx-be:v1.0.0
+    image: charmy1220/lmeterx-be:latest
     container_name: lmeterx-backend
     restart: unless-stopped
     depends_on:
@@ -46,7 +46,7 @@ services:
 
   # engine service
   engine:
-    image: charmy1220/lmeterx-eng:v1.0.0
+    image: charmy1220/lmeterx-eng:latest
     container_name: lmeterx-engine
     restart: unless-stopped
     depends_on:
@@ -72,7 +72,7 @@ services:
 
   # frontend service
   frontend:
-    image: charmy1220/lmeterx-fe:v1.0.0
+    image: charmy1220/lmeterx-fe:latest
     container_name: lmeterx-frontend
     restart: unless-stopped
     depends_on:
