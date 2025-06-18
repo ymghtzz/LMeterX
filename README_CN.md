@@ -87,7 +87,7 @@ LMeterX 采用微服务架构设计，由以下四个核心组件构成：
 
 ```bash
 # 下载并运行一键部署脚本
-curl -fsSL https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/quick-start.sh | bash
 ```
 
 ### 使用指南

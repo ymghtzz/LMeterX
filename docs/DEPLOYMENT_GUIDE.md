@@ -28,10 +28,10 @@ LMeterX offers multiple deployment methods:
 
 ```bash
 # One-click deployment command
-curl -fsSL https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/quick-start.sh | bash
 
 # or
-curl -fsSL https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/docker-compose.yml | docker-compose up -d
+curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/docker-compose.yml | docker-compose up -d
 ```
 
 ### Access URLs
@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/docke
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/DataEval/LuckyYC/LMeterX.git
+git clone https://github.com/DataEval/LMeterX.git
 cd LMeterX
 
 # 2. Start services
@@ -85,7 +85,7 @@ docker-compose -f docker-compose.dev.yml ps
 
 ```bash
 # Clone repository
-git clone https://github.com/DataEval/LuckyYC/LMeterX.git
+git clone https://github.com/DataEval/LMeterX.git
 cd LMeterX
 
 ```

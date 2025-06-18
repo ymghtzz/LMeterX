@@ -26,7 +26,7 @@ mkdir -p logs
 # Download necessary configuration files (if not exists)
 if [ ! -f "docker-compose.yml" ]; then
     echo "📥 Downloading docker-compose.yml..."
-    curl -o docker-compose.yml https://raw.githubusercontent.com/DataEval/LuckyYC/LMeterX/main/docker-compose.yml
+    curl -o docker-compose.yml https://raw.githubusercontent.com/DataEval/LMeterX/main/docker-compose.yml
 fi
 
 # Pull latest images
