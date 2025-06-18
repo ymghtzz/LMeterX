@@ -1,0 +1,192 @@
+name: Manual Build and Push
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag (eg: v1.0.0)"
+        required: true
+        type: string
+      push_to_registry:
+        description: "Docker Hub Push"
+        required: true
+        type: boolean
+        default: true
+      create_release:
+        description: "Create GitHub Release"
+        required: true
+        type: boolean
+        default: false
+
+env:
+  DOCKERHUB_USERNAME: charmy1220
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  REGISTRY: docker.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: backend
+            dockerfile: ./backend/Dockerfile
+            context: ./backend
+            image: lmeterx-be
+          - name: st_engine
+            dockerfile: ./st_engine/Dockerfile
+            context: ./st_engine
+            image: lmeterx-eng
+          - name: frontend
+            dockerfile: ./frontend/Dockerfile
+            context: ./frontend
+            image: lmeterx-fe
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: inputs.push_to_registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Generate tags
+        id: tags
+        run: |
+          VERSION=${{ inputs.version }}
+          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}"
+
+          # 生成标签
+          TAGS="${IMAGE_NAME}:${VERSION}"
+
+          # 如果是语义化版本，添加额外标签
+          if [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            MAJOR_MINOR=$(echo $VERSION | sed 's/v\([0-9]*\.[0-9]*\)\.[0-9]*/v\1/')
+            MAJOR=$(echo $VERSION | sed 's/v\([0-9]*\)\.[0-9]*\.[0-9]*/v\1/')
+            TAGS="${TAGS},${IMAGE_NAME}:${MAJOR_MINOR},${IMAGE_NAME}:${MAJOR}"
+          fi
+
+          # 添加latest标签（如果需要）
+          TAGS="${TAGS},${IMAGE_NAME}:latest"
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+          echo "Generated tags: ${TAGS}"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: ${{ inputs.push_to_registry }}
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+  create-release:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: inputs.create_release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create tag
+        run: |
+          VERSION=${{ inputs.version }}
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git tag -a $VERSION -m "Release $VERSION"
+          git push origin $VERSION
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION=${{ inputs.version }}
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+
+          echo "## 🚀 Release $VERSION" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### 📦 Docker Images" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:$VERSION\`" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:$VERSION\`" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:$VERSION\`" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "### 📝 Changes since $PREVIOUS_TAG" >> CHANGELOG.md
+            git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+          else
+            echo "### 📝 Initial Release" >> CHANGELOG.md
+            echo "This is the initial release of LMeterX." >> CHANGELOG.md
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.version }}
+          name: Release ${{ inputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update docker-compose.yml
+        if: inputs.push_to_registry
+        run: |
+          VERSION=${{ inputs.version }}
+          # 更新docker-compose.yml中的镜像标签
+          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:$VERSION|g" docker-compose.yml
+          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:$VERSION|g" docker-compose.yml
+          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:$VERSION|g" docker-compose.yml
+
+      - name: Commit updated docker-compose.yml
+        if: inputs.push_to_registry
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add docker-compose.yml
+          git diff --staged --quiet || git commit -m "Update docker-compose.yml to use ${{ inputs.version }} images"
+          git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    needs: [build-and-push, create-release]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## 📋 构建摘要" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔧 构建配置" >> $GITHUB_STEP_SUMMARY
+          echo "- **版本**: ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **推送到Docker Hub**: ${{ inputs.push_to_registry }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **创建Release**: ${{ inputs.create_release }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📦 构建的镜像" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### 📊 任务状态" >> $GITHUB_STEP_SUMMARY
+          echo "- **构建和推送**: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **创建Release**: ${{ needs.create-release.result }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,99 @@
+version: '3.8'
+services:
+  # MySQL
+  mysql:
+    image: charmy1220/lmeterx-mysql:latest
+    container_name: lmeterx-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: lmeterx123
+      MYSQL_DATABASE: lmeterx
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # backend service
+  backend:
+    image: charmy1220/lmeterx-be:latest
+    container_name: lmeterx-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=mysql://root:lmeterx123@mysql:3306/lmeterx
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=lmeterx123
+      - DB_NAME=lmeterx
+    volumes:
+      - ./logs:/logs
+      - upload_files:/app/upload_files
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: [ "CMD", "curl", "-s", "-f", "http://localhost:5001/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # engine service
+  engine:
+    image: charmy1220/lmeterx-eng:latest
+    container_name: lmeterx-engine
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASSWORD=lmeterx123
+      - DB_NAME=lmeterx
+    volumes:
+      - ./logs:/logs
+      - upload_files:/app/upload_files
+    ports:
+      - "5002:5002"
+    healthcheck:
+      test: [ "CMD", "curl", "-s", "-f", "http://localhost:5002/health" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # frontend service
+  frontend:
+    image: charmy1220/lmeterx-fe:latest
+    container_name: lmeterx-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - engine
+    ports:
+      - "8080:80"
+    environment:
+      - VITE_API_BASE_URL=/api
+    healthcheck:
+      test: [ "CMD", "curl", "-s", "-f", "http://localhost:80" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - upload_files:/usr/share/nginx/html/uploads
+
+volumes:
+  mysql_data:
+  upload_files:
+
+networks:
+  default:
+    name: lmeterx-network

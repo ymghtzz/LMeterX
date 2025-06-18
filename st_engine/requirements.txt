@@ -1,0 +1,11 @@
+locust==2.33.2
+sqlalchemy>=2.0.0
+aiomysql
+pymysql==1.1.0
+tiktoken
+urllib3
+loguru
+pydantic_settings
+greenlet
+fastapi
+uvicorn

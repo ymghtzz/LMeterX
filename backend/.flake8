@@ -1,0 +1,65 @@
+[flake8]
+max-line-length = 100
+extend-ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # E501: line too long (handled by black when possible)
+    E501,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # D100: Missing docstring in public module
+    D100,
+    # D104: Missing docstring in public package
+    D104,
+    # D200: One-line docstring should fit on one line with quotes
+    D200,
+    # D202: No blank lines allowed after function docstring
+    D202,
+    # D205: 1 blank line required between summary line and description
+    D205,
+    # D212: Multi-line docstring summary should start at the first line
+    D212,
+    # D400: First line should end with a period
+    D400,
+    # D401: First line should be in imperative mood
+    D401,
+    # D415: First line should end with a period, question mark, or exclamation point
+    D415,
+    # B008: Do not perform function calls in argument defaults (common in FastAPI)
+    B008,
+    # F401: imported but unused (handled by isort and IDE)
+    F401,
+    # I100: Import statements are in the wrong order (handled by isort)
+    I100,
+    # I101: Imported names are in the wrong order (handled by isort)
+    I101,
+    # I201: Missing newline between import groups (handled by isort)
+    I201,
+    # I202: Additional newline in a group of imports (handled by isort)
+    I202
+
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .mypy_cache,
+    .pytest_cache,
+    htmlcov,
+    upload_files
+
+per-file-ignores =
+    # __init__.py files can have unused imports and be empty
+    __init__.py:F401,D104,W391,E261
+    # Test files can have unused imports and long lines
+    test_*.py:F401,E501,D100,D103
+    *_test.py:F401,E501,D100,D103
+    # API files can have some flexibility
+    api/*.py:F403,F405
+    # Fix script can have unused imports
+    fix_code_*.py:F401
+
+max-complexity = 15
