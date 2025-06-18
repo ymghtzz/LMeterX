@@ -63,7 +63,9 @@ jobs:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}:${{ steps.extract_tag.outputs.tag_name }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}:${{ steps.extract_tag.outputs.tag_name }}
+            ${{ env.REGISTRY }}/${{ env.DOCKERHUB_USERNAME }}/${{ matrix.service.image }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
@@ -103,6 +105,9 @@ jobs:
           echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:$CURRENT_TAG\`" >> CHANGELOG.md
           echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:$CURRENT_TAG\`" >> CHANGELOG.md
           echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:$CURRENT_TAG\`" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:latest\`" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:latest\`" >> CHANGELOG.md
+          echo "- \`${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:latest\`" >> CHANGELOG.md
           echo "" >> CHANGELOG.md
 
           if [ -n "$PREVIOUS_TAG" ]; then
@@ -125,25 +130,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update docker-compose.yml
-        run: |
-          CURRENT_TAG=${{ steps.extract_tag.outputs.tag_name }}
-
-          # update docker-compose.yml with new image tags
-          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-be:$CURRENT_TAG|g" docker-compose.yml
-          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-eng:$CURRENT_TAG|g" docker-compose.yml
-          sed -i "s|${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:.*|${{ env.DOCKERHUB_USERNAME }}/lmeterx-fe:$CURRENT_TAG|g" docker-compose.yml
-
-      - name: Commit updated docker-compose.yml
-        run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add docker-compose.yml
-          git diff --staged --quiet || git commit -m "Update docker-compose.yml to use ${{ steps.extract_tag.outputs.tag_name }} images"
-          git push origin HEAD:main
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   notify:
     needs: [build-and-push, create-release]
     runs-on: ubuntu-latest
@@ -154,6 +140,7 @@ jobs:
         run: |
           if [ "${{ needs.build-and-push.result }}" == "success" ]; then
             echo "✅ Docker images built and pushed successfully!"
+            echo "✅ Both versioned and latest tags have been updated!"
           else
             echo "❌ Docker image build failed!"
             exit 1
