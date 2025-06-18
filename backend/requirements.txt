@@ -1,0 +1,11 @@
+fastapi==0.103.0
+pydantic==2.4.2
+starlette==0.27.0
+loguru
+uvicorn
+sqlalchemy
+pydantic_settings
+aiomysql
+greenlet
+werkzeug
+python-multipart

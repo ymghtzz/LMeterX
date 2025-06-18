@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LMeterX Debug Page</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      h1 {
+        color: #333;
+      }
+
+      pre {
+        background-color: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        overflow: auto;
+      }
+
+      .success {
+        color: green;
+      }
+
+      .error {
+        color: red;
+      }
+
+      button {
+        padding: 8px 16px;
+        margin: 5px;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>LMeterX Resource Loading Debug</h1>
+
+    <h2>Current Page URL Information</h2>
+    <pre id="url-info"></pre>
+
+    <h2>Static Resource Check</h2>
+    <button onclick="checkResources()">Check Resource Loading</button>
+    <div id="resource-check"></div>
+
+    <h2>Server Response Headers</h2>
+    <button onclick="checkHeaders()">Check Response Headers</button>
+    <pre id="headers-info"></pre>
+
+    <script>
+      // URL
+      function showUrlInfo() {
+        const urlInfo = document.getElementById('url-info');
+        urlInfo.textContent = `
+Page URL: ${window.location.href}
+Pathname: ${window.location.pathname}
+Hostname: ${window.location.hostname}
+Protocol: ${window.location.protocol}
+Port: ${window.location.port || '(default)'}
+Search parameters: ${window.location.search || '(none)'}
+Hash: ${window.location.hash || '(none)'}
+`;
+      }
+
+      // Check common static resources
+      async function checkResources() {
+        const resourceCheck = document.getElementById('resource-check');
+        resourceCheck.innerHTML = '<p>Checking resources...</p>';
+
+        const resources = [
+          '/assets/index.css',
+          '/assets/index.js',
+          '/index.html',
+          '/favicon.ico',
+        ];
+
+        let results = '';
+
+        for (const resource of resources) {
+          try {
+            const response = await fetch(resource, { method: 'HEAD' });
+            const status = response.ok
+              ? `<span class="success">Accessible (${response.status})</span>`
+              : `<span class="error">Not accessible (${response.status})</span>`;
+            results += `<p>${resource}: ${status}</p>`;
+          } catch (error) {
+            results += `<p>${resource}: <span class="error">错误: ${error.message}</span></p>`;
+          }
+        }
+
+        resourceCheck.innerHTML = results;
+      }
+
+      // Check response headers
+      async function checkHeaders() {
+        const headersInfo = document.getElementById('headers-info');
+        headersInfo.textContent = 'Checking response headers...';
+
+        try {
+          const response = await fetch(window.location.href);
+          let headerText = '';
+
+          response.headers.forEach((value, name) => {
+            headerText += `${name}: ${value}\n`;
+          });
+
+          headersInfo.textContent = headerText || 'No response headers found';
+        } catch (error) {
+          headersInfo.textContent = `Error getting response headers: ${error.message}`;
+        }
+      }
+
+      // Execute on page load
+      window.onload = function () {
+        showUrlInfo();
+      };
+    </script>
+  </body>
+</html>

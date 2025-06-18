@@ -1,0 +1,79 @@
+[flake8]
+max-line-length = 88
+extend-ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # E501: line too long (handled by black)
+    E501,
+    # D100: Missing docstring in public module
+    D100,
+    # D101: Missing docstring in public class
+    D101,
+    # D104: Missing docstring in public package
+    D104,
+    # D200: One-line docstring should fit on one line with quotes
+    D200,
+    # D202: No blank lines allowed after function docstring
+    D202,
+    # D205: 1 blank line required between summary line and description
+    D205,
+    # D212: Multi-line docstring summary should start at the first line
+    D212,
+    # D403: First word of the first line should be properly capitalized
+    D403,
+    # D411: Missing blank line before section
+    D411,
+    # D415: First line should end with a period, question mark, or exclamation point
+    D415,
+    # B007: Loop control variable not used within the loop body
+    B007,
+    # B008: Do not perform function calls in argument defaults (common in FastAPI)
+    B008,
+    # F541: f-string is missing placeholders (sometimes intentional for consistency)
+    F541,
+    # F823: local variable referenced before assignment (often false positive)
+    F823,
+    # F841: local variable is assigned to but never used
+    F841,
+    # I100: Import statements are in the wrong order
+    I100,
+    # I101: Imported names are in the wrong order
+    I101,
+    # I202: Additional newline in a group of imports
+    I202,
+    # W391: blank line at end of file
+    W391,
+    # F403: 'from module import *' used; unable to detect undefined names
+    F403,
+    # F405: name may be undefined, or defined from star imports
+    F405
+
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    .eggs,
+    *.egg,
+    build,
+    dist,
+    .mypy_cache,
+    .pytest_cache,
+    htmlcov,
+    data
+
+per-file-ignores =
+    # __init__.py files can have unused imports and be empty
+    __init__.py:F401,D104,W391,E261,
+    # Test files can have unused imports and long lines
+    test_*.py:F401,E501,D100,D103,
+    *_test.py:F401,E501,D100,D103,
+    # Engine files can use star imports and function calls in defaults
+    engine/*.py:F403,F405,B008,C901,
+    # Service files can use star imports
+    service/*.py:F403,F405,
+    # Utils files can be complex
+    utils/*.py:C901
+
+max-complexity = 20

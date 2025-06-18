@@ -1,0 +1,26 @@
+# 代码格式化工具
+black==24.3.0
+isort==5.13.2
+
+# 代码质量检查工具
+flake8==7.0.0
+flake8-pyproject==1.2.3
+flake8-docstrings==1.7.0
+flake8-import-order==0.18.2
+flake8-bugbear==24.2.6
+flake8-comprehensions==3.14.0
+
+# 类型检查
+mypy==1.9.0
+types-requests==2.31.0.20240311
+
+# 安全检查
+bandit==1.7.8
+
+# 测试工具
+pytest==8.1.1
+pytest-cov==4.0.0
+pytest-asyncio==0.23.6
+
+# 预提交钩子
+pre-commit==3.7.0
