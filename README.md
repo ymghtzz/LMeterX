@@ -18,45 +18,13 @@ LMeterX is a professional large language model performance testing platform that
 
 ## ✨ Core Features
 
-### 🔌 OpenAI API Ecosystem Compatibility
-- **Wide Compatibility**: Perfect support for all large language model services following OpenAI API standards
-- **Flexible Configuration**: Support for custom API endpoints, models, request headers, authentication methods, and other parameters
-
-### 🎯 Multi-Scenario Test Coverage
-- **Text Conversation Testing**: In-depth performance evaluation for pure text conversation scenarios
-- **Multimodal Testing**: Professional performance benchmarking for image-text mixed conversations
-- **Model Type Support**:
-  - General language models (GPT, Claude, Llama, etc.)
-  - Reasoning-enhanced models (o1, DeepSeek-R1 and other chain-of-thought models)
-  - Vision understanding models (GPT-4V, Claude-3.5-Sonnet, etc.)
-
-### ⚡ Precise Concurrent Load Testing
-- **Intelligent Load Control**: Precisely simulate real user concurrent access patterns
-- **Flexible Time Control**: Support both short-term burst and long-term stability testing scenarios
-- **Progressive Load Adjustment**: Controllable user generation rate to avoid impact on target services
-
-### 📈 Professional Performance Metrics System
-- **Latency Performance Analysis**:
-  - TTFT (Time to First Token) - Measure model response speed
-  - End-to-end response time - Complete request processing duration analysis
-- **Throughput Statistics**:
-  - RPS (Requests Per Second) - Service processing capability assessment
-  - TPS (Tokens Per Second) - Layered token throughput (reasoning/generation/total)
-- **Reliability Monitoring**:
-  - Error rate statistics and detailed error information collection
-  - Success rate trend analysis
-
-### 📊 Real-time Monitoring and Data Visualization
-- **Real-time Monitoring**: Full-process real-time monitoring with transparent log tracking
-- **Dynamic Charts**: Performance trend visualization with key metrics at a glance
-- **Performance Comparison**: Version evolution tracking and horizontal model comparison with multi-metric deep insights
-- **Professional Reports**: Automatically generate detailed test reports with data export and in-depth analysis support
-
-### 🌐 Enterprise-Grade Deployment Solutions
-- **Cloud-Native Architecture**: Support for deployment on mainstream cloud platforms including Alibaba Cloud, AWS, Azure, Tencent Cloud
-- **Elastic Scaling**: Support for multi-replica deployment, enabling parallel execution of multiple tasks and dynamic scaling
-- **One-Click Deployment**: Docker Compose rapid deployment, ready to use in 5 minutes
-- **Visual Management**: Intuitive Web management console with full lifecycle task management
+- **Universal compatibility**: Applicable to any openai format API such as GPT, Claude, Llama, etc (language/multimodal/CoT)
+- **Smart load testing**: Precise concurrency control & Real user simulation
+- **Professional metrics**: TTFT, TPS, RPS, success/error rate, etc
+- **Multi-scenario support**: Text conversations & Multimodal (image+text)
+- **Visualize the results**: Performance reports & Model arena
+- **Real-time monitoring**: Hierarchical monitoring of tasks and services
+- **Enterprise ready**: Docker deployment & Web management console & Scalable architecture
 
 ## 🏗️ System Architecture
 
@@ -162,23 +130,14 @@ LMeterX/
 
 ## 🗺️ Development Roadmap
 
-### Completed
-- [x] OpenAI compatible API testing support
-- [x] Pure text and image-text conversation scenario testing
-- [x] Basic performance metrics collection and analysis
-- [x] Test report export functionality
-- [x] Web interface management system
-- [x] Docker Compose one-click deployment
-- [x] Test result comparison analysis functionality
-
 ### In Development
 - [ ] Support for custom API paths and performance metrics collection
 - [ ] Support for user-defined load test datasets
 - [ ] Support for client resource monitoring
 
 ### Planned
-- [ ] CLI command-line tool
 - [ ] User system support
+- [ ] CLI command-line tool
 
 ## 📚 Related Documentation
 
