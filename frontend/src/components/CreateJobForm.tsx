@@ -549,7 +549,18 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
         <Row gutter={24}>
           <Col span={24}>
-            <Form.Item name='api_url' label='API URL' required>
+            <Form.Item
+              name='api_url'
+              label={
+                <span>
+                  API URL
+                  <Tooltip title='Currently only supports OpenAI-compatible /v1/chat/completions API'>
+                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                  </Tooltip>
+                </span>
+              }
+              required
+            >
               <div style={{ display: 'flex', width: '100%' }}>
                 <Form.Item
                   name='target_host'
