@@ -29,9 +29,6 @@ LMeterX offers multiple deployment methods:
 ```bash
 # One-click deployment command
 curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
-
-# or
-curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/docker-compose.yml | docker-compose up -d
 ```
 
 ### Access URLs

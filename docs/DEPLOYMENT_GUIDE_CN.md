@@ -29,9 +29,6 @@ LMeterX提供了多种部署方式：
 ```bash
 # 一键部署命令
 curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
-
-# 或者
-curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/docker-compose.yml | docker-compose up -d
 ```
 
 ### 访问地址
