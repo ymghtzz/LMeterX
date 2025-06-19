@@ -36,7 +36,7 @@ LMeterX adopts a microservices architecture design, consisting of four core comp
 4. **MySQL Database**: Stores test tasks, result data, and configuration information
 
 <div align="center">
-  <img src="docs/images/tech-arch.png" alt="LMeterX tech arch" width="800"/>
+  <img src="docs/images/tech-arch.png" alt="LMeterX tech arch" width="700"/>
 </div>
 
 ## 🚀 Quick Start
@@ -55,7 +55,7 @@ Use pre-built Docker images to start all services with one click:
 
 ```bash
 # Download and run one-click deployment script
-curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
 ```
 ### Usage Guide
 

@@ -13,7 +13,7 @@
 LMeterX 是一个专业的大语言模型性能测试平台，支持对任何兼容 OpenAI API 格式的 LLM 服务进行全面的负载测试。通过直观的 Web 界面，用户可以轻松创建和管理测试任务，实时监控测试过程，并获得详细的性能分析报告，为模型部署和性能优化提供可靠的数据支撑。
 
 <div align="center">
-  <img src="docs/images/images.gif" alt="LMeterX Demo" width="800"/>
+  <img src="docs/images/images.gif" alt="LMeterX Demo" width="700"/>
 </div>
 
 ## ✨ 核心功能
@@ -55,7 +55,7 @@ LMeterX 采用微服务架构设计，由以下四个核心组件构成：
 
 ```bash
 # 下载并运行一键部署脚本
-curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
 ```
 
 ### 使用指南

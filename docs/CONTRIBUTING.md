@@ -155,7 +155,7 @@ git clone https://github.com/YOUR_USERNAME/LMeterX.git
 cd LMeterX
 
 # 3. Add upstream repository
-git remote add upstream https://github.com/DataEval/LMeterX.git
+git remote add upstream https://github.com/MigoXLab/LMeterX.git
 
 # 4. Create development branch
 git checkout -b feature/your-feature-name

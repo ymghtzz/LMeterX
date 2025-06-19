@@ -28,10 +28,10 @@ LMeterX提供了多种部署方式：
 
 ```bash
 # 一键部署命令
-curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/quick-start.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
 
 # 或者
-curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/docker-compose.yml | docker-compose up -d
+curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/docker-compose.yml | docker-compose up -d
 ```
 
 ### 访问地址
@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/DataEval/LMeterX/main/docker-compos
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/DataEval/LMeterX.git
+git clone https://github.com/MigoXLab/LMeterX.git
 cd LMeterX
 
 # 2. 启动服务
@@ -86,7 +86,7 @@ docker-compose -f docker-compose.dev.yml ps
 -
 ```bash
 # 克隆仓库
-git clone https://github.com/DataEval/LMeterX.git
+git clone https://github.com/MigoXLab/LMeterX.git
 cd LMeterX
 
 ```
