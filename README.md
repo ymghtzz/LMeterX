@@ -148,8 +148,7 @@ LMeterX/
 
 Thanks to all developers who have contributed to the LMeterX project:
 
-- [@LuckyYC](https://github.com/LuckyYC) - Project maintainer
-- [@Charm](https://github.com/charm) - Core developer
+- [@LuckyYC](https://github.com/LuckyYC) - Project maintainer & Core developer
 - [@del-zhenwu](https://github.com/del-zhenwu) - Core developer
 
 ## 📄 Open Source License
