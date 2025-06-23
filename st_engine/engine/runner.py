@@ -235,9 +235,33 @@ class LocustRunner:
 
         def read_output(pipe, lines, stream_name):
             """Reads lines from a stream and appends them to a list."""
-            for line in iter(pipe.readline, ""):
-                lines.append(line)
-                task_logger.info(f"({process.pid}, {stream_name}): {line.strip()}")
+            buffer = ""
+            while True:
+                try:
+                    # Read in larger chunks to reduce fragmentation
+                    chunk = pipe.read(1024)
+                    if not chunk:
+                        break
+
+                    buffer += chunk
+                    # Process complete lines
+                    while "\n" in buffer:
+                        line, buffer = buffer.split("\n", 1)
+                        if line.strip():  # Only process non-empty lines
+                            lines.append(line + "\n")
+
+                            # Write raw locust output to task log file using raw=True to avoid formatting issues
+                            task_logger.opt(raw=True).info(line + "\n")
+
+                except Exception as e:
+                    task_logger.error(f"Error reading {stream_name}: {e}")
+                    break
+
+            # Handle any remaining content in buffer
+            if buffer.strip():
+                lines.append(buffer)
+                task_logger.opt(raw=True).info(buffer.rstrip() + "\n")
+
             pipe.close()
 
         stdout_thread = threading.Thread(
