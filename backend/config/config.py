@@ -13,6 +13,7 @@ BE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Directory for storing log files
 LOG_DIR = os.path.join(BASE_DIR, "logs")
+LOG_TASK_DIR = os.path.join(LOG_DIR, "task")
 
 # Directory for storing uploaded files
 UPLOAD_FOLDER = os.path.join(BE_DIR, "upload_files")
