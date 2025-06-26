@@ -51,13 +51,6 @@ class TaskService:
             if error_message:
                 task.error_message = error_message
             session.commit()
-            # if hasattr(task, "id") and task.id:
-            #     task_logger = st_logger.bind(task_id=task.id)
-            #     task_logger.info(f"Task {task.id}, Updated status to '{status}'.")
-            # else:
-            #     st_logger.info(
-            #         f"Updated a task's status to '{status}' (task ID not available)."
-            #     )
         except Exception as e:
             if hasattr(task, "id") and task.id:
                 task_logger = st_logger.bind(task_id=task.id)
@@ -238,9 +231,6 @@ class TaskService:
         try:
             task_logger.info(f"Starting execution for task {task.id}.")
             result = self.runner.run_locust_process(task)
-            # if result.get("status") != "COMPLETED":
-            #     error_detail = result.get("stderr", "No stderr output.")
-            #     task_logger.error(f"Execution failed. Details: {error_detail}")
             return result
         except Exception as e:
             task_logger.exception(f"An unexpected error occurred during execution: {e}")
@@ -304,7 +294,6 @@ class TaskService:
                         task_logger.warning(f"{error_message}")
 
                 else:
-                    # If the runner completed but there's no result JSON, it's an error.
                     error_message = (
                         f"Runner completed but no result file was generated."
                     )

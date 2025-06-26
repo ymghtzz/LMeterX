@@ -88,6 +88,19 @@ class HeaderItem(BaseModel):
     fixed: bool = True
 
 
+class CookieItem(BaseModel):
+    """
+    Represents a single HTTP cookie item for a request.
+
+    Attributes:
+        key: The cookie name.
+        value: The cookie value.
+    """
+
+    key: str
+    value: str
+
+
 class CertConfig(BaseModel):
     """
     Configuration for SSL/TLS certificates.
@@ -135,6 +148,9 @@ class TaskCreateReq(BaseModel):
     )
     headers: List[HeaderItem] = Field(
         default_factory=list, description="List of request headers"
+    )
+    cookies: List[CookieItem] = Field(
+        default_factory=list, description="List of request cookies"
     )
     cert_config: Optional[CertConfig] = Field(
         default=None, description="Certificate configuration"
@@ -196,20 +212,23 @@ class Task(Base):
     name = Column(String(255), nullable=False)
     status = Column(String(32), nullable=False)
     target_host = Column(String(255), nullable=False)
-    model = Column(String(100), nullable=False)
+    model = Column(String(100), nullable=True)
     system_prompt = Column(Text, nullable=True)
     user_prompt = Column(Text, nullable=True)
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)
     duration = Column(Integer, nullable=False)
-    chat_type = Column(Integer, nullable=False)
+    chat_type = Column(Integer, nullable=True)
     log_file = Column(Text, nullable=True)
     result_file = Column(Text, nullable=True)
     cert_file = Column(String(255), nullable=True)
     key_file = Column(String(255), nullable=True)
     headers = Column(Text, nullable=True)
-    # api_path = Column(String(255), nullable=True)
+    cookies = Column(Text, nullable=True)
+    api_path = Column(String(255), nullable=True)
+    request_payload = Column(Text, nullable=True)
+    field_mapping = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

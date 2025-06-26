@@ -27,7 +27,6 @@ import {
   Row,
   Select,
   Space,
-  Spin,
   Table,
   Tag,
   Tooltip,
@@ -35,7 +34,6 @@ import {
   message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
 import html2canvas from 'html2canvas';
 import React, {
   useCallback,
@@ -45,6 +43,9 @@ import React, {
   useState,
 } from 'react';
 import { api } from '../api/apiClient';
+import { LoadingSpinner } from '../components/ui/LoadingState';
+import { PageHeader } from '../components/ui/PageHeader';
+import { createFileTimestamp, formatDate } from '../utils/date';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -119,7 +120,6 @@ const ResultComparison: React.FC = () => {
       }
     } catch (error) {
       messageApi.error('Failed to fetch available tasks');
-      console.error('Error fetching available tasks:', error);
     } finally {
       setLoading(false);
     }
@@ -170,7 +170,6 @@ const ResultComparison: React.FC = () => {
       }
     } catch (error) {
       messageApi.error('Failed to compare Result');
-      console.error('Error comparing Result:', error);
     } finally {
       setComparing(false);
     }
@@ -332,7 +331,7 @@ const ResultComparison: React.FC = () => {
       title: 'Created Time',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm:ss'),
+      render: (date: string) => formatDate(date),
     },
   ];
 
@@ -368,7 +367,7 @@ const ResultComparison: React.FC = () => {
       title: 'Created Time',
       dataIndex: 'created_at',
       key: 'created_at',
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm:ss'),
+      render: (date: string) => formatDate(date),
     },
   ];
 
@@ -525,7 +524,7 @@ const ResultComparison: React.FC = () => {
       const image = mergedCanvas.toDataURL('image/png');
       const link = document.createElement('a');
       link.href = image;
-      link.download = `model-comparison-${dayjs().format('YYYY-MM-DD-HH-mm-ss')}.png`;
+      link.download = `model-comparison-${createFileTimestamp()}.png`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -536,7 +535,6 @@ const ResultComparison: React.FC = () => {
         duration: 3,
       });
     } catch (err: any) {
-      console.error('Download failed:', err);
       messageApi.error({
         content: `Download failed: ${err.message || 'Unknown error'}`,
         key: 'downloadComparison',
@@ -552,27 +550,19 @@ const ResultComparison: React.FC = () => {
   }, [fetchAvailableTasks]);
 
   return (
-    <div style={{ padding: '24px' }}>
+    <div className='page-container'>
       {contextHolder}
-      <div style={{ marginBottom: '24px' }}>
-        <Title level={3}>
-          <BarChartOutlined /> Model Arena
-        </Title>
-        <Text type='secondary'>
-          Model performance comparison with multi-metric
-        </Text>
-      </div>
+
+      <PageHeader
+        title='Model Arena'
+        description='Model performance comparison with multi-metric'
+        icon={<BarChartOutlined />}
+        className='mb-24'
+      />
 
       {/* Model Info Section */}
-      <div ref={modelInfoRef} style={{ marginBottom: '24px' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: '16px',
-          }}
-        >
+      <div ref={modelInfoRef} className='mb-24'>
+        <div className='flex justify-between align-center mb-16'>
           <Title level={5} style={{ margin: 0 }}>
             Model Info
           </Title>
@@ -632,7 +622,7 @@ const ResultComparison: React.FC = () => {
       {/* Comparison Results */}
       {comparisonResults.length > 0 && (
         <div ref={comparisonResultsRef}>
-          <Title level={5} style={{ marginBottom: '24px' }}>
+          <Title level={5} className='mb-24'>
             Comparison Results
           </Title>
 
@@ -726,13 +716,7 @@ const ResultComparison: React.FC = () => {
         }}
         width={1000}
         footer={
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
+          <div className='flex justify-between align-center'>
             <Text type='secondary'>
               {tempSelectedTasks.length} task(s) selected
             </Text>
@@ -758,7 +742,7 @@ const ResultComparison: React.FC = () => {
           </div>
         }
       >
-        <div style={{ marginBottom: '16px' }}>
+        <div className='mb-16'>
           <Space>
             <Input.Search
               placeholder='Search task name or model name'
@@ -766,13 +750,13 @@ const ResultComparison: React.FC = () => {
               onChange={handleSearchChange}
               onSearch={handleSearch}
               allowClear
-              style={{ width: 300 }}
+              className='w-300'
             />
             <Select
               placeholder='Filter model'
               value={selectedModel}
               onChange={handleModelFilterChange}
-              style={{ width: 200 }}
+              className='w-200'
               allowClear
             >
               {uniqueModels.map(model => (
@@ -792,8 +776,8 @@ const ResultComparison: React.FC = () => {
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '50px' }}>
-            <Spin size='large' />
+          <div className='text-center p-24'>
+            <LoadingSpinner size='large' />
           </div>
         ) : (
           <div>
@@ -805,7 +789,7 @@ const ResultComparison: React.FC = () => {
                   description='Select 2-10 completed tasks for comparison.'
                   type='info'
                   showIcon
-                  style={{ marginBottom: '16px' }}
+                  className='mb-16'
                 />
                 <Table
                   columns={availableTasksColumns}

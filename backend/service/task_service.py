@@ -6,7 +6,7 @@ Copyright (c) 2025, All Rights Reserved.
 import json
 import time
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Union
 
 from fastapi import HTTPException, Query, Request
 from sqlalchemy import func, or_, select, text
@@ -106,7 +106,10 @@ async def get_tasks_svc(
                 "name": task.name,
                 "status": task.status,
                 "target_host": task.target_host,
+                "api_path": task.api_path,
                 "model": task.model,
+                "request_payload": task.request_payload,
+                "field_mapping": task.field_mapping,
                 "concurrent_users": task.concurrent_users,
                 "duration": task.duration,
                 "spawn_rate": task.spawn_rate,
@@ -120,7 +123,6 @@ async def get_tasks_svc(
         ]
     except Exception as e:
         logger.error(f"Error getting tasks: {e}", exc_info=True)
-        # Return an empty successful response on error to avoid breaking the frontend.
         return TaskResponse(data=[], pagination=Pagination(), status="error")
 
     return TaskResponse(data=task_list, pagination=pagination, status="success")
@@ -137,7 +139,6 @@ async def get_tasks_status_svc(request: Request, page_size: int):
     Returns:
         A `TaskStatusRsp` object with a list of statuses and a timestamp.
     """
-    # Raw SQL query for performance, fetching only necessary fields.
     query = text(
         """
         SELECT id, status, UNIX_TIMESTAMP(updated_at) as updated_timestamp
@@ -169,7 +170,6 @@ async def stop_task_svc(request: Request, task_id: str):
     Returns:
         A `TaskCreateRsp` indicating the result of the stop request.
     """
-    logger.info(f"Received request to stop task with ID: {task_id}")
     try:
         db = request.state.db
         task = await db.get(Task, task_id)
@@ -180,9 +180,6 @@ async def stop_task_svc(request: Request, task_id: str):
             )
 
         if task.status != "running":
-            logger.info(
-                f"Task {task_id} is not running (status: {task.status}), no action needed."
-            )
             return TaskCreateRsp(
                 status=task.status,
                 task_id=task_id,
@@ -190,7 +187,6 @@ async def stop_task_svc(request: Request, task_id: str):
             )
         task.status = "stopping"
         await db.commit()
-        # logger.info(f"Task status set to 'stopping' for ID: {task_id}")
         return TaskCreateRsp(
             status="stopping", task_id=task_id, message="Task is being stopped."
         )
@@ -213,9 +209,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         A `TaskCreateRsp` on success or a `JSONResponse` on failure.
     """
     task_id = str(uuid.uuid4())
-    logger.info(
-        f"Received request to create task '{body.name}'. Assigned new ID: {task_id}"
-    )
+    logger.info(f"Creating task '{body.name}' with ID: {task_id}")
 
     cert_file = ""
     key_file = ""
@@ -237,7 +231,6 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             cert_file = cert_file.replace("/app/upload_files/", "")
         elif UPLOAD_FOLDER in cert_file:
             cert_file = cert_file.replace(UPLOAD_FOLDER + "/", "")
-        logger.info(f"Task {task_id}: Using cert_file: {cert_file}")
 
     if key_file:
         # Convert backend upload path to relative path that st_engine can access
@@ -245,7 +238,6 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             key_file = key_file.replace("/app/upload_files/", "")
         elif UPLOAD_FOLDER in key_file:
             key_file = key_file.replace(UPLOAD_FOLDER + "/", "")
-        logger.info(f"Task {task_id}: Using key_file: {key_file}")
 
     # Convert headers from a list of objects to a dictionary, then to a JSON string.
     headers = {
@@ -255,8 +247,21 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     }
     headers_json = json.dumps(headers)
 
+    # Convert cookies from a list of objects to a dictionary, then to a JSON string.
+    cookies = {
+        cookie.key: cookie.value
+        for cookie in body.cookies
+        if cookie.key and cookie.value
+    }
+    cookies_json = json.dumps(cookies)
+
     db = request.state.db
     try:
+        # Convert field_mapping to JSON string if provided
+        field_mapping_json = ""
+        if body.field_mapping:
+            field_mapping_json = json.dumps(body.field_mapping)
+
         # Create a new Task ORM instance.
         new_task = Task(
             id=task_id,
@@ -269,20 +274,22 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             chat_type=body.chat_type,
             stream_mode=str(body.stream_mode),
             headers=headers_json,
+            cookies=cookies_json,
             status="created",
             error_message="",
             system_prompt=body.system_prompt,
             user_prompt=body.user_prompt,
             cert_file=cert_file,
             key_file=key_file,
+            api_path=body.api_path,
+            request_payload=body.request_payload,
+            field_mapping=field_mapping_json,
         )
 
         db.add(new_task)
         await db.flush()
         await db.commit()
-        logger.info(
-            f"Task '{new_task.id}' ({new_task.name}) successfully written to database."
-        )
+        logger.info(f"Task created successfully: {new_task.id}")
 
         return TaskCreateRsp(
             task_id=str(new_task.id),
@@ -327,35 +334,14 @@ async def get_task_result_svc(request: Request, task_id: str):
     task_results = result.scalars().all()
 
     if not task_results:
-        logger.info(f"No test results found for task_id={task_id}")
+        logger.info(f"No test results found for task: {task_id}")
         return TaskResultRsp(
-            error="No test results available yet", status="no_data", results=[]
+            error="No test results found for this task",
+            status="not_found",
+            results=[],
         )
 
-    # Convert SQLAlchemy models to Pydantic models for the response.
-    result_items = [
-        TaskResultItem(
-            id=res.id,
-            task_id=res.task_id,
-            metric_type=res.metric_type,
-            request_count=res.num_requests,
-            failure_count=res.num_failures,
-            avg_response_time=res.avg_latency,
-            min_response_time=res.min_latency,
-            max_response_time=res.max_latency,
-            median_response_time=res.median_latency,
-            percentile_90_response_time=res.p90_latency,
-            rps=res.rps,
-            avg_content_length=res.avg_content_length,
-            total_tps=res.total_tps or 0.0,
-            completion_tps=res.completion_tps or 0.0,
-            avg_total_tokens_per_req=res.avg_total_tokens_per_req or 0.0,
-            avg_completion_tokens_per_req=res.avg_completion_tokens_per_req or 0.0,
-            created_at=res.created_at.isoformat(),
-        )
-        for res in task_results
-    ]
-
+    result_items = [task_result.to_task_result_item() for task_result in task_results]
     return TaskResultRsp(results=result_items, status="success", error=None)
 
 
@@ -396,7 +382,6 @@ async def get_task_svc(request: Request, task_id: str):
     """
     db = request.state.db
     try:
-        # Use db.get for efficient primary key lookups.
         task = await db.get(Task, task_id)
         if not task:
             logger.warning(f"Get request for non-existent task ID: {task_id}")
@@ -413,6 +398,27 @@ async def get_task_svc(request: Request, task_id: str):
                     f"Could not parse headers JSON for task {task_id}: {task.headers}"
                 )
 
+        # Convert cookies from JSON string back to a list of objects for the frontend.
+        cookies_list: List[Dict] = []
+        if task.cookies:
+            try:
+                cookies_dict = json.loads(task.cookies)
+                cookies_list = [{"key": k, "value": v} for k, v in cookies_dict.items()]
+            except json.JSONDecodeError:
+                logger.warning(
+                    f"Could not parse cookies JSON for task {task_id}: {task.cookies}"
+                )
+
+        # Parse field_mapping from JSON string back to dictionary
+        field_mapping_dict = {}
+        if task.field_mapping:
+            try:
+                field_mapping_dict = json.loads(task.field_mapping)
+            except json.JSONDecodeError:
+                logger.warning(
+                    f"Could not parse field_mapping JSON for task {task_id}: {task.field_mapping}"
+                )
+
         # Convert the SQLAlchemy model to a dictionary for the response.
         task_dict = {
             "id": task.id,
@@ -426,9 +432,13 @@ async def get_task_svc(request: Request, task_id: str):
             "chat_type": task.chat_type,
             "stream_mode": str(task.stream_mode).lower() == "true",
             "headers": headers_list,
+            "cookies": cookies_list,
             "cert_config": {"cert_file": task.cert_file, "key_file": task.key_file},
             "system_prompt": task.system_prompt,
             "user_prompt": task.user_prompt,
+            "api_path": task.api_path,
+            "request_payload": task.request_payload,
+            "field_mapping": field_mapping_dict,
             "error_message": task.error_message,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
@@ -689,3 +699,243 @@ async def compare_performance_svc(
         return ComparisonResponse(
             data=[], status="error", error="Failed to perform performance comparison"
         )
+
+
+def _prepare_cookies_from_headers(body: TaskCreateReq) -> Dict[str, str]:
+    """Prepare cookies from both cookies field and headers for legacy support."""
+    cookies = {}
+
+    # Process cookies from the cookies field
+    for cookie_item in body.cookies:
+        if cookie_item.key and cookie_item.value:
+            cookies[cookie_item.key] = cookie_item.value
+
+    # Also check headers for legacy cookie support
+    for header in body.headers:
+        if header.key and header.value:
+            # Check if this is actually a cookie (common patterns)
+            if header.key.lower() in ["cookie", "cookies"]:
+                # Try to parse as cookie string
+                try:
+                    if header.value.startswith("{"):
+                        # JSON format
+                        cookies.update(json.loads(header.value))
+                    else:
+                        # Cookie string format: "key1=value1; key2=value2"
+                        for item in header.value.split(";"):
+                            if "=" in item:
+                                k, v = item.strip().split("=", 1)
+                                cookies[k] = v
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            # Also check for token/auth in headers that should be cookies
+            elif header.key.lower() in ["token", "uaa_token", "sso_uid", "ssouid"]:
+                cookies[header.key] = header.value
+
+    return cookies
+
+
+def _prepare_request_payload(body: TaskCreateReq) -> Dict:
+    """Prepare request payload based on API path and configuration."""
+    if body.api_path == "/v1/chat/completions":
+        # Use the traditional chat completions format
+        messages = []
+        if body.system_prompt:
+            messages.append({"role": "system", "content": body.system_prompt})
+
+        messages.append(
+            {"role": "user", "content": body.user_prompt or "Hello, how are you?"}
+        )
+
+        return {
+            "model": body.model,
+            "stream": body.stream_mode,
+            "messages": messages,
+        }
+    else:
+        # Use custom request payload
+        if body.request_payload:
+            try:
+                return json.loads(body.request_payload)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in request payload: {str(e)}")
+        else:
+            raise ValueError("Request payload is required for custom API endpoints")
+
+
+def _prepare_client_cert(body: TaskCreateReq):
+    """Prepare SSL certificate configuration for the HTTP client."""
+    client_cert: Optional[Union[str, Tuple[str, str]]] = None
+    if hasattr(body, "cert_config") and body.cert_config:
+        if body.cert_config.cert_file and body.cert_config.key_file:
+            client_cert = (body.cert_config.cert_file, body.cert_config.key_file)
+        elif body.cert_config.cert_file:
+            client_cert = body.cert_config.cert_file
+    return client_cert
+
+
+async def _handle_streaming_response(response, full_url: str) -> Dict:
+    """Handle streaming response from API endpoint."""
+    stream_data = []
+    try:
+        # If status code is not 200, return error response immediately
+        if response.status_code != 200:
+            # Try to get response text for error details
+            try:
+                error_text = await response.aread()
+                error_content = error_text.decode("utf-8")
+            except Exception:
+                error_content = "Unable to read response content"
+
+            # Try to parse as JSON for better error information
+            try:
+                error_data = json.loads(error_content)
+            except (json.JSONDecodeError, ValueError):
+                error_data = error_content
+
+            return {
+                "status": "error",
+                "response": {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "data": error_data,
+                    "is_stream": False,
+                },
+                "error": f"HTTP {response.status_code}. {error_content}",
+            }
+
+        # Process streaming data for successful responses
+        async for chunk in response.aiter_lines():
+            if chunk:
+                chunk_str = chunk.strip()
+                if chunk_str:
+                    stream_data.append(chunk_str)
+                    # Limit the number of chunks to prevent memory issues
+                    if len(stream_data) >= 1000:
+                        stream_data.append("... (truncated, too many chunks)")
+                        break
+
+        return {
+            "status": "success",
+            "response": {
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "data": stream_data,
+                "is_stream": True,
+            },
+            "error": None,
+        }
+
+    except Exception as stream_error:
+        logger.error(f"Error processing stream: {stream_error}")
+        return {
+            "status": "error",
+            "error": f"Stream processing error: {str(stream_error)}",
+            "response": None,
+        }
+
+
+async def _handle_non_streaming_response(response) -> Dict:
+    """Handle non-streaming response from API endpoint."""
+    # Try to parse response as JSON
+    try:
+        response_data = response.json()
+    except Exception:
+        response_data = response.text
+
+    return {
+        "status": "success" if response.status_code == 200 else "error",
+        "response": {
+            "status_code": response.status_code,
+            "headers": dict(response.headers),
+            "data": response_data,
+            "is_stream": False,
+        },
+        "error": (
+            None
+            if response.status_code == 200
+            else f"HTTP {response.status_code}. {response.text}"
+        ),
+    }
+
+
+async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
+    """
+    Test a custom API endpoint with the provided configuration.
+
+    Args:
+        request: The FastAPI request object.
+        body: The request body containing the test parameters.
+
+    Returns:
+        A dictionary containing the test result.
+    """
+    import httpx
+
+    logger.info(f"Testing API endpoint: {body.target_host}{body.api_path}")
+
+    try:
+        # Prepare headers
+        headers = {
+            header.key: header.value
+            for header in body.headers
+            if header.key and header.value
+        }
+
+        # Prepare cookies
+        cookies = _prepare_cookies_from_headers(body)
+
+        # Prepare request payload
+        try:
+            payload = _prepare_request_payload(body)
+        except ValueError as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "response": None,
+            }
+
+        # Build full URL
+        full_url = f"{body.target_host.rstrip('/')}{body.api_path}"
+
+        # Prepare certificate configuration
+        client_cert = _prepare_client_cert(body)
+
+        # Test with httpx client
+        async with httpx.AsyncClient(
+            timeout=60.0, verify=False, cert=client_cert
+        ) as client:
+            if body.stream_mode:
+                # Handle streaming response
+                async with client.stream(
+                    "POST", full_url, json=payload, headers=headers, cookies=cookies
+                ) as response:
+                    return await _handle_streaming_response(response, full_url)
+            else:
+                # Handle non-streaming response
+                response = await client.post(
+                    full_url, json=payload, headers=headers, cookies=cookies
+                )
+                return await _handle_non_streaming_response(response)
+
+    except httpx.TimeoutException:
+        logger.error("Request timeout when testing API endpoint")
+        return {
+            "status": "error",
+            "error": "Request timeout (60 seconds)",
+            "response": None,
+        }
+    except httpx.ConnectError as e:
+        logger.error(f"Connection error when testing API endpoint: {e}")
+        return {
+            "status": "error",
+            "error": f"Connection error: {str(e)}",
+            "response": None,
+        }
+    except Exception as e:
+        logger.error(f"Error testing API endpoint: {e}", exc_info=True)
+        return {
+            "status": "error",
+            "error": f"Unexpected error: {str(e)}",
+            "response": None,
+        }

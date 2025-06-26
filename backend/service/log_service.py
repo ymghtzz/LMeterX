@@ -30,7 +30,7 @@ def get_last_n_lines(file_path: str, n: int = 100) -> str:
             # Move to the end of the file
             f.seek(0, os.SEEK_END)
             block_size = 1024
-            lines_found = deque()
+            lines_found: deque[str] = deque()
 
             while f.tell() > 0 and len(lines_found) <= n:
                 # Calculate the position and size of the next block to read
@@ -59,7 +59,7 @@ def get_last_n_lines(file_path: str, n: int = 100) -> str:
 
             return "\n".join(list(lines_found)[-n:])
     except Exception as e:
-        logger.error(f"Failed to read log file:- {str(e)}")
+        logger.error(f"Failed to read log file: {str(e)}")
         return ""
 
 
@@ -110,12 +110,12 @@ async def get_service_log_svc(service_name: str, offset: int, tail: int):
     log_file_path = os.path.join(LOG_DIR, f"{service_name}.log")
 
     if not os.path.exists(log_file_path):
-        logger.warning("Log file not found.")
+        logger.warning(f"Log file not found: {log_file_path}")
         return JSONResponse(
             status_code=404,
             content={
                 "status": "error",
-                "error": f"Log file for service '{service_name}' not found at {log_file_path}",
+                "error": f"Log file for service '{service_name}' not found",
             },
         )
     try:

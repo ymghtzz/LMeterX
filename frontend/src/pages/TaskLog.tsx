@@ -22,18 +22,17 @@ import {
   message,
   Select,
   Space,
-  Spin,
   Switch,
   theme,
   Tooltip,
-  Typography,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { benchmarkJobApi, logApi } from '../api/services';
+import { LoadingSpinner } from '../components/ui/LoadingState';
+import { PageHeader } from '../components/ui/PageHeader';
 import { BenchmarkJob } from '../types';
 
-const { Title } = Typography;
 const { Search } = Input;
 
 const FINAL_TASK_STATUSES = [
@@ -152,7 +151,6 @@ const TaskLogs: React.FC = () => {
       }
       if (error) setError(null);
     } catch (err: any) {
-      console.error('Failed to fetch logs:', err);
       const errorMsg =
         err.response?.data?.error || err.message || 'Failed to fetch task logs';
       if (loading) {
@@ -207,7 +205,6 @@ const TaskLogs: React.FC = () => {
         }
       }
     } catch (err) {
-      console.error('Failed to fetch task status:', err);
       try {
         const taskResponse = await benchmarkJobApi.getJob(id);
         if (taskResponse.data) {
@@ -219,10 +216,7 @@ const TaskLogs: React.FC = () => {
           return currentTask;
         }
       } catch (fallbackErr) {
-        console.error(
-          'Failed to fetch full task info as fallback:',
-          fallbackErr
-        );
+        // Failed to fetch task info as fallback
       }
     } finally {
       if (!isInitialLoad) {
@@ -385,7 +379,7 @@ const TaskLogs: React.FC = () => {
     return (
       <div className='log-line'>
         <span>{beforeLevel}</span>
-        <span style={{ color: levelColor, fontWeight: 'bold' }}>
+        <span className='log-level-text' style={{ color: levelColor }}>
           {levelPart}
         </span>
         <span>{afterLevel}</span>
@@ -415,7 +409,6 @@ const TaskLogs: React.FC = () => {
       await refresh();
     } catch (error) {
       setLoading(false);
-      console.error('Manual refresh failed:', error);
     }
   };
 
@@ -432,17 +425,12 @@ const TaskLogs: React.FC = () => {
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '80vh',
-          flexDirection: 'column',
-        }}
-      >
-        <Spin size='large' />
-        <div style={{ marginTop: 16 }}>Loading task and log data...</div>
+      <div style={{ height: '80vh' }}>
+        <LoadingSpinner
+          text='Loading task and log data...'
+          size='large'
+          className='flex justify-center align-center'
+        />
       </div>
     );
   }
@@ -450,6 +438,7 @@ const TaskLogs: React.FC = () => {
   if (error) {
     return (
       <div
+        className='page-container'
         style={{
           padding: fullscreen ? '0' : '24px',
           height: fullscreen ? '100vh' : 'auto',
@@ -461,21 +450,11 @@ const TaskLogs: React.FC = () => {
           backgroundColor: fullscreen ? token.colorBgContainer : 'transparent',
         }}
       >
-        <Card
-          title={
-            <Title level={4}>
-              Task Logs - {id}
-              {task?.name ? ` (${task.name})` : ''}
-            </Title>
-          }
-        >
+        <Card>
+          <PageHeader title={`Task Logs - ${id}`} level={4} />
           <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              height: '60vh',
-            }}
+            className='flex justify-center align-center'
+            style={{ height: '60vh' }}
           >
             <Alert
               description={error}
@@ -492,6 +471,7 @@ const TaskLogs: React.FC = () => {
   if (task && !logs && !loading && !error && !fetchError) {
     return (
       <div
+        className='page-container'
         style={{
           padding: fullscreen ? '0' : '24px',
           height: fullscreen ? '100vh' : 'auto',
@@ -503,22 +483,11 @@ const TaskLogs: React.FC = () => {
           backgroundColor: fullscreen ? token.colorBgContainer : 'transparent',
         }}
       >
-        <Card
-          title={
-            <Title level={4}>
-              Task Logs - {id}
-              {task?.name ? ` (${task.name})` : ''}
-            </Title>
-          }
-        >
+        <Card>
+          <PageHeader title={`Task Logs - ${id}`} level={4} />
           <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              flexDirection: 'column',
-              minHeight: '200px',
-            }}
+            className='flex justify-center align-center flex-column'
+            style={{ minHeight: '200px' }}
           >
             <Alert
               description={
@@ -530,7 +499,7 @@ const TaskLogs: React.FC = () => {
               showIcon
               style={{ background: 'transparent', border: 'none' }}
             />
-            <Space style={{ marginTop: 16 }}>
+            <Space className='mt-16'>
               <Button icon={<SyncOutlined />} onClick={handleManualRefresh}>
                 Refresh
               </Button>
@@ -555,6 +524,7 @@ const TaskLogs: React.FC = () => {
 
   return (
     <div
+      className='page-container'
       style={{
         padding: fullscreen ? '0' : '24px',
         height: fullscreen ? '100vh' : 'auto',
@@ -573,27 +543,25 @@ const TaskLogs: React.FC = () => {
           boxShadow: fullscreen ? 'none' : undefined,
         }}
         title={
-          <Space
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              width: '100%',
-            }}
-          >
-            <Title level={4}>
-              Task Logs - {id}
-              {task?.name ? ` (${task.name})` : ''}
-              {isStatusRefreshing && (
-                <Tooltip title='refreshing...'>
-                  <Spin size='small' style={{ marginLeft: 8 }} />
-                </Tooltip>
-              )}
-            </Title>
+          <div className='flex justify-between align-center w-full'>
+            <PageHeader
+              title={`Task Logs - ${id}`}
+              level={4}
+              extra={
+                isStatusRefreshing && (
+                  <Tooltip title='refreshing...'>
+                    <span className='ml-8'>
+                      <LoadingSpinner size='small' showText={false} />
+                    </span>
+                  </Tooltip>
+                )
+              }
+            />
             <Space>
               <Select
                 value={tailLines}
                 onChange={value => setTailLines(value)}
-                style={{ width: 140 }}
+                className='w-140'
               >
                 <Select.Option value={100}>Last 100 lines</Select.Option>
                 <Select.Option value={500}>Last 500 lines</Select.Option>
@@ -620,7 +588,7 @@ const TaskLogs: React.FC = () => {
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
-                style={{ width: 250 }}
+                className='w-250'
               />
               <Button
                 type='primary'
@@ -642,7 +610,7 @@ const TaskLogs: React.FC = () => {
                 {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
               </Button>
             </Space>
-          </Space>
+          </div>
         }
         styles={{
           body: {
@@ -653,6 +621,7 @@ const TaskLogs: React.FC = () => {
       >
         <div
           ref={logContainerRef}
+          className='custom-scrollbar'
           style={{
             backgroundColor: token.colorBgElevated,
             padding: '16px',
@@ -676,7 +645,7 @@ const TaskLogs: React.FC = () => {
                 setSearchTerm('');
                 setFilteredLogs(logs);
               }}
-              style={{ marginBottom: '16px' }}
+              className='mb-16'
             />
           )}
 
@@ -706,7 +675,7 @@ const TaskLogs: React.FC = () => {
                 </Button>
               }
               onClose={() => setFetchError(null)}
-              style={{ marginBottom: '16px' }}
+              className='mb-16'
             />
           )}
 

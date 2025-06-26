@@ -141,20 +141,32 @@ class LocustRunner:
             "--stop-timeout",
             "99",
             "--api_path",
-            "/v1/chat/completions",
+            task.api_path or "/v1/chat/completions",
             "--headers",
             task.headers,
+            "--cookies",
+            task.cookies or "{}",
             "--model_name",
-            task.model,
-            # "--system_prompt",
-            # task.system_prompt,
+            task.model or "",
             "--stream_mode",
             task.stream_mode,
             "--chat_type",
-            str(task.chat_type),
+            str(task.chat_type or 0),
             "--task-id",
             task.id,
         ]
+
+        # Add custom request payload if specified
+        if task.request_payload:
+            command.extend(["--request_payload", task.request_payload])
+
+        # Add field mapping if specified
+        if task.field_mapping:
+            command.extend(["--field_mapping", task.field_mapping])
+
+        # Add api_path if specified
+        if task.api_path:
+            command.extend(["--api_path", task.api_path])
 
         # Add certificate file parameters if they exist
         if task.cert_file:

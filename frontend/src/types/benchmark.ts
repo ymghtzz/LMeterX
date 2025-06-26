@@ -7,13 +7,29 @@
 export interface BenchmarkJob {
   id: string;
   name: string;
-  model: string;
+  model?: string;
   target_host?: string;
+  api_path?: string;
+  request_payload?: string;
+  field_mapping?: {
+    prompt?: string;
+    stream_prefix?: string;
+    data_format?: string;
+    content?: string;
+    reasoning_content?: string;
+    end_prefix?: string;
+    stop_flag?: string;
+    end_condition?: string;
+  };
   concurrent_users?: number;
   dataset_id?: string;
   duration: number;
   concurrency?: number;
   headers?: Array<{
+    key: string;
+    value: string;
+  }>;
+  cookies?: Array<{
     key: string;
     value: string;
   }>;

@@ -4,7 +4,11 @@
  * @author Charm
  * @copyright 2025
  * */
-import { DownloadOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import {
+  DownloadOutlined,
+  FileTextOutlined,
+  InfoCircleOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   Button,
@@ -13,16 +17,18 @@ import {
   Descriptions,
   message,
   Row,
-  Spin,
   Statistic,
   Table,
   Tooltip,
-  Typography,
 } from 'antd';
 import html2canvas from 'html2canvas';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { benchmarkJobApi, resultApi } from '../api/services';
+import { CopyButton } from '../components/ui/CopyButton';
+import { IconTooltip } from '../components/ui/IconTooltip';
+import { LoadingSpinner } from '../components/ui/LoadingState';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const TaskResults: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -47,16 +53,14 @@ const TaskResults: React.FC = () => {
         // Handle task information acquisition separately
         try {
           const taskResponse = await benchmarkJobApi.getJob(id);
-          console.log('Task info:', taskResponse.data);
           setTaskInfo(taskResponse.data);
         } catch (err: any) {
-          console.error('Failed to get task info:', err);
+          // Failed to get task info - continue with results
         }
 
         // Try to get results
         try {
           const resultsResponse = await resultApi.getJobResult(id);
-          console.log('Test results:', resultsResponse.data);
 
           if (resultsResponse.data?.status === 'error') {
             throw new Error(
@@ -81,7 +85,6 @@ const TaskResults: React.FC = () => {
             setError('No data');
           }
         } catch (err: any) {
-          console.error('Failed to get result data:', err);
           setError(err.message || 'Failed to get results');
         }
       } finally {
@@ -93,9 +96,6 @@ const TaskResults: React.FC = () => {
   }, [id]);
 
   // Define metric results
-  const chatCompletionResult = results.find(
-    item => item.metric_type === 'chat_completions'
-  );
   const TpsResult = results.find(item => item.metric_type === 'token_metrics');
   const CompletionResult = results.find(
     item => item.metric_type === 'Total_turnaround_time'
@@ -103,7 +103,14 @@ const TaskResults: React.FC = () => {
   const firstTokenResult = results.find(
     item => item.metric_type === 'Time_to_first_output_token'
   );
+  const outputCompletionResult = results.find(
+    item => item.metric_type === 'Time_to_output_completion'
+  );
   const failResult = results.find(item => item.metric_type === 'failure');
+
+  // Check if we have any valid test results
+  const hasValidResults =
+    CompletionResult || firstTokenResult || outputCompletionResult || TpsResult;
 
   // Prepare table column definitions
   const metricExplanations: Record<string, string> = {
@@ -139,7 +146,7 @@ const TaskResults: React.FC = () => {
             <span>
               {text}{' '}
               <Tooltip title={explanation}>
-                <InfoCircleOutlined style={{ marginLeft: 4 }} />
+                <InfoCircleOutlined className='ml-4' />
               </Tooltip>
             </span>
           );
@@ -163,31 +170,64 @@ const TaskResults: React.FC = () => {
       title: 'Avg Response Time (s)',
       dataIndex: 'avg_response_time',
       key: 'avg_response_time',
-      render: (text: number) => (text ? (text / 1000).toFixed(2) : '0.00'),
+      render: (text: number, record: any) => {
+        if (!text) return '0.00';
+        if (record.metric_type === 'Time_to_output_completion' && text < 10) {
+          return text.toFixed(3);
+        }
+        return (text / 1000).toFixed(2);
+      },
     },
     {
       title: 'Max Response Time (s)',
       dataIndex: 'max_response_time',
       key: 'max_response_time',
-      render: (text: number) => (text ? (text / 1000).toFixed(2) : '0.00'),
+      render: (text: number, record: any) => {
+        if (!text) return '0.00';
+
+        if (record.metric_type === 'Time_to_output_completion' && text < 10) {
+          return text.toFixed(3);
+        }
+        return (text / 1000).toFixed(2);
+      },
     },
     {
       title: 'Min Response Time (s)',
       dataIndex: 'min_response_time',
       key: 'min_response_time',
-      render: (text: number) => (text ? (text / 1000).toFixed(2) : '0.00'),
+      render: (text: number, record: any) => {
+        if (!text) return '0.00';
+
+        if (record.metric_type === 'Time_to_output_completion' && text < 10) {
+          return text.toFixed(3);
+        }
+        return (text / 1000).toFixed(2);
+      },
     },
     {
       title: '90% Response Time (s)',
       dataIndex: 'percentile_90_response_time',
       key: 'percentile_90_response_time',
-      render: (text: number) => (text ? (text / 1000).toFixed(2) : '0.00'),
+      render: (text: number, record: any) => {
+        if (!text) return '0.00';
+        if (record.metric_type === 'Time_to_output_completion' && text < 10) {
+          return text.toFixed(3);
+        }
+        return (text / 1000).toFixed(2);
+      },
     },
     {
       title: 'Median Response Time (s)',
       dataIndex: 'median_response_time',
       key: 'median_response_time',
-      render: (text: number) => (text ? (text / 1000).toFixed(2) : '0.00'),
+      render: (text: number, record: any) => {
+        if (!text) return '0.00';
+
+        if (record.metric_type === 'Time_to_output_completion' && text < 10) {
+          return text.toFixed(3);
+        }
+        return (text / 1000).toFixed(2);
+      },
     },
     {
       title: 'RPS (req/s)',
@@ -195,12 +235,6 @@ const TaskResults: React.FC = () => {
       key: 'rps',
       render: (text: number) => (text ? text.toFixed(2) : '0.00'),
     },
-    //  {
-    //     title: 'Avg_content_length',
-    //     dataIndex: 'avg_content_length',
-    //     key: 'avg_content_length',
-    //     render: (text: number) => text ? text.toFixed(2) : '0.00',
-    // },
   ];
 
   // Function to handle report download
@@ -312,7 +346,6 @@ const TaskResults: React.FC = () => {
         duration: 3,
       });
     } catch (err: any) {
-      console.error('Download failed:', err);
       message.error({
         content: `Download failed: ${err.message || 'Unknown error'}`,
         key: 'downloadReport',
@@ -324,78 +357,51 @@ const TaskResults: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', background: '#fff' }}>
-      {/* Modified: Title and download button container */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '20px',
-        }}
-      >
-        <Typography.Title
-          level={4}
-          style={{ marginBottom: 0, width: '100%', textAlign: 'center' }}
-        >
-          Results report
-        </Typography.Title>
+    <div className='page-container'>
+      <div className='flex justify-between align-center mb-24'>
+        <PageHeader
+          title='Results report'
+          icon={<FileTextOutlined />}
+          level={3}
+          className='text-center w-full'
+        />
       </div>
+
       <Button
         type='primary'
         icon={<DownloadOutlined />}
         onClick={handleDownloadReport}
         loading={isDownloading}
         disabled={loading || !!error || !results || results.length === 0}
-        style={{ marginBottom: '20px' }}
+        className='mb-24'
       >
         Download Report
       </Button>
+
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-          <Spin size='large' />
-          <Typography.Text style={{ display: 'block', marginTop: 16 }}>
-            Loading result data...
-          </Typography.Text>
+        <div className='loading-container'>
+          <LoadingSpinner
+            text='Loading result data...'
+            size='large'
+            className='text-center'
+          />
         </div>
       ) : error ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '50px 0',
-          }}
-        >
+        <div className='flex justify-center p-24'>
           <Alert
-            // message="Failed to load results"
             description={error}
             type='error'
             showIcon
-            style={{
-              background: 'transparent',
-              border: 'none',
-              boxShadow: 'none',
-            }}
+            className='btn-transparent'
           />
         </div>
       ) : !results || results.length === 0 ? (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'center',
-            padding: '50px 0',
-          }}
-        >
+        <div className='flex justify-center p-24'>
           <Alert
-            // message="Notice"
             description='No test results available'
             type='info'
             showIcon
-            style={{
-              background: 'transparent',
-              border: 'none',
-              boxShadow: 'none',
-            }}
+            className='btn-transparent'
           />
         </div>
       ) : (
@@ -405,10 +411,7 @@ const TaskResults: React.FC = () => {
             ref={configCardRef}
             title='Test Configuration'
             variant='borderless'
-            style={{
-              marginBottom: '24px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-            }}
+            className='mb-24 form-card'
           >
             <Descriptions bordered>
               <Descriptions.Item label='Task ID'>
@@ -432,28 +435,21 @@ const TaskResults: React.FC = () => {
             </Descriptions>
           </Card>
 
-          {/* Result Overview */}
+          {/* Results Overview */}
           <Card
             ref={overviewCardRef}
             title='Results Overview'
             variant='borderless'
-            style={{
-              marginBottom: '24px',
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
-            }}
+            className='mb-24 form-card'
           >
             {(() => {
-              if (!chatCompletionResult) {
+              if (!hasValidResults) {
                 return (
                   <Alert
                     message='No valid test results found'
                     type='warning'
                     showIcon
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      boxShadow: 'none',
-                    }}
+                    className='btn-transparent'
                   />
                 );
               }
@@ -472,7 +468,7 @@ const TaskResults: React.FC = () => {
               return (
                 <>
                   {/* First row: request count, success rate, RPS */}
-                  <Row gutter={16} style={{ marginBottom: '16px' }}>
+                  <Row gutter={16} className='mb-16'>
                     <Col span={6}>
                       <Statistic
                         title='Total Requests'
@@ -492,11 +488,11 @@ const TaskResults: React.FC = () => {
                         title={
                           <span>
                             RPS
-                            <Tooltip title={statisticExplanations.RPS}>
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                            <IconTooltip
+                              title={statisticExplanations.RPS}
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={
@@ -510,11 +506,11 @@ const TaskResults: React.FC = () => {
                         title={
                           <span>
                             TTFT (s)
-                            <Tooltip title={statisticExplanations['TTFT (s)']}>
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                            <IconTooltip
+                              title={statisticExplanations['TTFT (s)']}
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={
@@ -526,22 +522,20 @@ const TaskResults: React.FC = () => {
                     </Col>
                   </Row>
 
-                  {/* Second row: Total TPS、Completion TPS、Avg. Total TPR、Avg. Completion TPR */}
+                  {/* Second row: Total TPS, Completion TPS, Avg. Total TPR, Avg. Completion TPR */}
                   <Row gutter={16}>
                     <Col span={6}>
                       <Statistic
                         title={
                           <span>
                             Total TPS (tokens/s)
-                            <Tooltip
+                            <IconTooltip
                               title={
                                 statisticExplanations['Total TPS (tokens/s)']
                               }
-                            >
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={TpsResult?.total_tps || '-'}
@@ -553,17 +547,15 @@ const TaskResults: React.FC = () => {
                         title={
                           <span>
                             Completion TPS (tokens/s)
-                            <Tooltip
+                            <IconTooltip
                               title={
                                 statisticExplanations[
                                   'Completion TPS (tokens/s)'
                                 ]
                               }
-                            >
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={TpsResult?.completion_tps || '-'}
@@ -575,17 +567,15 @@ const TaskResults: React.FC = () => {
                         title={
                           <span>
                             Avg. Total TPR (tokens/req)
-                            <Tooltip
+                            <IconTooltip
                               title={
                                 statisticExplanations[
                                   'Avg. Total TPR (tokens/req)'
                                 ]
                               }
-                            >
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={TpsResult?.avg_total_tokens_per_req || '-'}
@@ -597,17 +587,15 @@ const TaskResults: React.FC = () => {
                         title={
                           <span>
                             Avg. Completion TPR (tokens/req)
-                            <Tooltip
+                            <IconTooltip
                               title={
                                 statisticExplanations[
                                   'Avg. Completion TPR (tokens/req)'
                                 ]
                               }
-                            >
-                              <InfoCircleOutlined
-                                style={{ marginLeft: 4, cursor: 'pointer' }}
-                              />
-                            </Tooltip>
+                              className='ml-4'
+                              color='#1890ff'
+                            />
                           </span>
                         }
                         value={TpsResult?.avg_completion_tokens_per_req || '-'}
@@ -625,8 +613,8 @@ const TaskResults: React.FC = () => {
             ref={responseTimeCardRef}
             title='Response Time'
             variant='borderless'
+            className='mb-24'
             style={{
-              marginBottom: '24px',
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
             }}
           >
@@ -635,7 +623,6 @@ const TaskResults: React.FC = () => {
                 item =>
                   item.metric_type !== 'total_tokens_per_second' &&
                   item.metric_type !== 'completion_tokens_per_second' &&
-                  item.metric_type !== 'chat_completions' &&
                   item.metric_type !== 'token_metrics'
               )}
               columns={columns}
@@ -649,13 +636,14 @@ const TaskResults: React.FC = () => {
             ref={detailsCardRef}
             title='Result Details'
             variant='borderless'
+            className='mb-24'
             style={{
-              marginBottom: '24px',
               boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
             }}
           >
             <div style={{ position: 'relative' }}>
               <pre
+                className='modal-pre'
                 style={{
                   backgroundColor: '#f5f5f5',
                   padding: '16px',
@@ -666,26 +654,19 @@ const TaskResults: React.FC = () => {
               >
                 <code>{JSON.stringify(results, null, 2)}</code>
               </pre>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(
-                    JSON.stringify(results, null, 2)
-                  );
-                  message.success('Copied');
-                }}
+              <div
                 style={{
                   position: 'absolute',
                   top: '8px',
                   right: '8px',
-                  padding: '4px 8px',
-                  background: '#fff',
-                  border: '1px solid #d9d9d9',
-                  borderRadius: '2px',
-                  cursor: 'pointer',
                 }}
               >
-                Copy
-              </button>
+                <CopyButton
+                  text={JSON.stringify(results, null, 2)}
+                  successMessage='Results copied to clipboard'
+                  tooltip='Copy results'
+                />
+              </div>
             </div>
           </Card>
         </>
