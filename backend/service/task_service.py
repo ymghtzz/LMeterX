@@ -334,7 +334,6 @@ async def get_task_result_svc(request: Request, task_id: str):
     task_results = result.scalars().all()
 
     if not task_results:
-        logger.info(f"No test results found for task: {task_id}")
         return TaskResultRsp(
             error="No test results found for this task",
             status="not_found",
@@ -743,9 +742,7 @@ def _prepare_request_payload(body: TaskCreateReq) -> Dict:
         if body.system_prompt:
             messages.append({"role": "system", "content": body.system_prompt})
 
-        messages.append(
-            {"role": "user", "content": body.user_prompt or "Hello, how are you?"}
-        )
+        messages.append({"role": "user", "content": body.user_prompt or "Hi"})
 
         return {
             "model": body.model,

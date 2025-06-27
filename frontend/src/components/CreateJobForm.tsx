@@ -982,17 +982,15 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       </div>
 
       {/* Client certificate upload */}
-      <Form.Item
-        name='client_cert_key'
-        label={
-          <span>
-            Client Certificate
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 8, fontWeight: 500 }}>
+          <Space>
+            <span style={{ fontWeight: 'bold' }}>Client Certificate</span>
             <Tooltip title='Certificate files required for HTTPS mutual authentication'>
-              <InfoCircleOutlined style={{ marginLeft: 5 }} />
+              <InfoCircleOutlined />
             </Tooltip>
-          </span>
-        }
-      >
+          </Space>
+        </div>
         <div>
           <Radio.Group
             defaultValue='combined'
@@ -1101,7 +1099,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             }}
           </Form.Item>
         </div>
-      </Form.Item>
+      </div>
     </>
   );
 
@@ -1281,7 +1279,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 label={
                   <span>
                     Request Payload
-                    <Tooltip title='JSON payload to send to the custom API endpoint'>
+                    <Tooltip title='JSON payload to send to the custom API endpoint. To quickly test the connectivity, please use a simple prompt. The default dataset will be used in the formal load test.'>
                       <InfoCircleOutlined style={{ marginLeft: 5 }} />
                     </Tooltip>
                   </span>

@@ -197,12 +197,8 @@ class CertificateManager:
         key_valid = is_file_accessible(key_file)
 
         if cert_valid and key_valid and cert_file and key_file:
-            task_logger.info(
-                f"Configured certificate and key files: {cert_file}, {key_file}"
-            )
             return (cert_file, key_file)
         elif cert_valid and cert_file:
-            task_logger.info(f"Configured certificate file: {cert_file}")
             return cert_file
         elif cert_file and cert_file.strip():
             task_logger.warning(f"Certificate file not accessible: {cert_file}")
@@ -254,12 +250,16 @@ class ErrorHandler:
             return None
 
     @staticmethod
-    def handle_general_exception(error_msg: str, task_logger, response=None) -> None:
+    def handle_general_exception(
+        error_msg: str, task_logger, response=None, response_time: float = 0
+    ) -> None:
         """Centralized handler for logging exceptions during requests."""
         task_logger.error(error_msg)
         if response:
             response.failure(error_msg)
-        EventManager.fire_failure_event()
+        EventManager.fire_failure_event(
+            response_time=response_time, exception=Exception(error_msg)
+        )
 
     @staticmethod
     def validate_config(config: GlobalConfig, task_logger) -> bool:
@@ -284,14 +284,18 @@ class EventManager:
 
     @staticmethod
     def fire_failure_event(
-        name: str = "failure", response_time: float = 0, response_length: int = 0
+        name: str = "http_request",
+        response_time: float = 0,
+        response_length: int = 0,
+        exception: Optional[Exception] = None,
     ) -> None:
-        """Fire failure events."""
+        """Fire failure events with proper Locust event format."""
         events.request.fire(
-            request_type="failure",
+            request_type="POST",
             name=name,
             response_time=response_time,
             response_length=response_length,
+            exception=exception or Exception("Request failed"),
         )
 
     @staticmethod
@@ -726,7 +730,6 @@ def on_test_stop(environment, **kwargs):
 
         with open(result_file, "w") as f:
             json.dump(locust_result, f, indent=4)
-        task_logger.info(f"Successfully saved locust results to {result_file}")
 
     except Exception as e:
         task_logger.error(f"Failed to save locust results: {e}", exc_info=True)
@@ -774,11 +777,46 @@ class LLMTestUser(HttpUser):
                 task_logger.error("No request payload provided for custom API endpoint")
                 return None, None
 
+            # Get the next prompt data (same as chat_completions)
+            prompt_id, prompt_data = self.get_next_prompt()
+            if not prompt_data:
+                prompt_data = GLOBAL_CONFIG.user_prompt or DEFAULT_PROMPT
+
             try:
                 payload = json.loads(str(GLOBAL_CONFIG.request_payload))
             except json.JSONDecodeError as e:
                 task_logger.error(f"Invalid JSON in request payload: {e}")
                 return None, None
+
+            # Parse field mapping to get prompt field path
+            field_mapping = ConfigManager.parse_field_mapping(
+                GLOBAL_CONFIG.field_mapping or ""
+            )
+
+            # Update payload with current prompt data if field mapping is configured
+            if field_mapping.prompt:
+                try:
+                    # Handle different prompt data types (same as chat_completions)
+                    if isinstance(prompt_data, str):
+                        user_prompt = prompt_data
+                    else:
+                        # For multimodal data, extract the text prompt
+                        user_prompt = prompt_data.get("prompt", "")
+
+                    # Set the prompt content in the payload using field mapping
+                    self._set_field_value(payload, field_mapping.prompt, user_prompt)
+                    task_logger.debug(
+                        f"Updated payload field '{field_mapping.prompt}' with prompt data"
+                    )
+
+                except Exception as e:
+                    task_logger.warning(f"Failed to update prompt in payload: {e}")
+                    user_prompt = self._extract_prompt_from_payload(payload)
+            else:
+                task_logger.warning(
+                    "No prompt field mapping configured, using original payload"
+                )
+                user_prompt = self._extract_prompt_from_payload(payload)
 
             base_request_kwargs = {
                 "json": payload,
@@ -793,9 +831,7 @@ class LLMTestUser(HttpUser):
             if GLOBAL_CONFIG.cookies:
                 base_request_kwargs["cookies"] = GLOBAL_CONFIG.cookies
 
-            # Extract prompt content for token counting
-            prompt_content = self._extract_prompt_from_payload(payload)
-            return base_request_kwargs, prompt_content
+            return base_request_kwargs, user_prompt
 
         except Exception as e:
             task_logger.error(
@@ -866,17 +902,62 @@ class LLMTestUser(HttpUser):
             field_mapping = ConfigManager.parse_field_mapping(
                 GLOBAL_CONFIG.field_mapping or ""
             )
-            if field_mapping.prompt and field_mapping.prompt in payload:
-                return str(payload[field_mapping.prompt])
+            if field_mapping.prompt:
+                return StreamProcessor.get_field_value(payload, field_mapping.prompt)
             return ""
         except Exception:
             return ""
 
-    def _handle_response_error(self, response, task_logger) -> bool:
+    def _set_field_value(self, data: Dict[str, Any], path: str, value: str) -> None:
+        """Set value in nested dictionary using dot-separated path."""
+        if not path or not isinstance(data, dict):
+            return
+
+        try:
+            keys = path.split(".")
+            current = data
+
+            # Navigate to the parent of the target field
+            for key in keys[:-1]:
+                if key.isdigit():
+                    if isinstance(current, list):
+                        current = current[int(key)]
+                    else:
+                        return
+                elif isinstance(current, list) and current:
+                    if isinstance(current[0], dict):
+                        current = current[0].setdefault(key, {})
+                    else:
+                        return
+                elif isinstance(current, dict):
+                    current = current.setdefault(key, {})
+                else:
+                    return
+
+            # Set the final field value
+            final_key = keys[-1]
+            if final_key.isdigit():
+                if isinstance(current, list) and len(current) > int(final_key):
+                    current[int(final_key)] = value
+            elif isinstance(current, dict):
+                current[final_key] = value
+            elif isinstance(current, list) and current and isinstance(current[0], dict):
+                current[0][final_key] = value
+
+        except (KeyError, IndexError, TypeError, ValueError):
+            # If we can't set the nested field, log a warning but don't fail
+            pass
+
+    def _handle_response_error(
+        self, response, task_logger, start_time: float = 0
+    ) -> bool:
         """Handle HTTP status code errors."""
         if response.status_code != HTTP_OK:
             error_msg = f"Request failed with status {response.status_code}. Response: {response.text}"
-            ErrorHandler.handle_general_exception(error_msg, task_logger, response)
+            response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
+            ErrorHandler.handle_general_exception(
+                error_msg, task_logger, response, response_time
+            )
             return True
         return False
 
@@ -890,103 +971,77 @@ class LLMTestUser(HttpUser):
         field_mapping = ConfigManager.parse_field_mapping(
             GLOBAL_CONFIG.field_mapping or ""
         )
-
         response = None
+        has_failed = False
+        actual_request_start_time = 0.0
         try:
+            actual_request_start_time = time.time()
             with self.client.post(GLOBAL_CONFIG.api_path, **request_kwargs) as response:
-                if self._handle_response_error(response, task_logger):
+                if self._handle_response_error(response, task_logger, start_time):
+                    has_failed = True
                     return "", ""
 
                 try:
-                    # Check if response is complete JSON instead of streaming
-                    response_text = response.text
-                    if response_text.strip():
-                        try:
-                            resp_json = json.loads(response_text)
-                            task_logger.info(
-                                "API returned complete JSON response instead of streaming."
-                            )
-
-                            error_msg = ErrorHandler.check_json_error(resp_json)
-                            if error_msg:
-                                ErrorHandler.handle_general_exception(
-                                    error_msg, task_logger, response
-                                )
-                                return "", ""
-
-                            # Parse response using field mapping
-                            metrics.model_output = (
-                                StreamProcessor.get_field_value(
-                                    resp_json, field_mapping.content
-                                )
-                                if field_mapping.content
-                                else ""
-                            )
-                            metrics.reasoning_content = (
-                                StreamProcessor.get_field_value(
-                                    resp_json, field_mapping.reasoning_content
-                                )
-                                if field_mapping.reasoning_content
-                                else ""
-                            )
-
-                            total_time = (time.time() - start_time) * 1000
-                            EventManager.fire_metric_event(
-                                METRIC_TTT,
-                                total_time,
-                                len(metrics.model_output)
-                                + len(metrics.reasoning_content),
-                            )
-                            response.success()
-                            return metrics.reasoning_content, metrics.model_output
-
-                        except json.JSONDecodeError:
-                            pass
-
                     # Process as streaming response
                     for chunk in response.iter_lines():
                         error_msg = StreamProcessor.check_chunk_error(
                             chunk, field_mapping, task_logger
                         )
                         if error_msg:
+                            response_time = (time.time() - start_time) * 1000
                             ErrorHandler.handle_general_exception(
-                                error_msg, task_logger, response
+                                error_msg, task_logger, response, response_time
                             )
+                            has_failed = True
                             return "", ""
 
                         metrics = StreamProcessor.process_chunk(
-                            chunk, field_mapping, start_time, metrics, task_logger
+                            chunk,
+                            field_mapping,
+                            actual_request_start_time,
+                            metrics,
+                            task_logger,
                         )
 
-                        if chunk == b"data: [DONE]":
-                            break
+                        # if chunk == b"data: [DONE]":
+                        #     break
 
-                    # Fire completion events for streaming
-                    total_time = (time.time() - start_time) * 1000
-                    completion_time = (
-                        (time.time() - metrics.first_output_token_time) * 1000
-                        if metrics.first_token_received
-                        else 0
-                    )
+                    # Only mark as success if no failures occurred
+                    if not has_failed:
+                        # Fire completion events for streaming
+                        total_time = (time.time() - start_time) * 1000
+                        completion_time = (
+                            (time.time() - metrics.first_output_token_time) * 1000
+                            if metrics.first_token_received
+                            else 0
+                        )
 
-                    EventManager.fire_metric_event(
-                        METRIC_TTOC,
-                        completion_time,
-                        len(metrics.model_output),
-                    )
-                    EventManager.fire_metric_event(
-                        METRIC_TTT,
-                        total_time,
-                        len(metrics.model_output) + len(metrics.reasoning_content),
-                    )
-                    response.success()
+                        EventManager.fire_metric_event(
+                            METRIC_TTOC,
+                            completion_time,
+                            len(metrics.model_output),
+                        )
+                        EventManager.fire_metric_event(
+                            METRIC_TTT,
+                            total_time,
+                            len(metrics.model_output) + len(metrics.reasoning_content),
+                        )
+                        response.success()
 
                 except OSError as e:
                     task_logger.error(f"Network error during stream processing: {e}")
-                    ErrorHandler.handle_general_exception(str(e), task_logger, response)
+                    response_time = (time.time() - start_time) * 1000
+                    ErrorHandler.handle_general_exception(
+                        str(e), task_logger, response, response_time
+                    )
+                    has_failed = True
 
         except Exception as e:
-            ErrorHandler.handle_general_exception(str(e), task_logger, response)
+            response_time = (time.time() - start_time) * 1000
+            ErrorHandler.handle_general_exception(
+                str(e), task_logger, response, response_time
+            )
+            has_failed = True
 
         return metrics.reasoning_content, metrics.model_output
 
@@ -1001,11 +1056,13 @@ class LLMTestUser(HttpUser):
             GLOBAL_CONFIG.field_mapping or ""
         )
 
+        has_failed = False
         try:
             with self.client.post(GLOBAL_CONFIG.api_path, **request_kwargs) as response:
                 total_time = (time.time() - start_time) * 1000
 
-                if self._handle_response_error(response, task_logger):
+                if self._handle_response_error(response, task_logger, start_time):
+                    has_failed = True
                     return "", ""
 
                 try:
@@ -1014,8 +1071,9 @@ class LLMTestUser(HttpUser):
                     error_msg = ErrorHandler.check_json_error(resp_json)
                     if error_msg:
                         ErrorHandler.handle_general_exception(
-                            error_msg, task_logger, response
+                            error_msg, task_logger, response, total_time
                         )
+                        has_failed = True
                         return "", ""
 
                     model_output = (
@@ -1033,19 +1091,28 @@ class LLMTestUser(HttpUser):
                         else ""
                     )
 
-                    EventManager.fire_metric_event(
-                        METRIC_TTT,
-                        total_time,
-                        len(model_output) + len(reasoning_content),
-                    )
-                    response.success()
+                    # Only mark as success if no failures occurred
+                    if not has_failed:
+                        EventManager.fire_metric_event(
+                            METRIC_TTT,
+                            total_time,
+                            len(model_output) + len(reasoning_content),
+                        )
+                        response.success()
 
                 except (json.JSONDecodeError, KeyError) as e:
                     task_logger.error(f"Failed to parse response JSON: {e}")
-                    ErrorHandler.handle_general_exception(str(e), task_logger, response)
+                    ErrorHandler.handle_general_exception(
+                        str(e), task_logger, response, total_time
+                    )
+                    has_failed = True
 
         except Exception as e:
-            ErrorHandler.handle_general_exception(str(e), task_logger, response)
+            response_time = (time.time() - start_time) * 1000
+            ErrorHandler.handle_general_exception(
+                str(e), task_logger, response, response_time
+            )
+            has_failed = True
 
         return reasoning_content, model_output
 

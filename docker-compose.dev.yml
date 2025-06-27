@@ -15,7 +15,7 @@ services:
       - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --init-connect='SET NAMES utf8mb4'
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-plmeterx123"]
       timeout: 20s
       retries: 10
 

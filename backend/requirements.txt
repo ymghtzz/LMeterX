@@ -9,3 +9,4 @@ aiomysql
 greenlet
 werkzeug
 python-multipart
+httpx
