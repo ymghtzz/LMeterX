@@ -62,7 +62,7 @@ request.interceptors.response.use(
     }
 
     // Show detailed error in console
-    console.error('Request error:', error);
+    // Request error occurred
 
     return Promise.reject(error);
   }

@@ -5,8 +5,8 @@ Copyright (c) 2025, All Rights Reserved.
 
 from typing import AsyncGenerator
 
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from config.db_config import get_settings
@@ -28,7 +28,7 @@ engine = create_async_engine(
 )
 
 # Create a factory for asynchronous database sessions
-async_session_factory = sessionmaker(
+async_session_factory = async_sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False,

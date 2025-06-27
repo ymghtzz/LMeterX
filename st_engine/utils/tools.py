@@ -163,13 +163,13 @@ def init_prompt_queue(
     else:
         data_file = os.path.join(BASE_DIR, "data", "prompts", "1.jsonl")
 
-    logger.info(f"Initializing data queue for chat_type={chat_type}")
+    # logger.info(f"Initializing data queue for chat_type={chat_type}")
 
     if not os.path.exists(data_file):
         logger.error(f"Data file not found: {data_file}")
         raise ValueError(f"Data file not found: {data_file}")
 
-    q = queue.Queue()
+    q: queue.Queue[Tuple[str, Union[str, Dict]]] = queue.Queue()
 
     try:
         prompts = load_data(data_file, chat_type, logger)
@@ -191,7 +191,7 @@ def init_prompt_queue(
                     f"An unexpected error occurred while adding an item to the queue: {str(e)}"
                 )
 
-        logger.info(f"Successfully initialized queue with {q.qsize()} prompts")
+        # logger.info(f"Successfully initialized queue with {q.qsize()} prompts")
         return q
 
     except Exception as e:

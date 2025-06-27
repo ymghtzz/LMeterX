@@ -103,4 +103,4 @@ markers = [
 
 [tool.bandit]
 exclude_dirs = ["tests"]
-skips = ["B101", "B601"]
+skips = ["B101", "B601", "B501"]

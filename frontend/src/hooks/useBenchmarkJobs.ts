@@ -93,7 +93,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
           setLastRefreshTime(new Date());
         }
       } catch (err) {
-        console.error('[fetchJobs] Failed to fetch tasks:', err);
+        // Failed to fetch tasks
         setError('Failed to fetch task list, please try again later');
       } finally {
         setLoading(false);
@@ -169,7 +169,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
         }
       }
     } catch (error) {
-      console.error('Status update request failed:', error);
+      // Status update request failed
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
@@ -186,7 +186,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
       try {
         localStorage.removeItem('benchmark_polling_active');
       } catch (e) {
-        console.warn('localStorage error in stopPolling cleanup:', e);
+        // localStorage error in stopPolling cleanup
       }
     }
   }, []);
@@ -221,7 +221,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
       localStorage.setItem('benchmark_polling_timestamp', now.toString());
       localStorage.setItem('benchmark_polling_active', 'true');
     } catch (e) {
-      console.warn('Could not set localStorage for polling coordination', e);
+      // Could not set localStorage for polling coordination
     }
 
     const pollingInterval = 30000;
