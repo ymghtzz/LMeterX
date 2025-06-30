@@ -10,7 +10,7 @@
 
 ## 📋 Project Overview
 
-LMeterX is a professional large language model performance testing platform that supports comprehensive load testing for any LLM service compatible with the OpenAI API format. Through an intuitive Web interface, users can easily create and manage test tasks, monitor testing processes in real-time, and obtain detailed performance analysis reports, providing reliable data support for model deployment and performance optimization.
+LMeterX is a professional large language model performance testing platform that supports comprehensive load testing for any LLM service. Through an intuitive Web interface, users can easily create and manage test tasks, monitor testing processes in real-time, and obtain detailed performance analysis reports, providing reliable data support for model deployment and performance optimization.
 
 <div align="center">
   <img src="docs/images/images.gif" alt="LMeterX Demo" width="800"/>
@@ -18,7 +18,7 @@ LMeterX is a professional large language model performance testing platform that
 
 ## ✨ Core Features
 
-- **Universal compatibility**: Applicable to any openai format API such as GPT, Claude, Llama, etc (language/multimodal/CoT)
+- **Universal compatibility**: Supports any language/multimodal/CoT model (GPT/Claude/Llama, etc.) service API stress testing
 - **Smart load testing**: Precise concurrency control & Real user simulation
 - **Professional metrics**: TTFT, TPS, RPS, success/error rate, etc
 - **Multi-scenario support**: Text conversations & Multimodal (image+text)
@@ -131,7 +131,6 @@ LMeterX/
 ## 🗺️ Development Roadmap
 
 ### In Development
-- [ ] Support for custom API paths and performance metrics collection
 - [ ] Support for user-defined load test datasets
 - [ ] Support for client resource monitoring
 

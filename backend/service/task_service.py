@@ -898,9 +898,9 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
         # Prepare certificate configuration
         client_cert = _prepare_client_cert(body)
 
-        # Test with httpx client
+        # Test with httpx client - increased timeout for slow APIs
         async with httpx.AsyncClient(
-            timeout=60.0, verify=False, cert=client_cert
+            timeout=180.0, verify=False, cert=client_cert
         ) as client:
             if body.stream_mode:
                 # Handle streaming response
@@ -919,7 +919,7 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
         logger.error("Request timeout when testing API endpoint")
         return {
             "status": "error",
-            "error": "Request timeout (60 seconds)",
+            "error": "Request timeout (180 seconds)",
             "response": None,
         }
     except httpx.ConnectError as e:
