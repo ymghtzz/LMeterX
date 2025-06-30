@@ -1332,7 +1332,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               >
                 <TextArea
                   rows={4}
-                  placeholder='e.g. {"query": "What is LLM?", "imgs": [], "model": "gpt-4o"}'
+                  placeholder='JSON payload to send to the custom API endpoint. To quickly test the connectivity, please use a simple prompt. e.g. {"query": "Hi", "imgs": [], "model": "gpt-4o"}'
                 />
               </Form.Item>
             </Col>
