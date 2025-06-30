@@ -108,6 +108,25 @@ const TaskResults: React.FC = () => {
   );
   const failResult = results.find(item => item.metric_type === 'failure');
 
+  // Calculate total failed requests from multiple sources
+  const calculateFailedRequests = () => {
+    // Get failure requests from 'failure' metric type
+    const failureMetricRequests = failResult?.request_count || 0;
+
+    // Get failure count from chat_completions or custom_api metric types
+    const chatCompletionsResult = results.find(
+      item => item.metric_type === 'chat_completions'
+    );
+    const customApiResult = results.find(
+      item => item.metric_type === 'custom_api'
+    );
+
+    const chatCompletionsFailures = chatCompletionsResult?.failure_count || 0;
+    const customApiFailures = customApiResult?.failure_count || 0;
+
+    return failureMetricRequests + chatCompletionsFailures + customApiFailures;
+  };
+
   // Check if we have any valid test results
   const hasValidResults =
     CompletionResult || firstTokenResult || outputCompletionResult || TpsResult;
@@ -458,7 +477,7 @@ const TaskResults: React.FC = () => {
                 CompletionResult?.request_count ||
                 firstTokenResult?.request_count ||
                 0;
-              const failedRequestCount = failResult?.request_count || 0;
+              const failedRequestCount = calculateFailedRequests();
               const actualTotalRequests = baseRequestCount + failedRequestCount;
               const actualSuccessRate =
                 actualTotalRequests > 0
@@ -514,10 +533,12 @@ const TaskResults: React.FC = () => {
                           </span>
                         }
                         value={
-                          (firstTokenResult?.avg_response_time || 0) / 1000 ||
-                          '-'
+                          firstTokenResult?.avg_response_time
+                            ? (
+                                firstTokenResult.avg_response_time / 1000
+                              ).toFixed(2)
+                            : '-'
                         }
-                        precision={2}
                       />
                     </Col>
                   </Row>

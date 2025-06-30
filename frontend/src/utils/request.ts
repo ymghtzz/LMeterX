@@ -10,7 +10,7 @@ import axios from 'axios';
 // Create axios instance
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 30000, // Increase to 30 seconds
+  timeout: 150000, // Increase to 150 seconds (longer than backend 120s timeout)
   headers: {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -42,27 +42,21 @@ request.interceptors.response.use(
     return response.data;
   },
   error => {
-    // Handle timeout error
-    if (error.code === 'ECONNABORTED' && error.message.includes('timeout')) {
-      message.error('Request timeout, please try again later');
-    } else if (error.response) {
-      // Handle HTTP error status codes
-      switch (error.response.status) {
-        case 404:
-          message.error('Requested resource not found');
-          break;
-        case 500:
-          message.error('Internal server error');
-          break;
-        default:
-          message.error(`Request failed: ${error.message}`);
-      }
-    } else {
-      message.error(`Request error: ${error.message}`);
-    }
+    // Log error details for debugging
+    console.error('Request error:', error);
 
-    // Show detailed error in console
-    // Request error occurred
+    // Don't show generic error messages here - let specific components handle their own errors
+    // This allows components to extract and display backend error messages
+
+    // Only handle truly generic network errors that don't have response data
+    if (
+      !error.response &&
+      error.code === 'ECONNABORTED' &&
+      error.message.includes('timeout')
+    ) {
+      // Only show generic timeout message if there's no backend response
+      message.error('Network timeout, please check your connection');
+    }
 
     return Promise.reject(error);
   }

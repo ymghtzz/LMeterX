@@ -382,8 +382,32 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       setTestResult(result);
       setTestModalVisible(true);
-    } catch (error) {
-      message.error('Test failed, please check your configuration');
+    } catch (error: any) {
+      // Try to extract error message from backend response with priority order
+      let errorMessage = 'Test failed, please check your configuration';
+
+      // Priority 1: Backend API error field (most specific)
+      if (error?.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      // Priority 2: Backend API message field
+      else if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      }
+      // Priority 3: Network timeout or connection errors
+      else if (
+        error?.code === 'ECONNABORTED' &&
+        error?.message?.includes('timeout')
+      ) {
+        errorMessage =
+          'Network timeout, please check your connection and try again';
+      }
+      // Priority 4: Other axios errors
+      else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      message.error(errorMessage);
     } finally {
       setTesting(false);
     }

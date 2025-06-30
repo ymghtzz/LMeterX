@@ -251,15 +251,24 @@ class ErrorHandler:
 
     @staticmethod
     def handle_general_exception(
-        error_msg: str, task_logger, response=None, response_time: float = 0
+        error_msg: str,
+        task_logger,
+        response=None,
+        response_time: float = 0,
+        request_name: str = "failure",
     ) -> None:
         """Centralized handler for logging exceptions during requests."""
         task_logger.error(error_msg)
         if response:
             response.failure(error_msg)
-        EventManager.fire_failure_event(
-            response_time=response_time, exception=Exception(error_msg)
-        )
+        else:
+            # If no response object available (e.g., connection failed),
+            # we need to manually fire the failure event with the correct request name
+            EventManager.fire_failure_event(
+                name=request_name,
+                response_time=response_time,
+                exception=Exception(error_msg),
+            )
 
     @staticmethod
     def validate_config(config: GlobalConfig, task_logger) -> bool:
@@ -284,12 +293,13 @@ class EventManager:
 
     @staticmethod
     def fire_failure_event(
-        name: str = "http_request",
+        name: str = "failure",
         response_time: float = 0,
         response_length: int = 0,
         exception: Optional[Exception] = None,
     ) -> None:
         """Fire failure events with proper Locust event format."""
+
         events.request.fire(
             request_type="POST",
             name=name,
@@ -949,14 +959,18 @@ class LLMTestUser(HttpUser):
             pass
 
     def _handle_response_error(
-        self, response, task_logger, start_time: float = 0
+        self,
+        response,
+        task_logger,
+        start_time: float = 0,
+        request_name: str = "failure",
     ) -> bool:
         """Handle HTTP status code errors."""
         if response.status_code != HTTP_OK:
             error_msg = f"Request failed with status {response.status_code}. Response: {response.text}"
             response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
             ErrorHandler.handle_general_exception(
-                error_msg, task_logger, response, response_time
+                error_msg, task_logger, response, response_time, request_name
             )
             return True
         return False
@@ -974,10 +988,14 @@ class LLMTestUser(HttpUser):
         response = None
         has_failed = False
         actual_request_start_time = 0.0
+        request_name = base_request_kwargs.get("name", "failure")
+
         try:
             actual_request_start_time = time.time()
             with self.client.post(GLOBAL_CONFIG.api_path, **request_kwargs) as response:
-                if self._handle_response_error(response, task_logger, start_time):
+                if self._handle_response_error(
+                    response, task_logger, start_time, request_name
+                ):
                     has_failed = True
                     return "", ""
 
@@ -990,7 +1008,11 @@ class LLMTestUser(HttpUser):
                         if error_msg:
                             response_time = (time.time() - start_time) * 1000
                             ErrorHandler.handle_general_exception(
-                                error_msg, task_logger, response, response_time
+                                error_msg,
+                                task_logger,
+                                response,
+                                response_time,
+                                request_name,
                             )
                             has_failed = True
                             return "", ""
@@ -1032,14 +1054,14 @@ class LLMTestUser(HttpUser):
                     task_logger.error(f"Network error during stream processing: {e}")
                     response_time = (time.time() - start_time) * 1000
                     ErrorHandler.handle_general_exception(
-                        str(e), task_logger, response, response_time
+                        str(e), task_logger, response, response_time, request_name
                     )
                     has_failed = True
 
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             ErrorHandler.handle_general_exception(
-                str(e), task_logger, response, response_time
+                str(e), task_logger, response, response_time, request_name
             )
             has_failed = True
 
@@ -1055,13 +1077,16 @@ class LLMTestUser(HttpUser):
         field_mapping = ConfigManager.parse_field_mapping(
             GLOBAL_CONFIG.field_mapping or ""
         )
+        request_name = base_request_kwargs.get("name", "failure")
 
         has_failed = False
         try:
             with self.client.post(GLOBAL_CONFIG.api_path, **request_kwargs) as response:
                 total_time = (time.time() - start_time) * 1000
 
-                if self._handle_response_error(response, task_logger, start_time):
+                if self._handle_response_error(
+                    response, task_logger, start_time, request_name
+                ):
                     has_failed = True
                     return "", ""
 
@@ -1071,7 +1096,7 @@ class LLMTestUser(HttpUser):
                     error_msg = ErrorHandler.check_json_error(resp_json)
                     if error_msg:
                         ErrorHandler.handle_general_exception(
-                            error_msg, task_logger, response, total_time
+                            error_msg, task_logger, response, total_time, request_name
                         )
                         has_failed = True
                         return "", ""
@@ -1103,14 +1128,14 @@ class LLMTestUser(HttpUser):
                 except (json.JSONDecodeError, KeyError) as e:
                     task_logger.error(f"Failed to parse response JSON: {e}")
                     ErrorHandler.handle_general_exception(
-                        str(e), task_logger, response, total_time
+                        str(e), task_logger, response, total_time, request_name
                     )
                     has_failed = True
 
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             ErrorHandler.handle_general_exception(
-                str(e), task_logger, response, response_time
+                str(e), task_logger, response, response_time, request_name
             )
             has_failed = True
 
@@ -1151,6 +1176,11 @@ class LLMTestUser(HttpUser):
 
         start_time = time.time()
         reasoning_content, model_output = "", ""
+        request_name = (
+            base_request_kwargs.get("name", "failure")
+            if base_request_kwargs
+            else "failure"
+        )
 
         try:
             if GLOBAL_CONFIG.stream_mode:
@@ -1164,6 +1194,15 @@ class LLMTestUser(HttpUser):
         except Exception as e:
             task_logger.error(
                 f"Unhandled exception in chat_request: {e}", exc_info=True
+            )
+            # Record the failure event for unhandled exceptions
+            response_time = (time.time() - start_time) * 1000
+            ErrorHandler.handle_general_exception(
+                f"Unhandled exception in chat_request: {e}",
+                task_logger,
+                response=None,
+                response_time=response_time,
+                request_name=request_name,
             )
 
         if reasoning_content or model_output:
