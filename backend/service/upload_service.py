@@ -111,7 +111,7 @@ async def process_cert_files(
                 "size": os.path.getsize(file_path),
             }
             uploaded_files_info.append(file_info)
-            logger.info(f"File uploaded successfully: {file_path}, type: {cert_type}")
+            logger.info(f"Certificate file uploaded successfully, type: {cert_type}")
 
     # Retrieve existing config for the task, if any.
     existing_config = get_task_cert_config(task_id)

@@ -24,39 +24,22 @@ const Sidebar: React.FC = () => {
     {
       key: '/jobs',
       icon: <ExperimentOutlined />,
-      label: (
-        <span style={{ fontWeight: 'bold', fontSize: '18px' }}>Test Tasks</span>
-      ),
+      label: <span className='text-bold text-xl'>Test Tasks</span>,
     },
     {
       key: '/result-comparison',
       icon: <BarChartOutlined />,
-      label: (
-        <span style={{ fontWeight: 'bold', fontSize: '18px' }}>
-          Model Arena
-        </span>
-      ),
+      label: <span className='text-bold text-xl'>Model Arena</span>,
     },
     {
       key: '/system-monitor',
       icon: <MonitorOutlined />,
-      label: (
-        <span style={{ fontWeight: 'bold', fontSize: '18px' }}>
-          Monitor Hub
-        </span>
-      ),
+      label: <span className='text-bold text-xl'>Monitor Hub</span>,
     },
   ];
 
   return (
-    <Sider
-      width={210}
-      style={{
-        background: '#fff',
-        height: '100%',
-        borderRight: '1px solid #f0f0f0',
-      }}
-    >
+    <Sider width={210} className='custom-sider'>
       <ConfigProvider
         theme={{
           components: {
@@ -70,12 +53,7 @@ const Sidebar: React.FC = () => {
         <Menu
           mode='inline'
           selectedKeys={[location.pathname]}
-          style={{
-            height: '100%',
-            borderRight: 0,
-            background: '#fff',
-            paddingTop: '20px',
-          }}
+          className='custom-menu'
           items={menuItems}
           onClick={({ key }) => navigate(key)}
         />

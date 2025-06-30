@@ -70,6 +70,9 @@ export const benchmarkJobApi = {
 
   // Stop a running benchmark job
   stopJob: (id: string) => api.post<BenchmarkJob>(`/tasks/stop/${id}`),
+
+  // Test API endpoint
+  testApiEndpoint: (data: any) => api.post<any>('/tasks/test', data),
 };
 
 // Results API methods

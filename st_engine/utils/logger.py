@@ -55,12 +55,10 @@ def add_task_log_sink(task_id: str) -> int:
     # Ensure the task log directory exists before creating the log file
     try:
         os.makedirs(LOG_TASK_DIR, exist_ok=True)
-        print(f"[LOG_DEBUG] Task log directory ensured: {LOG_TASK_DIR}")
     except Exception as e:
-        print(f"Warning: Failed to create task log directory {LOG_TASK_DIR}: {e}")
+        logger.warning(f"Failed to create task log directory {LOG_TASK_DIR}: {e}")
 
     task_log_file = os.path.join(LOG_TASK_DIR, f"task_{task_id}.log")
-    print(f"[LOG_DEBUG] Creating task log file: {task_log_file}")
 
     def is_current_task_log(record):
         return "task_id" in record["extra"] and record["extra"]["task_id"] == task_id
@@ -78,25 +76,13 @@ def add_task_log_sink(task_id: str) -> int:
             filter=is_current_task_log,
             enqueue=False,
         )
-        print(
-            f"[LOG_DEBUG] Successfully created task log sink, handler_id: {handler_id}"
-        )
 
         test_logger = logger.bind(task_id=task_id)
         test_logger.info(f"Task log initialized for task {task_id}")
 
-        if os.path.exists(task_log_file):
-            print(f"[LOG_DEBUG] Task log file confirmed created: {task_log_file}")
-        else:
-            print(f"[LOG_ERROR] Task log file was NOT created: {task_log_file}")
-
         return handler_id
     except Exception as e:
-        print(f"Error: Failed to create task log sink for task {task_id}: {e}")
-        print(f"Task log file path: {task_log_file}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"Failed to create task log sink for task {task_id}: {e}")
         # Return a dummy handler ID to prevent downstream errors
         return -1
 
@@ -109,11 +95,11 @@ def remove_task_log_sink(handler_id: int):
         try:
             logger.remove(handler_id)
         except Exception as e:
-            print(
-                f"Warning: Failed to remove log sink with handler ID {handler_id}: {e}"
+            logger.warning(
+                f"Failed to remove log sink with handler ID {handler_id}: {e}"
             )
     else:
-        print(f"Skipping removal of invalid handler ID: {handler_id}")
+        logger.warning(f"Skipping removal of invalid handler ID: {handler_id}")
 
 
 st_logger = logger

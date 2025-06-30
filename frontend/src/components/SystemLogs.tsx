@@ -14,22 +14,12 @@ import {
   SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Card,
-  Input,
-  Select,
-  Space,
-  Spin,
-  Switch,
-  theme,
-  Typography,
-} from 'antd';
+import { Alert, Button, Card, Input, Select, Space, Switch, theme } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
 import { logApi } from '../api/services';
+import { LoadingSpinner } from './ui/LoadingState';
+import { PageHeader } from './ui/PageHeader';
 
-const { Title } = Typography;
 const { Search } = Input;
 
 interface SystemLogsProps {
@@ -172,7 +162,6 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
         err?.response?.data?.error ||
         err?.message ||
         `Failed to fetch ${displayName}`;
-      console.error(`Failed to fetch ${displayName} content:`, err);
       // Show serious errors on initial load, and non-blocking errors on polling
       if (loading) {
         setError(errorMessage);
@@ -350,7 +339,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
     return (
       <div className='log-line'>
         <span>{beforeLevel}</span>
-        <span style={{ color: levelColor, fontWeight: 'bold' }}>
+        <span className='log-level-text' style={{ color: levelColor }}>
           {levelPart}
         </span>
         <span>{afterLevel}</span>
@@ -372,17 +361,12 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '80vh',
-          flexDirection: 'column',
-        }}
-      >
-        <Spin size='large' />
-        <div style={{ marginTop: 16 }}>Loading {displayName} data...</div>
+      <div style={{ height: '80vh' }}>
+        <LoadingSpinner
+          text={`Loading ${displayName} data...`}
+          size='large'
+          className='flex justify-center align-center'
+        />
       </div>
     );
   }
@@ -390,12 +374,8 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
   if (error) {
     return (
       <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '80vh',
-        }}
+        className='flex justify-center align-center'
+        style={{ height: '80vh' }}
       >
         <Alert
           description={error}
@@ -408,15 +388,10 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
   }
 
   if (!loading && !logs && !error) {
-    // Ensure display when not loading and no error
     return (
       <div
-        style={{
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: '80vh',
-        }}
+        className='flex justify-center align-center'
+        style={{ height: '80vh' }}
       >
         <Alert
           description={`No ${displayName} available`}
@@ -430,6 +405,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
 
   return (
     <div
+      className='page-container'
       style={{
         padding: fullscreen ? '0' : '0px',
         height: fullscreen ? '100vh' : 'auto',
@@ -448,19 +424,13 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
           boxShadow: fullscreen ? 'none' : undefined,
         }}
         title={
-          <Space
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              width: '100%',
-            }}
-          >
-            <Title level={4}>{displayName}</Title> {/* Use displayName */}
+          <div className='flex justify-between align-center w-full'>
+            <PageHeader title={displayName} level={4} />
             <Space>
               <Select
                 value={tailLines}
                 onChange={value => setTailLines(value)}
-                style={{ width: 140 }}
+                className='w-140'
               >
                 <Select.Option value={100}>Last 100 lines</Select.Option>
                 <Select.Option value={500}>Last 500 lines</Select.Option>
@@ -481,7 +451,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
-                style={{ width: 250 }}
+                className='w-250'
               />
               <Button
                 type='primary'
@@ -503,7 +473,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
               </Button>
             </Space>
-          </Space>
+          </div>
         }
         styles={{
           body: {
@@ -515,6 +485,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
       >
         <div
           ref={logContainerRef}
+          className='custom-scrollbar'
           style={{
             backgroundColor: token.colorBgElevated,
             padding: '16px',
@@ -538,7 +509,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 setSearchTerm('');
                 setFilteredLogs(logs);
               }}
-              style={{ marginBottom: '16px' }}
+              className='mb-16'
             />
           )}
 
@@ -569,7 +540,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 </Button>
               }
               onClose={() => setFetchError(null)}
-              style={{ marginBottom: '16px' }}
+              className='mb-16'
             />
           )}
 

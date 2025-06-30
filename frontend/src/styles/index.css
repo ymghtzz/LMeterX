@@ -1,0 +1,733 @@
+/**
+ * @file index.css
+ * @description Global styles and utility classes for the application
+ * @author Charm
+ * @copyright 2025
+ */
+
+/* ========================================
+   Global Styles
+   ======================================== */
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* ========================================
+   Layout Utilities
+   ======================================== */
+
+.app-layout {
+  min-height: 100vh;
+}
+
+.app-layout-content {
+  height: calc(100vh - 64px);
+}
+
+.page-container {
+  padding: 24px;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.page-content {
+  margin: 0px 0px;
+  padding: 0;
+  background: #fff;
+  overflow: auto;
+}
+
+.custom-sider {
+  background: #fff;
+  height: 100%;
+  border-right: 1px solid #f0f0f0;
+}
+
+.custom-menu {
+  height: 100%;
+  border-right: 0;
+  background: #fff;
+  padding-top: 20px;
+}
+
+/* ========================================
+   Spacing Utilities
+   ======================================== */
+
+.mb-8 {
+  margin-bottom: 8px;
+}
+.mb-16 {
+  margin-bottom: 16px;
+}
+.mb-24 {
+  margin-bottom: 24px;
+}
+.mt-16 {
+  margin-top: 16px;
+}
+.mt-24 {
+  margin-top: 24px;
+}
+.ml-4 {
+  margin-left: 4px;
+}
+.ml-5 {
+  margin-left: 5px;
+}
+.ml-8 {
+  margin-left: 8px;
+}
+.ml-24 {
+  margin-left: 24px;
+}
+.mr-4 {
+  margin-right: 4px;
+}
+.mr-10 {
+  margin-right: 10px;
+}
+
+.p-8 {
+  padding: 8px;
+}
+.p-16 {
+  padding: 16px;
+}
+.p-24 {
+  padding: 24px;
+}
+.py-8 {
+  padding: 8px 0;
+}
+
+/* ========================================
+   Typography Utilities
+   ======================================== */
+
+.text-center {
+  text-align: center;
+}
+.text-bold {
+  font-weight: bold;
+}
+.text-small {
+  font-size: 12px;
+}
+.text-normal {
+  font-size: 14px;
+}
+.text-large {
+  font-size: 16px;
+}
+.text-xl {
+  font-size: 18px;
+}
+.text-xxl {
+  font-size: 24px;
+}
+
+.text-primary {
+  color: #1677ff;
+}
+.text-secondary {
+  color: #666;
+}
+.text-muted {
+  color: #888;
+}
+.text-success {
+  color: #52c41a;
+}
+.text-warning {
+  color: #faad14;
+}
+.text-error {
+  color: #ff4d4f;
+}
+
+/* ========================================
+   Display Utilities
+   ======================================== */
+
+.flex {
+  display: flex;
+}
+.flex-column {
+  flex-direction: column;
+}
+.flex-wrap {
+  flex-wrap: wrap;
+}
+.flex-1 {
+  flex: 1;
+}
+.justify-center {
+  justify-content: center;
+}
+.justify-between {
+  justify-content: space-between;
+}
+.align-center {
+  align-items: center;
+}
+
+.w-full {
+  width: 100%;
+}
+.w-180 {
+  width: 180px;
+}
+.w-200 {
+  width: 200px;
+}
+.w-250 {
+  width: 250px;
+}
+.w-300 {
+  width: 300px;
+}
+
+.max-w-150 {
+  max-width: 150px;
+}
+.max-w-220 {
+  max-width: 220px;
+}
+
+.h-40 {
+  height: 40px;
+}
+
+/* ========================================
+   Scrollbar Utilities
+   ======================================== */
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #bfbfbf #f0f0f0;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #bfbfbf;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: #f0f0f0;
+}
+
+/* ========================================
+   Form Utilities
+   ======================================== */
+
+.form-actions {
+  margin-top: 24px;
+  text-align: right;
+}
+
+.form-section-title {
+  margin: 24px 0 16px;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.form-subsection-title {
+  margin: 16px 0 12px;
+  font-weight: bold;
+  font-size: 14px;
+}
+
+/* ========================================
+   API Test Modal Utilities
+   ======================================== */
+
+/* API Test Modal positioned to avoid overlap with create form */
+:global(.api-test-modal) {
+  z-index: 1002 !important;
+}
+
+:global(.api-test-modal .ant-modal) {
+  top: max(60px, calc(50vh - 300px)) !important;
+  margin: 0 auto !important;
+  padding-bottom: 0 !important;
+  max-width: none !important;
+  width: 1200px !important;
+}
+
+:global(.api-test-modal .ant-modal-content) {
+  max-height: calc(100vh - 120px) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+:global(.api-test-modal .ant-modal-body) {
+  padding: 20px !important;
+  max-height: calc(100vh - 160px) !important;
+  overflow: auto !important;
+}
+
+:global(.api-test-modal .ant-modal-header) {
+  padding: 16px 24px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  border-radius: 8px 8px 0 0 !important;
+  flex-shrink: 0 !important;
+}
+
+:global(.api-test-modal .ant-modal-footer) {
+  padding: 10px 16px !important;
+  border-top: 1px solid #f0f0f0 !important;
+  border-radius: 0 0 8px 8px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Ensure the modal doesn't interfere with page scrolling */
+:global(.api-test-modal .ant-modal-wrap) {
+  overflow: auto !important;
+  padding: 0 !important;
+}
+
+/* Enable background interaction when modal is open */
+:global(.api-test-modal .ant-modal-mask) {
+  display: none !important;
+}
+
+/* Ensure proper positioning for smaller screens */
+@media (max-width: 1200px) {
+  :global(.api-test-modal .ant-modal) {
+    width: 95% !important;
+    max-width: 1200px !important;
+    margin: 0 auto !important;
+  }
+}
+
+/* Improve visual separation between modals */
+:global(.api-test-modal .ant-modal-content) {
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Ensure body can scroll when API test modal is open */
+:global(.api-test-modal-open) {
+  overflow: auto !important;
+}
+
+/* Prevent body scroll lock when API test modal is open */
+:global(body.api-test-modal-open) {
+  overflow: auto !important;
+  padding-right: 0 !important;
+}
+
+/* Ensure create job form remains interactive */
+:global(.ant-modal-root) {
+  position: relative !important;
+}
+
+/* Optimize modal positioning in viewport */
+:global(.api-test-modal .ant-modal-wrap) {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: auto !important;
+}
+
+.form-field-full {
+  width: 100%;
+}
+
+.form-field-70 {
+  width: 70%;
+}
+
+.form-field-30 {
+  width: 30%;
+}
+
+.form-field-flex {
+  display: flex;
+  width: 100%;
+}
+
+.form-header-row {
+  display: flex;
+  margin-bottom: 8px;
+}
+
+.form-header-field {
+  flex: 1;
+}
+
+.form-upload-container {
+  padding: 8px 0;
+}
+
+/* ========================================
+   Table Utilities
+   ======================================== */
+
+.table-highlight-row {
+  background-color: rgba(24, 144, 255, 0.05);
+}
+
+.table-action-button {
+  width: 100%;
+  text-align: left;
+}
+
+/* Table text ellipsis styles with proper overflow handling */
+.table-ellipsis-150 {
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+
+.table-ellipsis-220 {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+}
+
+/* Table cell with copy button layout */
+.table-cell-with-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.table-cell-text {
+  flex: 1;
+  min-width: 0; /* Allow text to shrink */
+}
+
+.table-cell-action {
+  flex-shrink: 0; /* Prevent copy button from shrinking */
+}
+
+/* Copy button optimizations */
+.copy-button {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: #666 !important;
+  transition: color 0.2s ease;
+}
+
+.copy-button:hover,
+.copy-button:focus {
+  color: #1677ff !important;
+  background: rgba(22, 119, 255, 0.06) !important;
+}
+
+/* ========================================
+   Card and Panel Utilities
+   ======================================== */
+
+.info-panel {
+  padding: 12px;
+  background-color: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  margin-top: 16px;
+}
+
+.info-panel-title {
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #52c41a;
+}
+
+.info-panel-content {
+  font-size: 12px;
+  color: #666;
+}
+
+.loading-container {
+  text-align: center;
+  padding: 50px 0;
+}
+
+.loading-text {
+  display: block;
+  margin-top: 16px;
+}
+
+/* ========================================
+   Modal and Dialog Utilities
+   ======================================== */
+
+.modal-content {
+  max-height: 400px;
+  overflow: auto;
+}
+
+.modal-pre {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.modal-response-container {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+}
+
+/* ========================================
+   Icon Utilities
+   ======================================== */
+
+.icon-tooltip {
+  margin-left: 5px;
+}
+
+.icon-button {
+  margin-left: 4px;
+  cursor: pointer;
+}
+
+.icon-primary {
+  color: #1890ff;
+  cursor: help;
+}
+
+.icon-large {
+  font-size: 24px;
+}
+
+/* ========================================
+   Status and Badge Utilities
+   ======================================== */
+
+.status-refresh {
+  font-size: 12px;
+  color: #888;
+  margin-right: 10px;
+}
+
+.log-level-text {
+  color: var(--level-color);
+  font-weight: bold;
+}
+
+/* ========================================
+   Component-specific Overrides
+   ======================================== */
+
+/* Ant Design Collapse customization */
+:global(.ant-collapse-item > .ant-collapse-header) {
+  padding-left: 0 !important;
+}
+
+:global(.ant-collapse-expand-icon) {
+  order: 2;
+}
+
+:global(.ant-collapse-header-text) {
+  order: 1;
+}
+
+/* More settings collapse */
+:global(.more-settings-collapse .ant-collapse-header) {
+  padding-left: 0 !important;
+}
+
+/* Form card styling */
+:global(.form-card .ant-card-body) {
+  padding: 24px;
+}
+
+.form-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Transparent button styling */
+.btn-transparent {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Test button active state with orange background */
+.test-button-active {
+  background-color: #ff8c00 !important;
+  border-color: #ff8c00 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 0 rgba(255, 140, 0, 0.1) !important;
+}
+
+.test-button-active:hover,
+.test-button-active:focus {
+  background-color: #ff7a00 !important;
+  border-color: #ff7a00 !important;
+  color: #fff !important;
+  box-shadow: 0 4px 8px rgba(255, 140, 0, 0.2) !important;
+}
+
+.test-button-active:active {
+  background-color: #e67300 !important;
+  border-color: #e67300 !important;
+  color: #fff !important;
+  box-shadow: 0 2px 0 rgba(230, 115, 0, 0.3) !important;
+}
+
+/* ========================================
+   Responsive Design
+   ======================================== */
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: 16px;
+  }
+
+  .form-field-70,
+  .form-field-30 {
+    width: 100%;
+  }
+
+  .w-300 {
+    width: 100%;
+  }
+}
+
+/* ========================================
+   Print Styles
+   ======================================== */
+
+/* ========================================
+   Right-side API Test Modal Utilities
+   ======================================== */
+
+/* Right-side API test modal styles */
+:global(.api-test-modal-right-side) {
+  z-index: 1002 !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal-wrap) {
+  overflow: visible !important;
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  pointer-events: none !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal) {
+  position: fixed !important;
+  right: 20px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  margin: 0 !important;
+  padding-bottom: 0 !important;
+  pointer-events: auto !important;
+  max-height: calc(100vh - 40px) !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal-content) {
+  height: 100%;
+  max-height: calc(100vh - 40px);
+  overflow: hidden;
+  margin: 0 !important;
+  pointer-events: auto !important;
+  border-radius: 8px !important;
+  box-shadow:
+    0 6px 16px 0 rgba(0, 0, 0, 0.08),
+    0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05) !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal-body) {
+  padding: 20px;
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+  pointer-events: auto !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal-header) {
+  padding: 16px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 0;
+  flex-shrink: 0;
+  pointer-events: auto !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+:global(.api-test-modal-right-side .ant-modal-footer) {
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+  margin-top: 0;
+  flex-shrink: 0;
+  pointer-events: auto !important;
+  border-radius: 0 0 8px 8px !important;
+}
+
+/* Responsive design for right-side modal */
+@media (max-width: 1400px) {
+  :global(.api-test-modal-right-side .ant-modal) {
+    width: 600px !important;
+    right: 10px !important;
+  }
+}
+
+@media (max-width: 1200px) {
+  :global(.api-test-modal-right-side .ant-modal) {
+    width: 500px !important;
+    right: 10px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  :global(.api-test-modal-right-side .ant-modal) {
+    position: fixed !important;
+    right: 50% !important;
+    top: 50% !important;
+    transform: translate(50%, -50%) !important;
+    width: 90vw !important;
+    max-width: 90vw !important;
+  }
+}
+
+@media print {
+  .page-container {
+    padding: 0;
+  }
+
+  .form-actions {
+    display: none;
+  }
+}

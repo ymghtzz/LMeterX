@@ -23,18 +23,11 @@ const App: React.FC = () => {
   return (
     <AntApp>
       <NavigationProvider>
-        <Layout style={{ minHeight: '100vh' }}>
+        <Layout className='app-layout'>
           <Header />
-          <Layout style={{ height: 'calc(100vh - 64px)' }}>
+          <Layout className='app-layout-content'>
             <Sidebar />
-            <Content
-              style={{
-                margin: '0px 0px',
-                padding: 0,
-                background: '#fff',
-                overflow: 'auto',
-              }}
-            >
+            <Content className='page-content'>
               <Routes>
                 <Route path='/' element={<Navigate to='/jobs' replace />} />
                 <Route path='/jobs' element={<BenchmarkJobs />} />

@@ -88,6 +88,19 @@ class HeaderItem(BaseModel):
     fixed: bool = True
 
 
+class CookieItem(BaseModel):
+    """
+    Represents a single HTTP cookie item for a request.
+
+    Attributes:
+        key: The cookie name.
+        value: The cookie value.
+    """
+
+    key: str
+    value: str
+
+
 class CertConfig(BaseModel):
     """
     Configuration for SSL/TLS certificates.
@@ -123,18 +136,23 @@ class TaskCreateReq(BaseModel):
     api_path: str = Field(
         default="/v1/chat/completions", description="API path to test"
     )
-    model: str = Field(..., description="Name of the model to test")
+    model: Optional[str] = Field(default="", description="Name of the model to test")
     duration: int = Field(
         default=300, ge=1, description="Duration of the test in seconds"
     )
     concurrent_users: int = Field(..., ge=1, description="Number of concurrent users")
     spawn_rate: int = Field(ge=1, description="Number of users to spawn per second")
-    chat_type: int = Field(ge=0, description="Type of chat interaction")
+    chat_type: Optional[int] = Field(
+        default=0, ge=0, description="Type of chat interaction"
+    )
     stream_mode: bool = Field(
         default=True, description="Whether to use streaming response"
     )
     headers: List[HeaderItem] = Field(
         default_factory=list, description="List of request headers"
+    )
+    cookies: List[CookieItem] = Field(
+        default_factory=list, description="List of request cookies"
     )
     cert_config: Optional[CertConfig] = Field(
         default=None, description="Certificate configuration"
@@ -144,6 +162,12 @@ class TaskCreateReq(BaseModel):
     )
     user_prompt: Optional[str] = Field(
         default="", description="User prompt for the model"
+    )
+    request_payload: Optional[str] = Field(
+        default="", description="Custom request payload for non-chat APIs (JSON string)"
+    )
+    field_mapping: Optional[Dict[str, str]] = Field(
+        default=None, description="Field mapping configuration for custom APIs"
     )
 
 
@@ -289,20 +313,23 @@ class Task(Base):
     name = Column(String(255), nullable=False)
     status = Column(String(32), nullable=False)
     target_host = Column(String(255), nullable=False)
-    model = Column(String(100), nullable=False)
+    model = Column(String(100), nullable=True)
     system_prompt = Column(Text, nullable=True)
     user_prompt = Column(Text, nullable=True)
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)
     duration = Column(Integer, nullable=False)
-    chat_type = Column(Integer, nullable=False)
+    chat_type = Column(Integer, nullable=True)
     log_file = Column(Text, nullable=True)
     result_file = Column(Text, nullable=True)
     cert_file = Column(String(255), nullable=True)
     key_file = Column(String(255), nullable=True)
     headers = Column(Text, nullable=True)
-    # api_path = Column(String(255), nullable=True)
+    cookies = Column(Text, nullable=True)
+    api_path = Column(String(255), nullable=True)
+    request_payload = Column(Text, nullable=True)
+    field_mapping = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -326,10 +353,10 @@ class TaskResult(Base):
     p90_latency = Column(Float, nullable=False)
     rps = Column(Float, nullable=False)
     avg_content_length = Column(Float, nullable=False)
-    total_tps = Column(Float, nullable=False)
-    completion_tps = Column(Float, nullable=False)
-    avg_total_tokens_per_req = Column(Float, nullable=False)
-    avg_completion_tokens_per_req = Column(Float, nullable=False)
+    total_tps = Column(Float, nullable=True, default=0.0)
+    completion_tps = Column(Float, nullable=True, default=0.0)
+    avg_total_tokens_per_req = Column(Float, nullable=True, default=0.0)
+    avg_completion_tokens_per_req = Column(Float, nullable=True, default=0.0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -349,8 +376,18 @@ class TaskResult(Base):
             rps=self.rps,
             avg_content_length=self.avg_content_length,
             created_at=self.created_at.isoformat() if self.created_at else "",
-            total_tps=self.total_tps,
-            completion_tps=self.completion_tps,
-            avg_total_tokens_per_req=self.avg_total_tokens_per_req,
-            avg_completion_tokens_per_req=self.avg_completion_tokens_per_req,
+            total_tps=self.total_tps if self.total_tps is not None else 0.0,
+            completion_tps=(
+                self.completion_tps if self.completion_tps is not None else 0.0
+            ),
+            avg_total_tokens_per_req=(
+                self.avg_total_tokens_per_req
+                if self.avg_total_tokens_per_req is not None
+                else 0.0
+            ),
+            avg_completion_tokens_per_req=(
+                self.avg_completion_tokens_per_req
+                if self.avg_completion_tokens_per_req is not None
+                else 0.0
+            ),
         )
