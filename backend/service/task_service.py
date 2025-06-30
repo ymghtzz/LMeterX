@@ -771,67 +771,6 @@ def _prepare_client_cert(body: TaskCreateReq):
     return client_cert
 
 
-async def _handle_streaming_response(response, full_url: str) -> Dict:
-    """Handle streaming response from API endpoint."""
-    stream_data = []
-    try:
-        # If status code is not 200, return error response immediately
-        if response.status_code != 200:
-            # Try to get response text for error details
-            try:
-                error_text = await response.aread()
-                error_content = error_text.decode("utf-8")
-            except Exception:
-                error_content = "Unable to read response content"
-
-            # Try to parse as JSON for better error information
-            try:
-                error_data = json.loads(error_content)
-            except (json.JSONDecodeError, ValueError):
-                error_data = error_content
-
-            return {
-                "status": "error",
-                "response": {
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers),
-                    "data": error_data,
-                    "is_stream": False,
-                },
-                "error": f"HTTP {response.status_code}. {error_content}",
-            }
-
-        # Process streaming data for successful responses
-        async for chunk in response.aiter_lines():
-            if chunk:
-                chunk_str = chunk.strip()
-                if chunk_str:
-                    stream_data.append(chunk_str)
-                    # Limit the number of chunks to prevent memory issues
-                    if len(stream_data) >= 1000:
-                        stream_data.append("... (truncated, too many chunks)")
-                        break
-
-        return {
-            "status": "success",
-            "response": {
-                "status_code": response.status_code,
-                "headers": dict(response.headers),
-                "data": stream_data,
-                "is_stream": True,
-            },
-            "error": None,
-        }
-
-    except Exception as stream_error:
-        logger.error(f"Error processing stream: {stream_error}")
-        return {
-            "status": "error",
-            "error": f"Stream processing error: {str(stream_error)}",
-            "response": None,
-        }
-
-
 async def _handle_non_streaming_response(response) -> Dict:
     """Handle non-streaming response from API endpoint."""
     # Try to parse response as JSON
@@ -867,6 +806,8 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
     Returns:
         A dictionary containing the test result.
     """
+    import asyncio
+
     import httpx
 
     logger.info(f"Testing API endpoint: {body.target_host}{body.api_path}")
@@ -898,12 +839,23 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
         # Prepare certificate configuration
         client_cert = _prepare_client_cert(body)
 
-        # Test with httpx client - increased timeout for slow APIs
+        # Optimized timeout settings
+        timeout_config = httpx.Timeout(
+            connect=10.0,  # connect timeout: 10s
+            read=30.0,  # read timeout: 30s (for testing purposes, not too long)
+            write=10.0,  # write timeout: 10s
+            pool=5.0,  # pool timeout: 5s
+        )
+
+        # Use connection limits for better performance
+        limits = httpx.Limits(max_keepalive_connections=20, max_connections=100)
+
+        # Test with httpx client - optimized configuration
         async with httpx.AsyncClient(
-            timeout=180.0, verify=False, cert=client_cert
+            timeout=timeout_config, verify=False, cert=client_cert, limits=limits
         ) as client:
             if body.stream_mode:
-                # Handle streaming response
+                # Handle streaming response with early termination
                 async with client.stream(
                     "POST", full_url, json=payload, headers=headers, cookies=cookies
                 ) as response:
@@ -915,11 +867,11 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
                 )
                 return await _handle_non_streaming_response(response)
 
-    except httpx.TimeoutException:
-        logger.error("Request timeout when testing API endpoint")
+    except httpx.TimeoutException as e:
+        logger.error(f"Request timeout when testing API endpoint: {e}")
         return {
             "status": "error",
-            "error": "Request timeout (180 seconds)",
+            "error": f"Request timeout: {str(e)}",
             "response": None,
         }
     except httpx.ConnectError as e:
@@ -929,10 +881,127 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
             "error": f"Connection error: {str(e)}",
             "response": None,
         }
+    except asyncio.TimeoutError:
+        logger.error("Asyncio timeout when testing API endpoint")
+        return {
+            "status": "error",
+            "error": "Operation timeout, please check network connection and target server status",
+            "response": None,
+        }
     except Exception as e:
         logger.error(f"Error testing API endpoint: {e}", exc_info=True)
         return {
             "status": "error",
             "error": f"Unexpected error: {str(e)}",
             "response": None,
+        }
+
+
+async def _handle_streaming_response(response, full_url: str) -> Dict:
+    """
+    Handle streaming response from API endpoint with optimized performance.
+    For testing purposes, we only need to verify connectivity and get initial response.
+    """
+    import asyncio
+
+    stream_data = []
+    try:
+        # If status code is not 200, return error response immediately
+        if response.status_code != 200:
+            try:
+                error_text = await response.aread()
+                error_content = error_text.decode("utf-8")
+            except Exception:
+                error_content = "Unable to read response content"
+
+            try:
+                error_data = json.loads(error_content)
+            except (json.JSONDecodeError, ValueError):
+                error_data = error_content
+
+            return {
+                "status": "error",
+                "response": {
+                    "status_code": response.status_code,
+                    "headers": dict(response.headers),
+                    "data": error_data,
+                    "is_stream": False,
+                },
+                "error": f"HTTP {response.status_code}. {error_content}",
+            }
+
+        # For testing purposes, we limit the time and data we collect
+        max_chunks = 50  # max chunks to collect for testing
+        max_duration = 15  # max duration to wait for testing
+
+        start_time = asyncio.get_event_loop().time()
+
+        # Process streaming data with time and chunk limits
+        async for chunk in response.aiter_lines():
+            if chunk:
+                chunk_str = chunk.strip()
+                if chunk_str:
+                    stream_data.append(chunk_str)
+
+                    # For testing, we can return early after getting a few valid chunks
+                    if len(stream_data) >= max_chunks:
+                        stream_data.append(
+                            f"... (testing completed, collected {len(stream_data)} chunks, connection is normal)"
+                        )
+                        break
+
+                    # Check if we've spent too much time
+                    current_time = asyncio.get_event_loop().time()
+                    if current_time - start_time > max_duration:
+                        stream_data.append(
+                            f"... (testing time reached {max_duration} seconds, connection is normal)"
+                        )
+                        break
+
+        # If we got at least one chunk, the connection is working
+        test_successful = len(stream_data) > 0
+
+        return {
+            "status": "success" if test_successful else "error",
+            "response": {
+                "status_code": response.status_code,
+                "headers": dict(response.headers),
+                "data": stream_data,
+                "is_stream": True,
+                "test_note": "Streaming connection test completed, only collected partial data for verification",
+            },
+            "error": None if test_successful else "No streaming data received",
+        }
+
+    except asyncio.TimeoutError:
+        logger.error("Stream processing timeout")
+        return {
+            "status": "error",
+            "error": "Streaming data processing timeout",
+            "response": {
+                "status_code": (
+                    response.status_code if hasattr(response, "status_code") else None
+                ),
+                "headers": (
+                    dict(response.headers) if hasattr(response, "headers") else {}
+                ),
+                "data": stream_data,
+                "is_stream": True,
+            },
+        }
+    except Exception as stream_error:
+        logger.error(f"Error processing stream: {stream_error}")
+        return {
+            "status": "error",
+            "error": f"Streaming data processing error: {str(stream_error)}",
+            "response": {
+                "status_code": (
+                    response.status_code if hasattr(response, "status_code") else None
+                ),
+                "headers": (
+                    dict(response.headers) if hasattr(response, "headers") else {}
+                ),
+                "data": stream_data,
+                "is_stream": True,
+            },
         }

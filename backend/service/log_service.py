@@ -4,7 +4,6 @@ Copyright (c) 2025, All Rights Reserved.
 """
 
 import os.path
-from collections import deque
 
 from starlette.responses import JSONResponse
 
@@ -26,38 +25,58 @@ def get_last_n_lines(file_path: str, n: int = 100) -> str:
         A string containing the last N lines. Returns an empty string on failure.
     """
     try:
-        with open(file_path, "rb") as f:
-            # Move to the end of the file
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            # For small files, just read all and return last n lines
             f.seek(0, os.SEEK_END)
-            block_size = 1024
-            lines_found: deque[str] = deque()
+            file_size = f.tell()
 
-            while f.tell() > 0 and len(lines_found) <= n:
-                # Calculate the position and size of the next block to read
-                seek_step = min(block_size, f.tell())
-                f.seek(-seek_step, os.SEEK_CUR)
-                chunk = f.read(seek_step)
-                f.seek(-seek_step, os.SEEK_CUR)
+            # If file is small (< 50KB), read all lines and return last n
+            if file_size < 50 * 1024:
+                f.seek(0)
+                all_lines = f.readlines()
+                return "".join(all_lines[-n:]) if all_lines else ""
 
-                # Prepend to any partial line from previous chunk
-                if lines_found:
-                    lines_found[0] = chunk.decode("utf-8", "ignore") + lines_found[0]
-                else:
-                    lines_found.append(chunk.decode("utf-8", "ignore"))
+            # For larger files, use a more reliable approach
+            # Start from end and read backwards in larger chunks
+            buffer_size = 8192
+            lines: list[str] = []
+            buffer = ""
+            position = file_size
 
-                # Split into lines
-                split_lines = lines_found[0].splitlines()
+            while position > 0 and len(lines) < n:
+                # Calculate chunk size to read
+                chunk_size = min(buffer_size, position)
+                position -= chunk_size
 
-                # If we have more than one line, the first one is partial
-                if len(split_lines) > 1:
-                    lines_found[0] = split_lines.pop(0)
-                    for line in reversed(split_lines):
-                        lines_found.insert(1, line)
+                # Read chunk from current position
+                f.seek(position)
+                chunk = f.read(chunk_size)
 
-                if f.tell() == 0:
-                    break
+                # Prepend chunk to buffer
+                buffer = chunk + buffer
 
-            return "\n".join(list(lines_found)[-n:])
+                # Split buffer into lines
+                lines_in_buffer = buffer.split("\n")
+
+                # Keep the first part (might be incomplete line) in buffer
+                buffer = lines_in_buffer[0]
+
+                # Add complete lines to our lines list (in reverse order since we're reading backwards)
+                for line in reversed(lines_in_buffer[1:]):
+                    lines.insert(0, line)
+                    if len(lines) >= n:
+                        break
+
+                # If we've reached the beginning of file, add the remaining buffer as a line
+                if position == 0 and buffer:
+                    lines.insert(0, buffer)
+
+            # Take last n lines and join them with newlines
+            result_lines = lines[-n:] if len(lines) > n else lines
+            return "\n".join(result_lines) + (
+                "\n" if result_lines and not result_lines[-1].endswith("\n") else ""
+            )
+
     except Exception as e:
         logger.error(f"Failed to read log file: {str(e)}")
         return ""
