@@ -931,7 +931,7 @@ async def _handle_streaming_response(response, full_url: str) -> Dict:
             }
 
         # For testing purposes, we limit the time and data we collect
-        max_chunks = 50  # max chunks to collect for testing
+        max_chunks = 200  # max chunks to collect for testing
         max_duration = 15  # max duration to wait for testing
 
         start_time = asyncio.get_event_loop().time()

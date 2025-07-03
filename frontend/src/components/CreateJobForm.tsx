@@ -338,9 +338,39 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleTestAPI = async () => {
     try {
       setTesting(true);
-      const values = await form.validateFields();
 
-      // Validate request payload for custom APIs
+      // Only validate required fields for testing, not API Field Mapping fields
+      const requiredFields = [
+        'target_host',
+        'api_path',
+        'model',
+        'duration',
+        'concurrent_users',
+        'stream_mode',
+      ];
+
+      // Get current api_path to determine API type
+      const currentApiPath = form.getFieldValue('api_path');
+      const isCurrentlyChatCompletions =
+        !currentApiPath || currentApiPath === '/v1/chat/completions';
+
+      // Add chat_type validation for chat completions API
+      if (isCurrentlyChatCompletions) {
+        requiredFields.push('chat_type');
+      }
+
+      // Add request_payload validation for custom APIs
+      if (!isCurrentlyChatCompletions) {
+        requiredFields.push('request_payload');
+      }
+
+      // Validate only the required fields for testing
+      await form.validateFields(requiredFields);
+
+      // Get all form values after validation
+      const values = form.getFieldsValue();
+
+      // Additional validation for request payload JSON format (custom APIs only)
       if (
         values.api_path !== '/v1/chat/completions' &&
         !values.request_payload

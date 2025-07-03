@@ -1002,6 +1002,7 @@ class LLMTestUser(HttpUser):
                 try:
                     # Process as streaming response
                     for chunk in response.iter_lines():
+                        task_logger.info(f"Chunk: {chunk}")
                         error_msg = StreamProcessor.check_chunk_error(
                             chunk, field_mapping, task_logger
                         )
