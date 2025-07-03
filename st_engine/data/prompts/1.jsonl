@@ -1,20 +1,20 @@
-{"id":"1","prompt":["每个骰子的值是什么"],"language":"cn"}
-{"id":"2","prompt":["这张照片有几个人、几只狗？"],"language":"cn"}
-{"id":"3","prompt":["I will give you some pictures, and the pictures are in different art styles listed following. Which kind of art style does each uploaded picture belong to? Give the answer in the format: Picture {#NO} -> {#STYLE}. The STYLE should be exactly one of the listed kinds of art style I give to you. If you can not tell which one, the STYLE should be ‘unknown’. The listed art styles are (separated by ;): Egyptian Art;Greek Art;Roman Art;Byzantine Art;Romanesque Art;Gothic Art;Early Christian Art;Islamic Art;Carolingian Art;Ottonian Art;Pre-Romanesque Art;Insular Art;Minoan Art;Hiberno-Saxon Art;Mycenaean Art;Viking Art;Celtic Art;Coptic Art;Macedonian Art;Persian Art;Etruscan Art;Chinese Art;Japanese Art (Heian period);Indian Art (Gupta period);Pre-Columbian Art;Rococo;Neoclassicism;Romanticism;Genre Painting;Portraiture;Hudson River School;Realism;Pre-Raphaelite Brotherhood;Impressionism;Post-Impressionism;Symbolism;Art Nouveau;Orientalism;Landscape Painting;Fauvism;Cubism;Expressionism;Academic Art;Dada;Surrealism;Abstract Expressionism;Pop Art;Op Art;Minimalism;Conceptual Art;Stukism;Photorealism;Street Art;Digital Art;New Media Art;Hyperrealism;Post-Internet Art;Insta-Art/Social Media Art"],"language":"en"}
-{"id":"4","prompt":["我家是中式装修风格，我想给客厅挑一个沙发，我选哪个比较好？"],"language":"cn"}
-{"id":"5","prompt":["描述下这张图片的内容"],"language":"cn"}
-{"id":"6","prompt":["Please identify and label all objects in the following image."],"language":"en"}
-{"id":"7","prompt":["Please read the text in this image and return the information in the following JSON format (note xxx is a placeholder, if the information is not available in the image, put 'N/A' instead). {'Surname': xxx, 'Given Name': xxx, 'uSCls #': xxx, 'Category': xxx, 'Country of Birh': xxx, 'Date of Birth': xxx, 'SEX': xxx, 'Card Expires': xxx, 'Resident Since': xxx}"],"language":"en"}
-{"id":"8","prompt":["图中内容的markdown格式是什么样子的"],"language":"cn"}
-{"id":"9","prompt":["Could you please provide a brief introduction to the distinct architectural landmarks of the city in the image?"],"language":"en"}
-{"id":"10","prompt":["我老花看不清字，而且对花生过敏，请你帮我看看我能吃这个吗？"],"language":"cn"}
-{"id":"11","prompt":["在图片中，穿黑色球衣的球员和穿绿色球衣的球员谁离足球更近？"],"language":"cn"}
-{"id":"12","prompt":["分析一下这个图片"],"language":"cn"}
-{"id":"13","prompt":["What are the consequences of the easy decisions shown in this image?"],"language":"en"}
-{"id":"14","prompt":["Based on this image, please predict what will happen next?"],"language":"en"}
-{"id":"15","prompt":["左边给定的是纸盒的外表面，下面哪一项不能由它折叠而成？"],"language":"cn"}
-{"id":"16","prompt":["用python实现这个流程图"],"language":"cn"}
-{"id":"17","prompt":["图中解题过程有误，请你给我一个简洁的解答过程以及答案"],"language":"cn"}
-{"id":"18","prompt":["简单解释一下图中糕点的烘烤过程"],"language":"cn"}
-{"id":"19","prompt":["给图中的商品生成一段广告语"],"language":"cn"}
-{"id":"20","prompt":["Can you be my tour guide and give me a brief introduction to this city and its attractions?"],"language":"en"}
+{"id":"1","prompt":["每个骰子的值是什么"],"image_path":["1.png"],"language":"cn"}
+{"id":"2","prompt":["这张照片有几个人、几只狗？"],"image_path":["2.png"],"language":"cn"}
+{"id":"3","prompt":["I will give you some pictures, and the pictures are in different art styles listed following. Which kind of art style does each uploaded picture belong to? Give the answer in the format: Picture {#NO} -> {#STYLE}. The STYLE should be exactly one of the listed kinds of art style I give to you. If you can not tell which one, the STYLE should be ‘unknown’. The listed art styles are (separated by ;): Egyptian Art;Greek Art;Roman Art;Byzantine Art;Romanesque Art;Gothic Art;Early Christian Art;Islamic Art;Carolingian Art;Ottonian Art;Pre-Romanesque Art;Insular Art;Minoan Art;Hiberno-Saxon Art;Mycenaean Art;Viking Art;Celtic Art;Coptic Art;Macedonian Art;Persian Art;Etruscan Art;Chinese Art;Japanese Art (Heian period);Indian Art (Gupta period);Pre-Columbian Art;Rococo;Neoclassicism;Romanticism;Genre Painting;Portraiture;Hudson River School;Realism;Pre-Raphaelite Brotherhood;Impressionism;Post-Impressionism;Symbolism;Art Nouveau;Orientalism;Landscape Painting;Fauvism;Cubism;Expressionism;Academic Art;Dada;Surrealism;Abstract Expressionism;Pop Art;Op Art;Minimalism;Conceptual Art;Stukism;Photorealism;Street Art;Digital Art;New Media Art;Hyperrealism;Post-Internet Art;Insta-Art/Social Media Art"],"image_path":["3.png"],"language":"en"}
+{"id":"4","prompt":["我家是中式装修风格，我想给客厅挑一个沙发，我选哪个比较好？"],"image_path":["4.png"],"language":"cn"}
+{"id":"5","prompt":["描述下这张图片的内容"],"image_path":["5.png"],"language":"cn"}
+{"id":"6","prompt":["Please identify and label all objects in the following image."],"image_path":["6.png"],"language":"en"}
+{"id":"7","prompt":["Please read the text in this image and return the information in the following JSON format (note xxx is a placeholder, if the information is not available in the image, put 'N/A' instead). {'Surname': xxx, 'Given Name': xxx, 'uSCls #': xxx, 'Category': xxx, 'Country of Birh': xxx, 'Date of Birth': xxx, 'SEX': xxx, 'Card Expires': xxx, 'Resident Since': xxx}"],"image_path":["7.png"],"language":"en"}
+{"id":"8","prompt":["图中内容的markdown格式是什么样子的"],"image_path":["8.png"],"language":"cn"}
+{"id":"9","prompt":["Could you please provide a brief introduction to the distinct architectural landmarks of the city in the image?"],"image_path":["9.png"],"language":"en"}
+{"id":"10","prompt":["我老花看不清字，而且对花生过敏，请你帮我看看我能吃这个吗？"],"image_path":["10.png"],"language":"cn"}
+{"id":"11","prompt":["在图片中，穿黑色球衣的球员和穿绿色球衣的球员谁离足球更近？"],"image_path":["11.png"],"language":"cn"}
+{"id":"12","prompt":["分析一下这个图片"],"image_path":["12.png"],"language":"cn"}
+{"id":"13","prompt":["What are the consequences of the easy decisions shown in this image?"],"image_path":["13.png"],"language":"en"}
+{"id":"14","prompt":["Based on this image, please predict what will happen next?"],"image_path":["14.png"],"language":"en"}
+{"id":"15","prompt":["左边给定的是纸盒的外表面，下面哪一项不能由它折叠而成？"],"image_path":["15.png"],"language":"cn"}
+{"id":"16","prompt":["用python实现这个流程图"],"image_path":["16.png"],"language":"cn"}
+{"id":"17","prompt":["图中解题过程有误，请你给我一个简洁的解答过程以及答案"],"image_path":["17.png"],"language":"cn"}
+{"id":"18","prompt":["简单解释一下图中糕点的烘烤过程"],"image_path":["18.png"],"language":"cn"}
+{"id":"19","prompt":["给图中的商品生成一段广告语"],"image_path":["19.png"],"language":"cn"}
+{"id":"20","prompt":["Can you be my tour guide and give me a brief introduction to this city and its attractions?"],"image_path":["20.png"],"language":"en"}

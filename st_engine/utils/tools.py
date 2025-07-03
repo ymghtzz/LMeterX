@@ -134,11 +134,12 @@ def load_data(
                                 prompts.append((json_obj["id"], prompt))
                             else:
                                 logger.warning(f"Invalid prompt format: {line}")
+
                 except json.JSONDecodeError:
                     logger.error(f"Error parsing line: {line}")
+
     except Exception as e:
         logger.error(f"Error loading prompts: {str(e)}")
-
     return prompts
 
 
@@ -208,7 +209,8 @@ def encode_image(image_path):
     Returns:
         str: The base64 encoded image string.
     """
-    with open(image_path, "rb") as image_file:
+    image_full_path = os.path.join(BASE_DIR, "data", "pic", image_path)
+    with open(image_full_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode("utf-8")
 
 
