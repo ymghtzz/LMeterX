@@ -92,7 +92,16 @@ class FilePathUtils:
 
         normalized_path = os.path.normpath(file_path)
 
-        if os.path.isabs(normalized_path):
+        # Handle special case: paths starting with /upload_files/ should be treated as relative
+        if normalized_path.startswith("/upload_files/"):
+            # Extract relative part after /upload_files/
+            relative_part = normalized_path[len("/upload_files/") :]
+            if relative_part.startswith("../"):
+                raise ValueError(
+                    f"Invalid relative path (contains parent directory): {file_path}"
+                )
+            absolute_path = os.path.join(UPLOAD_FOLDER, relative_part)
+        elif os.path.isabs(normalized_path):
             # Handle absolute path - ensure it's within upload folder
             upload_folder_abs = os.path.abspath(UPLOAD_FOLDER)
             if not normalized_path.startswith(upload_folder_abs):
@@ -504,10 +513,22 @@ def init_prompt_queue(
         effective_logger.info("Processing test_data as JSONL content string")
         return init_prompt_queue_from_string(test_data, task_logger)
 
-    # Case 4: test_data is an existing file path
-    if os.path.exists(test_data):
-        effective_logger.info(f"Processing test_data as file path: {test_data}")
-        return init_prompt_queue_from_file(test_data, task_logger)
+    # Case 4: test_data is a file path - handle both absolute and relative paths
+    effective_logger.info(f"Processing test_data as file path: {test_data}")
+
+    # Try to resolve the path using FilePathUtils for upload files
+    try:
+        # First, try to resolve as an upload file path (handles both relative and absolute paths)
+        resolved_path = FilePathUtils.resolve_upload_file_path(test_data)
+        effective_logger.info(f"Resolved upload file path: {resolved_path}")
+        return init_prompt_queue_from_file(resolved_path, task_logger)
+    except (ValueError, FileNotFoundError) as e:
+        effective_logger.warning(f"Failed to resolve as upload file path: {e}")
+
+        # Fallback: try as direct file path for backward compatibility
+        if os.path.exists(test_data):
+            effective_logger.info(f"Using direct file path: {test_data}")
+            return init_prompt_queue_from_file(test_data, task_logger)
 
     # Invalid test_data provided
     raise ValueError(

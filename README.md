@@ -21,7 +21,7 @@ LMeterX is a professional large language model performance testing platform that
 - **Universal compatibility**: Supports any language/multimodal/CoT model (GPT/Claude/Llama, etc.) service API stress testing
 - **Smart load testing**: Precise concurrency control & Real user simulation
 - **Professional metrics**: TTFT, TPS, RPS, success/error rate, etc
-- **Multi-scenario support**: Text conversations & Multimodal (image+text)
+- **Multi-scenario support**: Text conversations & Multimodal (image+text) & Custom dataset
 - **Visualize the results**: Performance reports & Model arena
 - **Real-time monitoring**: Hierarchical monitoring of tasks and services
 - **Enterprise ready**: Docker deployment & Web management console & Scalable architecture
@@ -131,7 +131,6 @@ LMeterX/
 ## 🗺️ Development Roadmap
 
 ### In Development
-- [ ] Support for user-defined load test datasets
 - [ ] Support for client resource monitoring
 
 ### Planned

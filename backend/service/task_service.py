@@ -32,6 +32,64 @@ from utils.be_config import UPLOAD_FOLDER
 from utils.logger import logger
 
 
+def _normalize_file_path(file_path: str) -> str:
+    """
+    Normalize file path to ensure cross-service compatibility.
+    Converts various absolute path formats to relative paths.
+
+    Args:
+        file_path: The file path to normalize
+
+    Returns:
+        The normalized relative path
+    """
+    if not file_path or file_path.strip() == "":
+        return ""
+
+    # Convert various absolute path formats to relative paths
+    if file_path.startswith(UPLOAD_FOLDER + "/"):
+        return file_path.replace(UPLOAD_FOLDER + "/", "")
+    elif file_path.startswith("/app/upload_files/"):
+        # For backward compatibility with existing Docker paths
+        return file_path.replace("/app/upload_files/", "")
+    elif file_path.startswith("/upload_files/"):
+        # Handle paths starting with /upload_files/
+        return file_path[len("/upload_files/") :]
+
+    return file_path
+
+
+def _get_cert_config(body: TaskCreateReq) -> Tuple[str, str]:
+    """
+    Get and normalize certificate configuration from the request body.
+
+    Args:
+        body: The task creation request body
+
+    Returns:
+        A tuple of (cert_file, key_file) normalized paths
+    """
+    cert_file = ""
+    key_file = ""
+
+    if body.cert_config:
+        cert_file = body.cert_config.cert_file or ""
+        key_file = body.cert_config.key_file or ""
+    else:
+        # Try to get certificate configuration from upload service
+        from service.upload_service import get_task_cert_config
+
+        cert_config = get_task_cert_config(body.temp_task_id)
+        cert_file = cert_config.get("cert_file", "")
+        key_file = cert_config.get("key_file", "")
+
+    # Normalize paths
+    cert_file = _normalize_file_path(cert_file)
+    key_file = _normalize_file_path(key_file)
+
+    return cert_file, key_file
+
+
 async def get_tasks_svc(
     request: Request,
     page: int = Query(1, ge=1, alias="page"),
@@ -251,35 +309,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     task_id = str(uuid.uuid4())
     logger.info(f"Creating task '{body.name}' with ID: {task_id}")
 
-    cert_file = ""
-    key_file = ""
-    if body.cert_config:
-        cert_file = body.cert_config.cert_file or ""
-        key_file = body.cert_config.key_file or ""
-    else:
-        # Try to get certificate configuration from upload service
-        from service.upload_service import get_task_cert_config
-
-        cert_config = get_task_cert_config(body.temp_task_id)
-        cert_file = cert_config.get("cert_file", "")
-        key_file = cert_config.get("key_file", "")
-
-    # Convert absolute paths to relative paths for cross-service compatibility
-    if cert_file:
-        # Convert backend upload path to relative path that st_engine can access
-        if cert_file.startswith(UPLOAD_FOLDER + "/"):
-            cert_file = cert_file.replace(UPLOAD_FOLDER + "/", "")
-        elif cert_file.startswith("/app/upload_files/"):
-            # For backward compatibility with existing Docker paths
-            cert_file = cert_file.replace("/app/upload_files/", "")
-
-    if key_file:
-        # Convert backend upload path to relative path that st_engine can access
-        if key_file.startswith(UPLOAD_FOLDER + "/"):
-            key_file = key_file.replace(UPLOAD_FOLDER + "/", "")
-        elif key_file.startswith("/app/upload_files/"):
-            # For backward compatibility with existing Docker paths
-            key_file = key_file.replace("/app/upload_files/", "")
+    cert_file, key_file = _get_cert_config(body)
 
     # Convert headers from a list of objects to a dictionary, then to a JSON string.
     headers = {
@@ -296,6 +326,16 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         if cookie.key and cookie.value
     }
     cookies_json = json.dumps(cookies)
+
+    # Normalize test_data path to ensure cross-service compatibility
+    test_data = body.test_data or ""
+    if (
+        test_data
+        and not test_data.strip().lower() in ("", "default")
+        and not test_data.strip().startswith("{")
+    ):
+        # If test_data is a file path, convert it to relative path
+        test_data = _normalize_file_path(test_data)
 
     db = request.state.db
     try:
@@ -325,7 +365,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             api_path=body.api_path,
             request_payload=body.request_payload,
             field_mapping=field_mapping_json,
-            test_data=body.test_data,
+            test_data=test_data,
         )
 
         db.add(new_task)

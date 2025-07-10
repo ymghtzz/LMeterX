@@ -104,22 +104,42 @@ async def process_cert_files(
     for file in files:
         if file and file.filename and allowed_file(file.filename, "cert"):
             filename = secure_filename(file.filename)
-            file_path = os.path.join(task_upload_dir, filename)
-            with open(file_path, "wb") as f:
+            absolute_file_path = os.path.join(task_upload_dir, filename)
+            with open(absolute_file_path, "wb") as f:
                 f.write(await file.read())
 
             file_info = {
                 "originalname": filename,
-                "path": file_path,
-                "size": os.path.getsize(file_path),
+                "path": absolute_file_path,  # Keep absolute path for file info
+                "size": os.path.getsize(absolute_file_path),
             }
             uploaded_files_info.append(file_info)
             logger.info(f"Certificate file uploaded successfully, type: {cert_type}")
 
     # Retrieve existing config for the task, if any.
     existing_config = get_task_cert_config(task_id)
-    # Determine the new config based on the uploaded files.
-    cert_config = determine_cert_config(uploaded_files_info, cert_type, existing_config)
+    # Determine the new config based on the uploaded files - use relative paths
+    uploaded_files_with_relative_paths = []
+    for file_info in uploaded_files_info:
+        # Convert absolute path to relative path for cert config
+        abs_path = str(file_info["path"])
+        if abs_path.startswith(UPLOAD_FOLDER + "/"):
+            relative_path = abs_path.replace(UPLOAD_FOLDER + "/", "")
+        else:
+            # Fallback: extract relative part
+            relative_path = os.path.join(task_id, os.path.basename(abs_path))
+
+        uploaded_files_with_relative_paths.append(
+            {
+                "originalname": file_info["originalname"],
+                "path": relative_path,  # Use relative path for config
+                "size": file_info["size"],
+            }
+        )
+
+    cert_config = determine_cert_config(
+        uploaded_files_with_relative_paths, cert_type, existing_config
+    )
     # Save the updated configuration.
     save_task_cert_config(task_id, cert_config)
 
@@ -146,16 +166,20 @@ async def process_dataset_files(task_id: str, files: List[UploadFile]):
     for file in files:
         if file and file.filename and allowed_file(file.filename, "dataset"):
             filename = secure_filename(file.filename)
-            file_path = os.path.join(task_upload_dir, filename)
-            with open(file_path, "wb") as f:
+            absolute_file_path = os.path.join(task_upload_dir, filename)
+            with open(absolute_file_path, "wb") as f:
                 f.write(await file.read())
+
+            # Return relative path from upload folder for cross-service compatibility
+            relative_file_path = os.path.join(task_id, filename)
 
             file_info = {
                 "originalname": filename,
-                "path": file_path,
-                "size": os.path.getsize(file_path),
+                "path": absolute_file_path,  # Keep absolute path for file info
+                "size": os.path.getsize(absolute_file_path),
             }
             uploaded_files_info.append(file_info)
+            file_path = relative_file_path  # Use relative path for test_data
             logger.info(f"Dataset file uploaded successfully: {filename}")
 
     return uploaded_files_info, file_path

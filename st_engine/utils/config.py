@@ -20,7 +20,15 @@ LOG_TASK_DIR = os.path.join(LOG_DIR, "task")
 DATA_DIR = os.path.join(ST_ENGINE_DIR, "data")
 PROMPTS_DIR = os.path.join(DATA_DIR, "prompts")
 IMAGES_DIR = os.path.join(DATA_DIR, "pic")
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "upload_files")
+
+# === UPLOAD PATHS ===
+# Handle different environments: Docker vs local development
+if os.path.exists("/app") and os.getcwd().startswith("/app"):
+    # Docker environment: use /app/upload_files
+    UPLOAD_FOLDER = "/app/upload_files"
+else:
+    # Local development: use project root upload_files
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, "upload_files")
 
 # === TASK STATUS CONSTANTS ===
 TASK_STATUS_CREATED = "created"
