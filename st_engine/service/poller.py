@@ -5,10 +5,10 @@ Copyright (c) 2025, All Rights Reserved.
 
 import time
 
-from config.config import TASK_STATUS_FAILED, TASK_STATUS_LOCKED, TASK_STATUS_STOPPED
 from db.database import get_db_session
 from service.task_service import TaskService
-from utils.logger import st_logger as logger
+from utils.config import TASK_STATUS_FAILED, TASK_STATUS_LOCKED, TASK_STATUS_STOPPED
+from utils.logger import logger
 
 
 def task_create_poller():

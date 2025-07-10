@@ -9,7 +9,7 @@ import sys
 
 from loguru import logger
 
-from config.config import LOG_DIR
+from utils.be_config import LOG_DIR
 
 # --- Logger Configuration ---
 
@@ -40,5 +40,3 @@ logger.add(
     colorize=True,
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",  # noqa: E501
 )
-
-be_logger = logger

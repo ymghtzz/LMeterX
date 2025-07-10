@@ -8,7 +8,7 @@ import sys
 
 from loguru import logger
 
-from config.config import LOG_DIR, LOG_TASK_DIR
+from utils.config import LOG_DIR, LOG_TASK_DIR
 
 # --- Logger Configuration ---
 
@@ -29,7 +29,7 @@ def is_system_log(record):
 # Configure the file logger for system logs
 logger.add(
     os.path.join(LOG_DIR, "engine.log"),  # Path to the log file.
-    rotation="5 MB",  # Rotates the log file when it reaches 5 MB.
+    rotation="10 MB",  # Rotates the log file when it reaches 5 MB.
     retention="10 days",  # Retains log files for 10 days.
     compression="zip",  # Compresses rotated log files.
     encoding="utf-8",  # Sets the file encoding.
@@ -66,7 +66,7 @@ def add_task_log_sink(task_id: str) -> int:
     try:
         handler_id = logger.add(
             task_log_file,
-            rotation="5 MB",
+            rotation="20 MB",
             retention="10 days",
             compression="zip",
             encoding="utf-8",
@@ -100,6 +100,3 @@ def remove_task_log_sink(handler_id: int):
             )
     else:
         logger.warning(f"Skipping removal of invalid handler ID: {handler_id}")
-
-
-st_logger = logger

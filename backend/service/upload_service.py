@@ -11,15 +11,18 @@ from fastapi import File, Form, Request, UploadFile
 from starlette.responses import JSONResponse
 from werkzeug.utils import secure_filename
 
-from config.config import UPLOAD_FOLDER
 from model.upload import UploadedFileInfo, UploadFileRsp
-from utils.logger import be_logger as logger
+from utils.be_config import UPLOAD_FOLDER
+from utils.logger import logger
 
 # Ensure the global upload folder exists.
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Define allowed file extensions for different upload types.
-ALLOWED_EXTENSIONS = {"cert": {"crt", "pem", "key"}, "dataset": {"json", "csv", "txt"}}
+ALLOWED_EXTENSIONS = {
+    "cert": {"crt", "pem", "key"},
+    "dataset": {"json", "csv", "txt", "jsonl"},
+}
 
 # In-memory dictionary to store certificate configurations per task.
 _task_cert_configs: Dict[str, Dict[str, str]] = {}
@@ -123,6 +126,41 @@ async def process_cert_files(
     return uploaded_files_info, cert_config
 
 
+async def process_dataset_files(task_id: str, files: List[UploadFile]):
+    """
+    Processes uploaded dataset files, saves them, and returns file information.
+
+    Args:
+        task_id: The ID of the task.
+        files: The list of uploaded files.
+
+    Returns:
+        A tuple containing the list of uploaded file info and the file path.
+    """
+    task_upload_dir = os.path.join(UPLOAD_FOLDER, task_id)
+    os.makedirs(task_upload_dir, exist_ok=True)
+
+    uploaded_files_info = []
+    file_path = None
+
+    for file in files:
+        if file and file.filename and allowed_file(file.filename, "dataset"):
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(task_upload_dir, filename)
+            with open(file_path, "wb") as f:
+                f.write(await file.read())
+
+            file_info = {
+                "originalname": filename,
+                "path": file_path,
+                "size": os.path.getsize(file_path),
+            }
+            uploaded_files_info.append(file_info)
+            logger.info(f"Dataset file uploaded successfully: {filename}")
+
+    return uploaded_files_info, file_path
+
+
 async def upload_file_svc(
     request: Request,
     files: List[UploadFile] = File(..., description="The files to upload"),
@@ -158,6 +196,17 @@ async def upload_file_svc(
             task_id=effective_task_id,
             files=[UploadedFileInfo(**f) for f in uploaded_files],
             cert_config=cert_config,
+        )
+
+    if type == "dataset":
+        uploaded_files, file_path = await process_dataset_files(
+            effective_task_id, files
+        )
+        return UploadFileRsp(
+            message="Dataset files uploaded successfully",
+            task_id=effective_task_id,
+            files=[UploadedFileInfo(**f) for f in uploaded_files],
+            test_data=file_path,  # Return the file path for backend processing
         )
 
     # In the future, it could handle other file types here.

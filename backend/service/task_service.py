@@ -12,7 +12,6 @@ from fastapi import HTTPException, Query, Request
 from sqlalchemy import func, or_, select, text
 from starlette.responses import JSONResponse
 
-from config.config import UPLOAD_FOLDER
 from model.task import (
     ComparisonMetrics,
     ComparisonRequest,
@@ -29,7 +28,8 @@ from model.task import (
     TaskResultRsp,
     TaskStatusRsp,
 )
-from utils.logger import be_logger as logger
+from utils.be_config import UPLOAD_FOLDER
+from utils.logger import logger
 
 
 async def get_tasks_svc(
@@ -53,7 +53,7 @@ async def get_tasks_svc(
     Returns:
         A `TaskResponse` object containing the list of tasks and pagination details.
     """
-    task_list = []
+    task_list: List[Dict] = []
     pagination = Pagination()
     try:
         db = request.state.db
@@ -100,8 +100,45 @@ async def get_tasks_svc(
         )
 
         # Format the task data for the response.
-        task_list = [
-            {
+        task_list = []
+        for task in tasks:
+            # Convert headers from JSON string back to a list of objects for the frontend.
+            # headers_list = []
+            # if task.headers:
+            #     try:
+            #         headers_dict = json.loads(task.headers)
+            #         headers_list = [
+            #             {"key": k, "value": v} for k, v in headers_dict.items()
+            #         ]
+            #     except json.JSONDecodeError:
+            #         logger.warning(
+            #             f"Could not parse headers JSON for task {task.id}: {task.headers}"
+            #         )
+
+            # Convert cookies from JSON string back to a list of objects for the frontend.
+            # cookies_list = []
+            # if task.cookies:
+            #     try:
+            #         cookies_dict = json.loads(task.cookies)
+            #         cookies_list = [
+            #             {"key": k, "value": v} for k, v in cookies_dict.items()
+            #         ]
+            #     except json.JSONDecodeError:
+            #         logger.warning(
+            #             f"Could not parse cookies JSON for task {task.id}: {task.cookies}"
+            #         )
+
+            # Parse field_mapping from JSON string back to dictionary
+            field_mapping_dict = {}
+            if task.field_mapping:
+                try:
+                    field_mapping_dict = json.loads(task.field_mapping)
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"Could not parse field_mapping JSON for task {task.id}: {task.field_mapping}"
+                    )
+
+            task_data = {
                 "id": task.id,
                 "name": task.name,
                 "status": task.status,
@@ -109,18 +146,21 @@ async def get_tasks_svc(
                 "api_path": task.api_path,
                 "model": task.model,
                 "request_payload": task.request_payload,
-                "field_mapping": task.field_mapping,
+                "field_mapping": field_mapping_dict,
                 "concurrent_users": task.concurrent_users,
                 "duration": task.duration,
                 "spawn_rate": task.spawn_rate,
                 "chat_type": task.chat_type,
                 "stream_mode": str(task.stream_mode).lower() == "true",
-                "error_message": task.error_message,
+                "headers": "",
+                "cookies": "",
+                "cert_config": "",
+                "system_prompt": task.system_prompt or "",
+                "test_data": task.test_data or "",
                 "created_at": task.created_at.isoformat() if task.created_at else None,
                 "updated_at": task.updated_at.isoformat() if task.updated_at else None,
             }
-            for task in tasks
-        ]
+            task_list.append(task_data)
     except Exception as e:
         logger.error(f"Error getting tasks: {e}", exc_info=True)
         return TaskResponse(data=[], pagination=Pagination(), status="error")
@@ -227,17 +267,19 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     # Convert absolute paths to relative paths for cross-service compatibility
     if cert_file:
         # Convert backend upload path to relative path that st_engine can access
-        if cert_file.startswith("/app/upload_files/"):
-            cert_file = cert_file.replace("/app/upload_files/", "")
-        elif UPLOAD_FOLDER in cert_file:
+        if cert_file.startswith(UPLOAD_FOLDER + "/"):
             cert_file = cert_file.replace(UPLOAD_FOLDER + "/", "")
+        elif cert_file.startswith("/app/upload_files/"):
+            # For backward compatibility with existing Docker paths
+            cert_file = cert_file.replace("/app/upload_files/", "")
 
     if key_file:
         # Convert backend upload path to relative path that st_engine can access
-        if key_file.startswith("/app/upload_files/"):
-            key_file = key_file.replace("/app/upload_files/", "")
-        elif UPLOAD_FOLDER in key_file:
+        if key_file.startswith(UPLOAD_FOLDER + "/"):
             key_file = key_file.replace(UPLOAD_FOLDER + "/", "")
+        elif key_file.startswith("/app/upload_files/"):
+            # For backward compatibility with existing Docker paths
+            key_file = key_file.replace("/app/upload_files/", "")
 
     # Convert headers from a list of objects to a dictionary, then to a JSON string.
     headers = {
@@ -278,12 +320,12 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             status="created",
             error_message="",
             system_prompt=body.system_prompt,
-            user_prompt=body.user_prompt,
             cert_file=cert_file,
             key_file=key_file,
             api_path=body.api_path,
             request_payload=body.request_payload,
             field_mapping=field_mapping_json,
+            test_data=body.test_data,
         )
 
         db.add(new_task)
@@ -433,11 +475,11 @@ async def get_task_svc(request: Request, task_id: str):
             "headers": headers_list,
             "cookies": cookies_list,
             "cert_config": {"cert_file": task.cert_file, "key_file": task.key_file},
-            "system_prompt": task.system_prompt,
-            "user_prompt": task.user_prompt,
+            "system_prompt": task.system_prompt or "",
             "api_path": task.api_path,
             "request_payload": task.request_payload,
             "field_mapping": field_mapping_dict,
+            "test_data": task.test_data or "",
             "error_message": task.error_message,
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None,
@@ -738,11 +780,12 @@ def _prepare_request_payload(body: TaskCreateReq) -> Dict:
     """Prepare request payload based on API path and configuration."""
     if body.api_path == "/v1/chat/completions":
         # Use the traditional chat completions format
-        messages = []
-        if body.system_prompt:
-            messages.append({"role": "system", "content": body.system_prompt})
-
-        messages.append({"role": "user", "content": body.user_prompt or "Hi"})
+        messages = [
+            {
+                "role": "user",
+                "content": "Hi",
+            }
+        ]
 
         return {
             "model": body.model,
@@ -931,7 +974,7 @@ async def _handle_streaming_response(response, full_url: str) -> Dict:
             }
 
         # For testing purposes, we limit the time and data we collect
-        max_chunks = 200  # max chunks to collect for testing
+        max_chunks = 300  # max chunks to collect for testing
         max_duration = 15  # max duration to wait for testing
 
         start_time = asyncio.get_event_loop().time()

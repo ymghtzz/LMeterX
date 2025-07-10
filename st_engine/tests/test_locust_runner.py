@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from sqlalchemy.orm import Session
 
-from config.config import (
+from utils.config import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
     TASK_STATUS_LOCKED,
