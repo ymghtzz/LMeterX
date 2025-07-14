@@ -58,9 +58,10 @@ export const TASK_STATUS_MAP = {
   running: { color: 'processing', text: 'Running' },
   completed: { color: 'success', text: 'Completed' },
   stopping: { color: 'gold', text: 'Stopping' },
-  stopped: { color: 'volcano', text: 'Stopped' },
-  locked: { color: 'warning', text: 'Waiting' },
+  stopped: { color: 'orange', text: 'Stopped' },
+  locked: { color: 'warning', text: 'Pending' },
   failed: { color: 'error', text: 'Failed' },
+  failed_requests: { color: 'magenta', text: 'Request Failed' },
 } as const;
 
 // File upload configuration

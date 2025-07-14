@@ -199,3 +199,14 @@ export const uploadCertificateFiles = async (
 
   throw new Error('Invalid certificate type or file');
 };
+
+// Upload dataset file
+export const uploadDatasetFile = async (datasetFile: File, taskId: string) => {
+  if (!taskId) {
+    taskId = `temp-${Date.now()}`;
+  }
+
+  const formData = new FormData();
+  formData.append('file', datasetFile);
+  return uploadFiles(formData, 'dataset', taskId);
+};

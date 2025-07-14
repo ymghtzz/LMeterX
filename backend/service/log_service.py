@@ -7,9 +7,9 @@ import os.path
 
 from starlette.responses import JSONResponse
 
-from config.config import LOG_DIR
 from model.log import LogContentResponse
-from utils.logger import be_logger as logger
+from utils.be_config import LOG_DIR
+from utils.logger import logger
 
 
 def get_last_n_lines(file_path: str, n: int = 100) -> str:
@@ -36,15 +36,15 @@ def get_last_n_lines(file_path: str, n: int = 100) -> str:
                 all_lines = f.readlines()
                 return "".join(all_lines[-n:]) if all_lines else ""
 
-            # For larger files, use a more reliable approach
-            # Start from end and read backwards in larger chunks
-            buffer_size = 8192
-            lines: list[str] = []
+            # For larger files, use a more efficient approach
+            # Read from end in chunks and collect lines
+            lines = list[str]()
             buffer = ""
             position = file_size
+            buffer_size = 8192
 
             while position > 0 and len(lines) < n:
-                # Calculate chunk size to read
+                # Calculate how much to read
                 chunk_size = min(buffer_size, position)
                 position -= chunk_size
 
@@ -56,26 +56,45 @@ def get_last_n_lines(file_path: str, n: int = 100) -> str:
                 buffer = chunk + buffer
 
                 # Split buffer into lines
-                lines_in_buffer = buffer.split("\n")
+                split_lines = buffer.split("\n")
 
-                # Keep the first part (might be incomplete line) in buffer
-                buffer = lines_in_buffer[0]
+                # If we haven't reached the beginning, keep the first part as incomplete line
+                if position > 0:
+                    buffer = split_lines[0]
+                    # Process complete lines (skip the first incomplete one)
+                    complete_lines = split_lines[1:]
+                else:
+                    # At the beginning of file, all lines are complete
+                    buffer = ""
+                    complete_lines = split_lines
 
-                # Add complete lines to our lines list (in reverse order since we're reading backwards)
-                for line in reversed(lines_in_buffer[1:]):
+                # Add complete lines to the front of our lines list
+                # (since we're reading backwards)
+                for line in reversed(complete_lines):
                     lines.insert(0, line)
                     if len(lines) >= n:
                         break
 
-                # If we've reached the beginning of file, add the remaining buffer as a line
-                if position == 0 and buffer:
-                    lines.insert(0, buffer)
+                # If we have enough lines, break
+                if len(lines) >= n:
+                    break
 
-            # Take last n lines and join them with newlines
+            # Take last n lines
             result_lines = lines[-n:] if len(lines) > n else lines
-            return "\n".join(result_lines) + (
-                "\n" if result_lines and not result_lines[-1].endswith("\n") else ""
-            )
+
+            # Join lines and ensure proper ending
+            if not result_lines:
+                return ""
+
+            result = "\n".join(result_lines)
+            # Add final newline if the original content had one and result doesn't end with one
+            if result and not result.endswith("\n"):
+                # Check if original file ends with newline
+                f.seek(max(0, file_size - 1))
+                if f.read(1) == "\n":
+                    result += "\n"
+
+            return result
 
     except Exception as e:
         logger.error(f"Failed to read log file: {str(e)}")

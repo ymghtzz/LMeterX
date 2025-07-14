@@ -9,8 +9,8 @@ from typing import Iterator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from config.db_config import get_settings
-from utils.logger import st_logger as logger
+from db.db_config import get_settings
+from utils.logger import logger
 
 # --- Database Setup ---
 
@@ -88,6 +88,9 @@ def get_db_session() -> Iterator[Session]:
     if engine is None or SessionLocal is None:
         logger.warning("Database not initialized. Attempting to initialize now.")
         init_db()
+
+    if SessionLocal is None:
+        raise RuntimeError("Failed to initialize database session factory")
 
     session = SessionLocal()
     try:

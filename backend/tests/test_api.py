@@ -123,7 +123,6 @@ class TestTaskAPI:
             "stream_mode": True,
             "headers": [],
             "system_prompt": "You are a helpful assistant",
-            "user_prompt": "Please introduce artificial intelligence",
         }
 
         # Mock service response
@@ -417,7 +416,6 @@ class TestErrorHandling:
             "stream_mode": True,
             "headers": [],
             "system_prompt": "You are a helpful assistant",
-            "user_prompt": "Please introduce artificial intelligence",
         }
 
         response = client.post("/api/tasks", json=task_data)

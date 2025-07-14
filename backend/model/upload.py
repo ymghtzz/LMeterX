@@ -32,12 +32,14 @@ class UploadFileRsp(BaseModel):
         task_id: The identifier for the associated task.
         files: A list of `UploadedFileInfo` objects for each uploaded file.
         cert_config: An optional dictionary for certificate configuration.
+        test_data: An optional string for test data file path.
     """
 
     message: str
     task_id: str
     files: List[UploadedFileInfo]
     cert_config: Optional[dict] = None
+    test_data: Optional[str] = None
 
 
 class UploadFileReq(BaseModel):

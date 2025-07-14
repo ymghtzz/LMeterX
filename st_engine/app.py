@@ -12,7 +12,7 @@ from fastapi import FastAPI
 
 from db.database import init_db
 from service.poller import task_create_poller, task_stop_poller
-from utils.logger import st_logger as logger
+from utils.logger import logger
 
 
 def start_polling():

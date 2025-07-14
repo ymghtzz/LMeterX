@@ -337,12 +337,39 @@ const TaskLogs: React.FC = () => {
   };
 
   const formatLogLine = (line: string) => {
+    // Handle empty lines - ensure they have proper height
+    if (line.trim() === '') {
+      return (
+        <div
+          className='log-line'
+          style={{
+            minHeight: '1.6em',
+            lineHeight: '1.6',
+          }}
+        >
+          &nbsp;
+        </div>
+      );
+    }
+
     const levelRegex =
       /(^|\s)(INFO|ERROR|WARN|WARNING|DEBUG|CRITICAL|FATAL)(\s|:)/i;
     const levelMatch = line.match(levelRegex);
 
     if (!levelMatch) {
-      return <div className='log-line'>{line}</div>;
+      return (
+        <div
+          className='log-line'
+          style={{
+            minHeight: '1.6em',
+            lineHeight: '1.6',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        >
+          {line}
+        </div>
+      );
     }
 
     const level = levelMatch[2].toUpperCase();
@@ -377,7 +404,15 @@ const TaskLogs: React.FC = () => {
     const afterLevel = line.substring(levelEnd);
 
     return (
-      <div className='log-line'>
+      <div
+        className='log-line'
+        style={{
+          minHeight: '1.6em',
+          lineHeight: '1.6',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+        }}
+      >
         <span>{beforeLevel}</span>
         <span className='log-level-text' style={{ color: levelColor }}>
           {levelPart}

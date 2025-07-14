@@ -7,10 +7,15 @@
 import {
   ApiOutlined,
   BugOutlined,
+  CloudOutlined,
+  DatabaseOutlined,
   InfoCircleOutlined,
+  LeftOutlined,
   MinusCircleOutlined,
   PlusOutlined,
+  RightOutlined,
   RocketOutlined,
+  SettingOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import {
@@ -27,6 +32,7 @@ import {
   Row,
   Select,
   Space,
+  Tabs,
   theme,
   Tooltip,
   Typography,
@@ -34,7 +40,11 @@ import {
 } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 
-import { benchmarkJobApi, uploadCertificateFiles } from '@/api/services';
+import {
+  benchmarkJobApi,
+  uploadCertificateFiles,
+  uploadDatasetFile,
+} from '@/api/services';
 import { BenchmarkJob } from '@/types/benchmark';
 
 const { TextArea } = Input;
@@ -64,6 +74,109 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const [isCopyMode, setIsCopyMode] = useState(false);
   const [testModalVisible, setTestModalVisible] = useState(false);
   const [testResult, setTestResult] = useState<any>(null);
+  // Add state for tab management
+  const [activeTabKey, setActiveTabKey] = useState('1');
+
+  // Get default field_mapping based on API path
+  const getDefaultFieldMapping = (apiPath: string) => {
+    if (apiPath === '/v1/chat/completions') {
+      return {
+        prompt: 'messages.0.content',
+        stream_prefix: 'data:',
+        data_format: 'json',
+        content: 'choices.0.delta.content',
+        reasoning_content: 'choices.0.delta.reasoning_content',
+        end_prefix: 'data:',
+        stop_flag: '[DONE]',
+        end_condition: '',
+      };
+    }
+    // For non-chat/completions APIs, return empty values (only show placeholders)
+    return {
+      prompt: '',
+      stream_prefix: '',
+      data_format: 'json',
+      content: '',
+      reasoning_content: '',
+      end_prefix: '',
+      stop_flag: '',
+      end_condition: '',
+    };
+  };
+
+  // Tab navigation functions
+  const goToNextTab = () => {
+    if (activeTabKey === '1') setActiveTabKey('2');
+    else if (activeTabKey === '2') setActiveTabKey('3');
+  };
+
+  const goToPreviousTab = () => {
+    if (activeTabKey === '3') setActiveTabKey('2');
+    else if (activeTabKey === '2') setActiveTabKey('1');
+  };
+
+  // Check if current tab is valid for navigation
+  const isCurrentTabValid = useCallback(async () => {
+    try {
+      if (activeTabKey === '1') {
+        // Tab 1: Basic Configuration and Request Configuration
+        const requiredFields = [
+          'name',
+          'target_host',
+          'api_path',
+          'model',
+          'stream_mode',
+          'request_payload',
+        ];
+        await form.validateFields(requiredFields);
+        return true;
+      }
+      if (activeTabKey === '2') {
+        // Tab 2: Test Data and Load Configuration
+        const requiredFields = [
+          'test_data_input_type',
+          'duration',
+          'concurrent_users',
+          'spawn_rate',
+        ];
+
+        // Add chat_type validation when using default dataset and chat/completions API
+        const currentTestDataInputType =
+          form.getFieldValue('test_data_input_type') || 'default';
+        const currentApiPath =
+          form.getFieldValue('api_path') || '/v1/chat/completions';
+        if (
+          currentTestDataInputType === 'default' &&
+          currentApiPath === '/v1/chat/completions'
+        ) {
+          requiredFields.push('chat_type');
+        }
+
+        // Add validation for custom data input and file upload
+        if (currentTestDataInputType === 'input') {
+          requiredFields.push('test_data');
+        } else if (currentTestDataInputType === 'upload') {
+          requiredFields.push('test_data_file');
+        }
+
+        await form.validateFields(requiredFields);
+        return true;
+      }
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }, [activeTabKey, form]);
+
+  // Handle next tab with validation
+  const handleNextTab = async () => {
+    const isValid = await isCurrentTabValid();
+    if (isValid) {
+      goToNextTab();
+    } else {
+      message.error('Please fill in all required fields before proceeding');
+    }
+  };
 
   // Handle modal open/close body class management
   useEffect(() => {
@@ -80,7 +193,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
   // Form values states to replace Form.useWatch
   const [concurrentUsers, setConcurrentUsers] = useState<number>();
-  const [apiPath, setApiPath] = useState<string>('/v1/chat/completions');
   const [streamMode, setStreamMode] = useState<boolean>(true);
   const [isFormReady, setIsFormReady] = useState(false);
 
@@ -88,6 +200,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   useEffect(() => {
     setIsFormReady(true);
   }, []);
+
+  // Initialize field_mapping based on current API path when not in copy mode
+  useEffect(() => {
+    if (isFormReady && !isCopyMode && !initialData) {
+      const currentApiPath =
+        form.getFieldValue('api_path') || '/v1/chat/completions';
+      const defaultFieldMapping = getDefaultFieldMapping(currentApiPath);
+      form.setFieldsValue({ field_mapping: defaultFieldMapping });
+    }
+  }, [isFormReady, isCopyMode, initialData, form]);
 
   // when concurrent_users changes and autoSyncSpawnRate is true, auto update spawn_rate
   useEffect(() => {
@@ -109,6 +231,13 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   // when user manually changes spawn_rate, close auto sync
   const handleSpawnRateChange = () => {
     setAutoSyncSpawnRate(false);
+  };
+
+  // handle api_path change
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleApiPathChange = (value: string) => {
+    // Currently no additional handling needed for api_path changes
+    // The main logic is handled in the form's onValuesChange callback
   };
 
   // update submitting state using loading prop
@@ -137,6 +266,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       // use temp_task_id
       dataToFill.temp_task_id = tempTaskId;
+
+      // Ensure system_prompt are strings
+      dataToFill.system_prompt = dataToFill.system_prompt || '';
 
       // handle headers
       const currentHeaders = initialData.headers
@@ -177,52 +309,24 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         : [];
       dataToFill.cookies = currentCookies;
 
-      // handle field_mapping based on API type
-      const isChatCompletions = dataToFill.api_path === '/v1/chat/completions';
-      const isStreaming = dataToFill.stream_mode === true;
-
       // Preserve original field_mapping and request_payload when copying
       const originalFieldMapping = dataToFill.field_mapping
         ? JSON.parse(JSON.stringify(dataToFill.field_mapping))
         : {};
       const originalRequestPayload = dataToFill.request_payload;
 
-      if (isChatCompletions) {
-        // For chat completions API, preserve original values when copying and merge with defaults only if needed
-        const defaultFieldMapping = {
-          prompt: '',
-          stream_prefix: 'data:',
-          data_format: 'json',
-          content: isStreaming
-            ? 'choices.0.delta.content'
-            : 'choices.0.message.content',
-          reasoning_content: isStreaming
-            ? 'choices.0.delta.reasoning_content'
-            : 'choices.0.message.reasoning_content',
-          end_prefix: 'data:',
-          stop_flag: '[DONE]',
-          end_condition: '',
-        };
-
-        // Preserve original values first, then fill in missing required fields with defaults
-        dataToFill.field_mapping = {
-          ...defaultFieldMapping,
-          ...originalFieldMapping, // Original values take precedence
-        };
-      } else {
-        // For custom APIs, preserve original field_mapping and request_payload completely
-        dataToFill.field_mapping = originalFieldMapping || {
-          prompt: '',
-          stream_prefix: '',
-          data_format: 'json',
-          content: '',
-          reasoning_content: '',
-          end_prefix: '',
-          stop_flag: '',
-          end_condition: '',
-        };
-        dataToFill.request_payload = originalRequestPayload;
-      }
+      // Always preserve original values when copying
+      dataToFill.field_mapping = originalFieldMapping || {
+        prompt: '',
+        stream_prefix: '',
+        data_format: 'json',
+        content: '',
+        reasoning_content: '',
+        end_prefix: '',
+        stop_flag: '',
+        end_condition: '',
+      };
+      dataToFill.request_payload = originalRequestPayload;
 
       // clean fields that should not be copied directly or provided by the user
       delete dataToFill.id;
@@ -232,11 +336,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       // actual certificate file needs to be uploaded again
 
       form.setFieldsValue(dataToFill);
-
-      // Update apiPath state immediately to ensure correct API type detection
-      if (dataToFill.api_path) {
-        setApiPath(dataToFill.api_path);
-      }
 
       // Update stream mode state for proper field mapping
       if (dataToFill.stream_mode !== undefined) {
@@ -334,35 +433,35 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     }
   };
 
+  // handle dataset file upload
+  const handleDatasetFileUpload = async (options: any) => {
+    const { file, onSuccess, onError } = options;
+    try {
+      form.setFieldsValue({
+        temp_task_id: tempTaskId,
+        test_data_file: file,
+      });
+      message.success(`${file.name} file selected`);
+      onSuccess();
+    } catch (error) {
+      message.error(`${file.name} upload failed`);
+      onError();
+    }
+  };
+
   // Test API endpoint
   const handleTestAPI = async () => {
     try {
       setTesting(true);
 
-      // Only validate required fields for testing, not API Field Mapping fields
+      // Only validate required fields for testing from the first tab
       const requiredFields = [
         'target_host',
         'api_path',
         'model',
-        'duration',
-        'concurrent_users',
         'stream_mode',
+        'request_payload', // Always require request payload
       ];
-
-      // Get current api_path to determine API type
-      const currentApiPath = form.getFieldValue('api_path');
-      const isCurrentlyChatCompletions =
-        !currentApiPath || currentApiPath === '/v1/chat/completions';
-
-      // Add chat_type validation for chat completions API
-      if (isCurrentlyChatCompletions) {
-        requiredFields.push('chat_type');
-      }
-
-      // Add request_payload validation for custom APIs
-      if (!isCurrentlyChatCompletions) {
-        requiredFields.push('request_payload');
-      }
 
       // Validate only the required fields for testing
       await form.validateFields(requiredFields);
@@ -370,12 +469,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       // Get all form values after validation
       const values = form.getFieldsValue();
 
-      // Additional validation for request payload JSON format (custom APIs only)
-      if (
-        values.api_path !== '/v1/chat/completions' &&
-        !values.request_payload
-      ) {
-        message.error('Request payload is required for custom API endpoints');
+      // Additional validation for request payload JSON format
+      if (!values.request_payload) {
+        message.error('Request payload is required for all API endpoints');
         return;
       }
 
@@ -400,8 +496,17 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         }
       }
 
-      // Prepare test data - exclude field_mapping as it's not needed for testing
-      const testData = { ...values };
+      // Prepare test data - provide default values for missing fields
+      const testData = {
+        ...values,
+        // Provide default values for testing
+        duration: 10, // Default 10 seconds for testing
+        concurrent_users: 1, // Default 1 user for testing
+        spawn_rate: 1, // Default spawn rate for testing
+        test_data_input_type: 'none', // No dataset for testing
+      };
+
+      // Remove field_mapping as it's not needed for testing
       delete testData.field_mapping;
       delete testData.cert_type;
 
@@ -476,14 +581,42 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         }
       }
 
+      if (values.test_data_file) {
+        try {
+          const result = await uploadDatasetFile(
+            values.test_data_file,
+            tempTaskId
+          );
+          values.test_data = result.test_data;
+          delete values.test_data_file;
+          values.temp_task_id = tempTaskId;
+        } catch (error) {
+          message.error('Test data upload failed, please try again');
+          setSubmitting(false);
+          return;
+        }
+      }
+
+      // Handle test data input type
+      const inputType = values.test_data_input_type || 'default';
+      if (inputType === 'default') {
+        values.test_data = 'default'; // use default dataset
+      } else if (inputType === 'input') {
+        // test_data is already set from the form field
+      } else if (inputType === 'none') {
+        // No dataset mode - clear test_data
+        values.test_data = '';
+      }
+      // For upload type, test_data is set above from file upload result
+
+      // Clean up form-specific fields
+      delete values.test_data_input_type;
+
       await onSubmit(values);
     } catch (error) {
       setSubmitting(false); // Only reset state here when error occurs
     }
   };
-
-  // Determine if current API is chat completions
-  const isChatCompletionsAPI = !apiPath || apiPath === '/v1/chat/completions';
 
   // State to track form validity for testing
   const [isTestButtonEnabled, setIsTestButtonEnabled] = useState(false);
@@ -493,42 +626,26 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     try {
       const values = form.getFieldsValue();
 
-      // Basic Configuration required fields
-      if (!values.target_host || !values.api_path) {
+      // Only check fields required for testing (from tab 1)
+      if (!values.target_host || !values.api_path || !values.model) {
         return false;
       }
 
-      // Test Configuration required fields
-      if (
-        !values.model ||
-        !values.duration ||
-        !values.concurrent_users ||
-        values.stream_mode === undefined ||
-        values.stream_mode === null
-      ) {
+      // Stream mode is required
+      if (values.stream_mode === undefined || values.stream_mode === null) {
         return false;
       }
 
-      // Chat type is required for chat completions API
-      if (
-        isChatCompletionsAPI &&
-        (values.chat_type === undefined || values.chat_type === null)
-      ) {
+      // Request payload is always required
+      if (!values.request_payload) {
         return false;
       }
-
-      // Request payload is required for custom APIs
-      if (!isChatCompletionsAPI && !values.request_payload) {
-        return false;
-      }
-
-      // API Field Mapping fields are NOT required for testing
 
       return true;
     } catch (error) {
       return false;
     }
-  }, [form, isChatCompletionsAPI]);
+  }, [form]);
 
   // Update test button state when form values change
   useEffect(() => {
@@ -549,112 +666,884 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     return isTestButtonEnabled;
   };
 
-  // Clear fields when switching between API types (but not in copy mode)
-  useEffect(() => {
-    if (!isCopyMode && isFormReady) {
-      if (isChatCompletionsAPI) {
-        // Set default values for chat completions API only if not already set
-        const currentFieldMapping = form.getFieldValue('field_mapping') || {};
-        const currentStreamMode = form.getFieldValue('stream_mode');
-        const isStreaming =
-          currentStreamMode === true || currentStreamMode === undefined;
+  // These useEffect hooks are removed since we no longer differentiate API types
 
-        // Only set default values if field_mapping is empty or not properly initialized
-        if (
-          !currentFieldMapping.stream_prefix &&
-          !currentFieldMapping.content
-        ) {
-          form.setFieldsValue({
-            chat_type: form.getFieldValue('chat_type') || 0,
-            field_mapping: {
-              prompt: '',
-              stream_prefix: 'data:',
-              data_format: 'json',
-              content: isStreaming
-                ? 'choices.0.delta.content'
-                : 'choices.0.message.content',
-              reasoning_content: isStreaming
-                ? 'choices.0.delta.reasoning_content'
-                : 'choices.0.message.reasoning_content',
-              end_prefix: 'data:',
-              stop_flag: '[DONE]',
-              end_condition: '',
-            },
-          });
-        }
-      } else {
-        // Clear custom API fields when switching to chat completions
-        const currentFieldMapping = form.getFieldValue('field_mapping') || {};
-        // Only clear if switching from chat completions to custom API
-        if (
-          currentFieldMapping.stream_prefix === 'data:' &&
-          currentFieldMapping.stop_flag === '[DONE]'
-        ) {
-          form.setFieldsValue({
-            request_payload: undefined,
-            field_mapping: {
-              prompt: '',
-              stream_prefix: '',
-              data_format: 'json',
-              content: '',
-              reasoning_content: '',
-              end_prefix: '',
-              stop_flag: '',
-              end_condition: '',
-            },
-          });
-        }
-      }
-    }
-  }, [isChatCompletionsAPI, form, isCopyMode, isFormReady]);
-
-  // Update field mapping when stream mode changes for chat completions API (but not in copy mode)
-  useEffect(() => {
-    if (isChatCompletionsAPI && !isCopyMode && isFormReady) {
-      const isStreaming = streamMode === true;
-      const currentFieldMapping = form.getFieldValue('field_mapping') || {};
-
-      const expectedContent = isStreaming
-        ? 'choices.0.delta.content'
-        : 'choices.0.message.content';
-      const expectedReasoningContent = isStreaming
-        ? 'choices.0.delta.reasoning_content'
-        : 'choices.0.message.reasoning_content';
-
-      // Only call setFieldsValue when content fields need to be updated
-      if (
-        currentFieldMapping.content !== expectedContent ||
-        currentFieldMapping.reasoning_content !== expectedReasoningContent
-      ) {
-        form.setFieldsValue({
-          field_mapping: {
-            ...currentFieldMapping,
-            content: expectedContent,
-            reasoning_content: expectedReasoningContent,
-          },
-        });
-      }
-    }
-  }, [streamMode, isChatCompletionsAPI, form, isCopyMode, isFormReady]);
-
-  // Field mapping section
-  const fieldMappingSection = (
-    <div style={{ marginBottom: 24 }}>
+  // create advanced settings panel content
+  const advancedPanelContent = (
+    <div style={{ marginLeft: '8px' }}>
+      {/* Header configuration */}
       <div
         style={{
-          margin: '24px 0 16px',
+          marginBottom: 24,
+          padding: '16px',
+          backgroundColor: token.colorFillAlter,
+          borderRadius: '8px',
+        }}
+      >
+        <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
+          <Space>
+            <span>HTTP Headers</span>
+            <Tooltip title='Configure custom HTTP headers. API Key should include the "Bearer " prefix if required by your API.'>
+              <InfoCircleOutlined />
+            </Tooltip>
+          </Space>
+        </div>
+        <Form.List name='headers'>
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...restField }) => {
+                const isFixed = form.getFieldValue(['headers', name, 'fixed']);
+                const headerKey = form.getFieldValue(['headers', name, 'key']);
+                const isAuth = headerKey === 'Authorization';
+
+                return (
+                  <Space
+                    key={key}
+                    style={{ display: 'flex', marginBottom: 8, width: '100%' }}
+                  >
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'key']}
+                      style={{ flex: 1, minWidth: '140px' }}
+                    >
+                      <Input
+                        placeholder={isFixed ? 'System Header' : 'Header Name'}
+                        disabled={isFixed}
+                        style={
+                          isFixed
+                            ? {
+                                backgroundColor: token.colorBgContainerDisabled,
+                              }
+                            : {}
+                        }
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'value']}
+                      style={{ flex: 2 }}
+                      rules={
+                        isAuth
+                          ? [
+                              {
+                                required: false,
+                                message:
+                                  'Please enter API key (include Bearer prefix if required)',
+                              },
+                            ]
+                          : []
+                      }
+                    >
+                      <Input
+                        placeholder={
+                          isAuth ? 'Bearer your-api-key-here' : 'Header Value'
+                        }
+                        disabled={isFixed}
+                        style={
+                          isFixed
+                            ? {
+                                backgroundColor: token.colorBgContainerDisabled,
+                              }
+                            : {}
+                        }
+                      />
+                    </Form.Item>
+                    {!isFixed && (
+                      <MinusCircleOutlined
+                        onClick={() => remove(name)}
+                        style={{ marginTop: 8, color: token.colorTextTertiary }}
+                      />
+                    )}
+                  </Space>
+                );
+              })}
+              <Button
+                type='dashed'
+                onClick={() => add()}
+                block
+                icon={<PlusOutlined />}
+                style={{ marginTop: 8 }}
+              >
+                Add Custom Header
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </div>
+
+      {/* Cookies */}
+      <div
+        style={{
+          marginBottom: 24,
+          padding: '16px',
+          backgroundColor: token.colorFillAlter,
+          borderRadius: '8px',
+        }}
+      >
+        <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
+          <Space>
+            <span>Request Cookies</span>
+            <Tooltip title='HTTP cookies for session-based authentication'>
+              <InfoCircleOutlined />
+            </Tooltip>
+          </Space>
+        </div>
+        <Form.List name='cookies'>
+          {(fields, { add, remove }) => (
+            <>
+              {fields.map(({ key, name, ...restField }) => {
+                return (
+                  <Space
+                    key={key}
+                    style={{ display: 'flex', marginBottom: 8, width: '100%' }}
+                  >
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'key']}
+                      style={{ flex: 1, minWidth: '140px' }}
+                    >
+                      <Input placeholder='Cookie Name (e.g. session_token)' />
+                    </Form.Item>
+                    <Form.Item
+                      {...restField}
+                      name={[name, 'value']}
+                      style={{ flex: 2 }}
+                    >
+                      <Input placeholder='Cookie Value' />
+                    </Form.Item>
+                    <MinusCircleOutlined
+                      onClick={() => remove(name)}
+                      style={{ marginTop: 8, color: token.colorTextTertiary }}
+                    />
+                  </Space>
+                );
+              })}
+              <Button
+                type='dashed'
+                onClick={() => add()}
+                block
+                icon={<PlusOutlined />}
+                style={{ marginTop: 8 }}
+              >
+                Add Cookie
+              </Button>
+            </>
+          )}
+        </Form.List>
+      </div>
+
+      {/* Client certificate upload */}
+      <div
+        style={{
+          marginBottom: 24,
+          padding: '16px',
+          backgroundColor: token.colorFillAlter,
+          borderRadius: '8px',
+        }}
+      >
+        <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
+          <Space>
+            <span>SSL Client Certificate</span>
+            <Tooltip title='Client certificates for mTLS (mutual TLS) authentication'>
+              <InfoCircleOutlined />
+            </Tooltip>
+          </Space>
+        </div>
+        <div style={{ marginTop: '8px' }}>
+          <Radio.Group
+            defaultValue='combined'
+            onChange={e => form.setFieldsValue({ cert_type: e.target.value })}
+            style={{ marginBottom: 16 }}
+          >
+            <Radio value='combined'>Combined Certificate & Key File</Radio>
+            <Radio value='separate'>Separate Certificate & Key Files</Radio>
+          </Radio.Group>
+
+          <Form.Item noStyle shouldUpdate>
+            {({ getFieldValue }) => {
+              const certType = getFieldValue('cert_type') || 'combined';
+              return certType === 'combined' ? (
+                <div style={{ padding: '8px 0' }}>
+                  <Upload
+                    maxCount={1}
+                    accept='.pem'
+                    customRequest={handleCombinedCertUpload}
+                    listType='text'
+                    style={{ width: '100%' }}
+                  >
+                    <Button
+                      icon={<UploadOutlined />}
+                      size='middle'
+                      style={{ width: '200px', height: '40px' }}
+                    >
+                      Select Combined PEM File
+                    </Button>
+                  </Upload>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      color: token.colorTextSecondary,
+                      fontSize: '12px',
+                    }}
+                  >
+                    Upload a single .pem file containing both the client
+                    certificate and private key
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '8px 0' }}>
+                  <Space
+                    direction='horizontal'
+                    size='large'
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      justifyContent: 'flex-start',
+                    }}
+                  >
+                    <div>
+                      <Upload
+                        maxCount={1}
+                        accept='.crt,.pem'
+                        customRequest={handleCertFileUpload}
+                        listType='text'
+                      >
+                        <Button
+                          icon={<UploadOutlined />}
+                          size='middle'
+                          style={{ width: '180px', height: '40px' }}
+                        >
+                          Select Certificate
+                        </Button>
+                      </Upload>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          color: token.colorTextSecondary,
+                          fontSize: '12px',
+                        }}
+                      >
+                        Client certificate (.crt, .pem)
+                      </div>
+                    </div>
+
+                    <div>
+                      <Upload
+                        maxCount={1}
+                        accept='.key,.pem'
+                        customRequest={handleKeyFileUpload}
+                        listType='text'
+                      >
+                        <Button
+                          icon={<UploadOutlined />}
+                          size='middle'
+                          style={{ width: '180px', height: '40px' }}
+                        >
+                          Select Private Key
+                        </Button>
+                      </Upload>
+                      <div
+                        style={{
+                          marginTop: 4,
+                          color: token.colorTextSecondary,
+                          fontSize: '12px',
+                        }}
+                      >
+                        Private key file (.key, .pem)
+                      </div>
+                    </div>
+                  </Space>
+                </div>
+              );
+            }}
+          </Form.Item>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Tab content rendering functions
+  const renderTab1Content = () => (
+    <div>
+      {/* Section 1: Basic Configuration */}
+      <div
+        style={{
+          margin: '32px 0 16px',
           fontWeight: 'bold',
-          fontSize: '16px',
+          fontSize: '18px',
+          paddingBottom: '8px',
         }}
       >
         <Space>
-          <ApiOutlined />
-          <span>API Field Mapping</span>
+          <SettingOutlined />
+          <span>Basic Configuration</span>
         </Space>
       </div>
 
-      {/* Prompt Field Path - only show for custom APIs */}
-      {!isChatCompletionsAPI && (
+      <Row gutter={24}>
+        <Col span={24}>
+          <Form.Item
+            name='name'
+            label='Task Name'
+            rules={[{ required: true, message: 'Please enter task name' }]}
+          >
+            <Input placeholder='Enter a descriptive name for your benchmark task' />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Row gutter={24}>
+        <Col span={24}>
+          <Form.Item
+            name='api_url'
+            label={
+              <span>
+                API Endpoint
+                <Tooltip title='The complete API endpoint URL for testing'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            required
+          >
+            <div style={{ display: 'flex', width: '100%' }}>
+              <Form.Item
+                name='target_host'
+                noStyle
+                rules={[{ required: true, message: 'Please enter API URL' }]}
+              >
+                <Input
+                  style={{ width: '70%' }}
+                  placeholder='https://your-api-domain.com'
+                />
+              </Form.Item>
+              <Form.Item
+                name='api_path'
+                noStyle
+                rules={[
+                  {
+                    required: true,
+                    message: 'Please enter API path',
+                  },
+                ]}
+              >
+                <Input
+                  style={{ width: '30%' }}
+                  placeholder='/v1/chat/completions'
+                />
+              </Form.Item>
+            </div>
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Row gutter={24}>
+        <Col span={24}>
+          <Form.Item
+            name='model'
+            label={
+              <span>
+                Model Name
+                <Tooltip title='The model identifier available on your API endpoint'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[{ required: true, message: 'Please enter model name' }]}
+          >
+            <Input placeholder='e.g. gpt-4, claude-3, internlm3-latest' />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      {/* Section 2: Request Configuration */}
+      <div
+        style={{
+          margin: '32px 0 16px',
+          fontWeight: 'bold',
+          fontSize: '18px',
+          paddingBottom: '8px',
+        }}
+      >
+        <Space>
+          <CloudOutlined />
+          <span>Request Configuration</span>
+        </Space>
+      </div>
+
+      {/* Request Method and Response Mode */}
+      <Row gutter={24}>
+        <Col span={12}>
+          <Form.Item
+            label={
+              <span>
+                Request Method
+                <Tooltip title='HTTP request method for API calls'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            required
+          >
+            <Input
+              value='POST'
+              disabled
+              style={{ backgroundColor: token.colorBgContainerDisabled }}
+            />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item
+            name='stream_mode'
+            label={
+              <span>
+                Response Mode
+                <Tooltip title='Choose between streaming and non-streaming response mode'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[{ required: true, message: 'Please select response mode' }]}
+          >
+            <Select placeholder='Select response mode'>
+              <Select.Option value>Streaming</Select.Option>
+              <Select.Option value={false}>Non-streaming</Select.Option>
+            </Select>
+          </Form.Item>
+        </Col>
+      </Row>
+
+      {/* Request Payload - always show for all APIs */}
+      <Row gutter={24}>
+        <Col span={24}>
+          <Form.Item
+            name='request_payload'
+            label={
+              <span>
+                Request Payload
+                <Tooltip title='Request payload for your API. Please use simple test data here for testing, the dataset as follows will be applied during load testing.'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[
+              {
+                required: true,
+                message: 'Please enter request payload',
+              },
+              {
+                validator: (_, value) => {
+                  if (!value) return Promise.resolve();
+                  try {
+                    JSON.parse(value);
+                    return Promise.resolve();
+                  } catch (e) {
+                    return Promise.reject(
+                      new Error('Please enter valid JSON format')
+                    );
+                  }
+                },
+              },
+            ]}
+          >
+            <TextArea
+              rows={3}
+              placeholder='{"model":"your-model-name","messages": [{"role": "user","content":"Hi"}],"stream": true}'
+            />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Form.Item noStyle shouldUpdate>
+        {({ getFieldValue }) => {
+          const currentApiPath =
+            getFieldValue('api_path') || '/v1/chat/completions';
+          return currentApiPath === '/v1/chat/completions' ? (
+            <Row gutter={24}>
+              <Col span={24}>
+                <Form.Item
+                  name='system_prompt'
+                  label={
+                    <span>
+                      System Prompt
+                      <Tooltip title='System-level instructions that will be sent with every request'>
+                        <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                      </Tooltip>
+                    </span>
+                  }
+                >
+                  <TextArea
+                    rows={2}
+                    placeholder='You are a helpful AI assistant. Please provide clear and accurate responses.'
+                    maxLength={10000}
+                    showCount
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          ) : null;
+        }}
+      </Form.Item>
+
+      {/* Advanced Settings - Collapsed by default */}
+      <div>
+        <Collapse
+          ghost
+          defaultActiveKey={[]}
+          className='more-settings-collapse'
+          items={[
+            {
+              key: 'advanced',
+              label: (
+                <span style={{ fontSize: '14px', lineHeight: '22px' }}>
+                  Advanced Settings
+                </span>
+              ),
+              children: advancedPanelContent,
+              styles: { header: { paddingLeft: 0 } },
+            },
+          ]}
+        />
+      </div>
+    </div>
+  );
+
+  const renderTab2Content = () => (
+    <div>
+      {/* Section 3: Test Data */}
+      <div
+        style={{
+          margin: '32px 0 16px',
+          fontWeight: 'bold',
+          fontSize: '18px',
+          paddingBottom: '8px',
+        }}
+      >
+        <Space>
+          <DatabaseOutlined />
+          <span>Test Data</span>
+        </Space>
+      </div>
+
+      {/* Dataset Type Specific Options */}
+      <Form.Item noStyle shouldUpdate>
+        {({ getFieldValue }) => {
+          const inputType = getFieldValue('test_data_input_type');
+          const currentApiPath =
+            getFieldValue('api_path') || '/v1/chat/completions';
+          const isChatCompletionsApi =
+            currentApiPath === '/v1/chat/completions';
+
+          return (
+            <div>
+              <Row gutter={24}>
+                <Col span={8}>
+                  <Form.Item
+                    name='test_data_input_type'
+                    label={
+                      <span>
+                        Dataset Source
+                        <Tooltip title='Choose how to provide test prompts: use built-in datasets, input custom data, upload your own file, or use original request payload'>
+                          <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                        </Tooltip>
+                      </span>
+                    }
+                    rules={[
+                      {
+                        required: true,
+                        message: 'Please select dataset source',
+                      },
+                    ]}
+                  >
+                    <Select placeholder='Select dataset source'>
+                      <Select.Option value='default'>
+                        Built-in Dataset
+                      </Select.Option>
+                      <Select.Option value='input'>
+                        Custom JSONL Data
+                      </Select.Option>
+                      <Select.Option value='upload'>
+                        Upload JSONL File
+                      </Select.Option>
+                      <Select.Option value='none'>No Dataset</Select.Option>
+                    </Select>
+                  </Form.Item>
+                </Col>
+
+                {/* Dataset Type - only show when using built-in dataset and chat completions API */}
+                {inputType === 'default' && (
+                  <Col span={8}>
+                    <Form.Item
+                      name='chat_type'
+                      label={
+                        <span>
+                          Dataset Type
+                          <Tooltip title='Choose between text-only conversations or multimodal conversations with images'>
+                            <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                          </Tooltip>
+                        </span>
+                      }
+                      rules={[
+                        {
+                          required:
+                            inputType === 'default' && isChatCompletionsApi,
+                          message: 'Please select dataset type',
+                        },
+                      ]}
+                      style={{
+                        display: isChatCompletionsApi ? 'block' : 'none',
+                      }}
+                    >
+                      <Select placeholder='Select dataset type'>
+                        <Select.Option value={0}>
+                          Text-Only Conversations
+                        </Select.Option>
+                        <Select.Option value={1}>
+                          Multimodal (Text + Image)
+                        </Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                )}
+
+                {/* Dataset File - only show when upload is selected */}
+                {inputType === 'upload' && (
+                  <Col span={8}>
+                    <Form.Item
+                      name='test_data_file'
+                      label={
+                        <span>
+                          Dataset File
+                          <Tooltip title='Upload a .jsonl file where each line contains a JSON object with "id" and "prompt" fields'>
+                            <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                          </Tooltip>
+                        </span>
+                      }
+                      rules={[
+                        {
+                          required: inputType === 'upload',
+                          message: 'Please upload dataset file',
+                        },
+                      ]}
+                    >
+                      <Upload
+                        maxCount={1}
+                        accept='.jsonl'
+                        customRequest={handleDatasetFileUpload}
+                        listType='text'
+                        style={{ width: '100%' }}
+                      >
+                        <Button
+                          icon={<UploadOutlined />}
+                          size='middle'
+                          style={{ width: '200px', height: '40px' }}
+                        >
+                          Select JSONL File
+                        </Button>
+                      </Upload>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          color: token.colorTextSecondary,
+                          fontSize: '12px',
+                        }}
+                      >
+                        Required format: .jsonl file with each line containing{' '}
+                        {'{"id": "...", "prompt": "..."}'}
+                      </div>
+                    </Form.Item>
+                  </Col>
+                )}
+              </Row>
+
+              {/* Custom JSONL Data Input */}
+              {inputType === 'input' && (
+                <Row gutter={24}>
+                  <Col span={24}>
+                    <Form.Item
+                      name='test_data'
+                      label={
+                        <span>
+                          JSONL Data
+                          <Tooltip title='Each line must be a valid JSON object with "id" and "prompt" fields.'>
+                            <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                          </Tooltip>
+                        </span>
+                      }
+                      rules={[
+                        {
+                          required: inputType === 'input',
+                          message: 'Please enter JSONL data',
+                        },
+                        {
+                          validator: (_, value) => {
+                            if (inputType !== 'input' || !value)
+                              return Promise.resolve();
+                            try {
+                              const lines = value
+                                .trim()
+                                .split('\n')
+                                .filter(line => line.trim());
+                              lines.forEach(line => {
+                                const jsonObj = JSON.parse(line);
+                                if (!jsonObj.id || !jsonObj.prompt) {
+                                  throw new Error(
+                                    'Each line must contain "id" and "prompt" fields'
+                                  );
+                                }
+                              });
+                              return Promise.resolve();
+                            } catch (e) {
+                              return Promise.reject(
+                                new Error(
+                                  'Invalid JSONL format. Each line must be valid JSON with required fields.'
+                                )
+                              );
+                            }
+                          },
+                        },
+                      ]}
+                    >
+                      <TextArea
+                        rows={4}
+                        placeholder={`{"id": "1", "prompt": "Hello, how are you?"}\n{"id": "2", "prompt": "What is artificial intelligence?"}\n{"id": "3", "prompt": "Explain machine learning in simple terms"}`}
+                        maxLength={50000}
+                        showCount
+                        style={{
+                          fontFamily:
+                            'Monaco, Consolas, "Courier New", monospace',
+                        }}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )}
+            </div>
+          );
+        }}
+      </Form.Item>
+
+      {/* Section 4: Load Configuration */}
+      <div
+        style={{
+          margin: '32px 0 16px',
+          fontWeight: 'bold',
+          fontSize: '18px',
+          paddingBottom: '8px',
+        }}
+      >
+        <Space>
+          <RocketOutlined />
+          <span>Load Configuration</span>
+        </Space>
+      </div>
+
+      <Row gutter={24}>
+        <Col span={8}>
+          <Form.Item
+            name='duration'
+            label={
+              <span>
+                Test Duration (seconds)
+                <Tooltip title='How long the load test should run'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[{ required: true, message: 'Please enter test duration' }]}
+          >
+            <InputNumber
+              min={1}
+              max={3600}
+              style={{ width: '100%' }}
+              placeholder='60'
+            />
+          </Form.Item>
+        </Col>
+
+        <Col span={8}>
+          <Form.Item
+            name='concurrent_users'
+            label={
+              <span>
+                Concurrent Users
+                <Tooltip title='Maximum number of virtual users sending requests simultaneously'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[
+              {
+                required: true,
+                message: 'Please enter number of concurrent users',
+              },
+            ]}
+          >
+            <InputNumber
+              min={1}
+              max={1000}
+              style={{ width: '100%' }}
+              placeholder='10'
+              onChange={handleConcurrentUsersChange}
+            />
+          </Form.Item>
+        </Col>
+
+        <Col span={8}>
+          <Form.Item
+            name='spawn_rate'
+            label={
+              <span>
+                User Spawn Rate
+                <Tooltip title='Number of new virtual users started per second during ramp-up'>
+                  <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                </Tooltip>
+              </span>
+            }
+            rules={[{ required: true, message: 'Please enter spawn rate' }]}
+          >
+            <InputNumber
+              min={1}
+              max={100}
+              style={{ width: '100%' }}
+              placeholder='1'
+              onChange={handleSpawnRateChange}
+            />
+          </Form.Item>
+        </Col>
+      </Row>
+    </div>
+  );
+
+  // Field mapping section
+  const fieldMappingSection = (
+    <div style={{ marginBottom: 24, marginLeft: '8px' }}>
+      <div
+        style={{
+          marginBottom: '16px',
+          color: token.colorTextSecondary,
+          fontSize: '14px',
+          lineHeight: '1.5',
+        }}
+      >
+        Configure field mappings for both prompt field and response data
+        extraction. This mapping is essential for updating request payloads with
+        test data and parsing {streamMode ? 'streaming' : 'non-streaming'}{' '}
+        responses correctly.
+      </div>
+
+      {/* Prompt Field Path - always show for all APIs */}
+      <div
+        style={{
+          marginBottom: 24,
+          padding: '16px',
+          backgroundColor: token.colorFillAlter,
+          borderRadius: '8px',
+        }}
+      >
+        <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
+          Request Field Mapping
+        </div>
         <Row gutter={24}>
           <Col span={24}>
             <Form.Item
@@ -662,53 +1551,61 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               label={
                 <span>
                   Prompt Field Path
-                  <Tooltip title='Enter the key in the request payload that contains the prompt (required for statistical metrics)'>
+                  <Tooltip title='The key in your request payload that contains the user prompt (needed for performance metrics calculation)'>
                     <InfoCircleOutlined style={{ marginLeft: 5 }} />
                   </Tooltip>
                 </span>
               }
               rules={[
                 {
-                  required: !isChatCompletionsAPI,
-                  message: 'Please enter prompt field',
+                  required: true,
+                  message: 'Please specify the prompt field path',
                 },
               ]}
             >
-              <Input placeholder='e.g. query, prompt, input' />
+              <Input placeholder='e.g. query, prompt, input, message' />
             </Form.Item>
           </Col>
         </Row>
-      )}
+      </div>
 
       {streamMode ? (
         // Streaming mode configuration
         <>
           {/* Stream Data Configuration */}
-          <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              marginBottom: 24,
+              padding: '16px',
+              backgroundColor: token.colorFillAlter,
+              borderRadius: '8px',
+            }}
+          >
             <div
               style={{
-                margin: '16px 0 12px',
+                marginBottom: 16,
                 fontWeight: 'bold',
                 fontSize: '14px',
+                color: token.colorText,
               }}
             >
-              Stream Data Configuration
+              Streaming Response Configuration
             </div>
 
-            <Row gutter={16}>
+            <Row gutter={16} style={{ marginBottom: 16 }}>
               <Col span={12}>
                 <Form.Item
                   name={['field_mapping', 'stream_prefix']}
                   label={
                     <span>
-                      Stream Prefix
-                      <Tooltip title='Prefix for each streaming data line'>
+                      Stream Line Prefix
+                      <Tooltip title='Text that appears at the beginning of each streaming data line (e.g., "data:", "event:")'>
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
                   }
                 >
-                  <Input placeholder='e.g. data:' />
+                  <Input placeholder='data:' />
                 </Form.Item>
               </Col>
 
@@ -718,7 +1615,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   label={
                     <span>
                       Data Format
-                      <Tooltip title='Format of data after removing stream prefix'>
+                      <Tooltip title='Format of the streaming data after removing the prefix'>
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -730,9 +1627,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     },
                   ]}
                 >
-                  <Select placeholder='Select data format'>
-                    <Select.Option value='json'>JSON</Select.Option>
-                    <Select.Option value='non-json'>Non-JSON</Select.Option>
+                  <Select placeholder='Select format'>
+                    <Select.Option value='json'>JSON Format</Select.Option>
+                    <Select.Option value='non-json'>Plain Text</Select.Option>
                   </Select>
                 </Form.Item>
               </Col>
@@ -752,7 +1649,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           label={
                             <span>
                               Content Field Path
-                              <Tooltip title='The mapping path of the model output field in JSON format, separated by dots (e.g. choices.0.delta.content -> response_iter_lines["choices"][0]["delta"]["content"]'>
+                              <Tooltip title='Dot-notation path to the main content in each JSON chunk (e.g., choices.0.delta.content)'>
                                 <InfoCircleOutlined style={{ marginLeft: 5 }} />
                               </Tooltip>
                             </span>
@@ -760,11 +1657,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           rules={[
                             {
                               required: dataFormat === 'json',
-                              message: 'Please enter content field path',
+                              message: 'Please specify content field path',
                             },
                           ]}
                         >
-                          <Input placeholder='e.g. choices.0.delta.content' />
+                          <Input placeholder='choices.0.delta.content' />
                         </Form.Item>
                       </Col>
 
@@ -773,14 +1670,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           name={['field_mapping', 'reasoning_content']}
                           label={
                             <span>
-                              Reasoning Content Path
-                              <Tooltip title='The mapping path of the reasoning content field in JSON format, separated by dots (optional)'>
+                              Reasoning Field Path
+                              <Tooltip title='Dot-notation path to reasoning content in JSON (optional, for models that support reasoning)'>
                                 <InfoCircleOutlined style={{ marginLeft: 5 }} />
                               </Tooltip>
                             </span>
                           }
                         >
-                          <Input placeholder='e.g. choices.0.delta.reasoning_content' />
+                          <Input placeholder='choices.0.delta.reasoning_content' />
                         </Form.Item>
                       </Col>
                     </Row>
@@ -791,15 +1688,23 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           </div>
 
           {/* End Condition Configuration */}
-          <div style={{ marginBottom: 24 }}>
+          <div
+            style={{
+              marginBottom: 24,
+              padding: '16px',
+              backgroundColor: token.colorFillAlter,
+              borderRadius: '8px',
+            }}
+          >
             <div
               style={{
-                margin: '16px 0 12px',
+                marginBottom: 16,
                 fontWeight: 'bold',
                 fontSize: '14px',
+                color: token.colorText,
               }}
             >
-              End Condition Configuration
+              Stream Termination Configuration
             </div>
 
             <Row gutter={16}>
@@ -808,14 +1713,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'end_prefix']}
                   label={
                     <span>
-                      End Prefix
-                      <Tooltip title='Prefix for end lines (e.g. "data:", "event:")'>
+                      End Line Prefix
+                      <Tooltip title='Prefix for lines that contain stream termination signals (usually same as stream prefix)'>
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
                   }
                 >
-                  <Input placeholder='e.g. data:' />
+                  <Input placeholder='data:' />
                 </Form.Item>
               </Col>
 
@@ -824,8 +1729,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'stop_flag']}
                   label={
                     <span>
-                      Stop Flag
-                      <Tooltip title='Text that indicates stream end (e.g. [DONE], done, complete)'>
+                      Stop Signal
+                      <Tooltip title='Text content that indicates the stream has ended (e.g., [DONE], STOP, finished)'>
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -833,11 +1738,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   rules={[
                     {
                       required: true,
-                      message: 'Please enter stop flag',
+                      message: 'Please specify stop signal',
                     },
                   ]}
                 >
-                  <Input placeholder='e.g. [DONE]' />
+                  <Input placeholder='[DONE]' />
                 </Form.Item>
               </Col>
 
@@ -847,13 +1752,13 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   label={
                     <span>
                       End Field Path
-                      <Tooltip title='The mapping path of the end flag in JSON format, separated by dots (optional)'>
+                      <Tooltip title='JSON path to a field that indicates completion (optional, e.g., choices.0.finish_reason)'>
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
                   }
                 >
-                  <Input placeholder='e.g. choices.0.finish_reason' />
+                  <Input placeholder='choices.0.finish_reason' />
                 </Form.Item>
               </Col>
             </Row>
@@ -861,323 +1766,146 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         </>
       ) : (
         // Non-streaming mode configuration
-        <Row gutter={24}>
-          <Col span={12}>
-            <Form.Item
-              name={['field_mapping', 'content']}
-              label={
-                <span>
-                  Content Field Path
-                  <Tooltip title='Dot-separated path to content field in response (e.g. choices.0.message.content)'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-              rules={[
-                {
-                  required: true,
-                  message: 'Please enter content field path',
-                },
-              ]}
-            >
-              <Input placeholder='e.g. choices.0.message.content' />
-            </Form.Item>
-          </Col>
+        <div
+          style={{
+            padding: '16px',
+            backgroundColor: token.colorFillAlter,
+            borderRadius: '8px',
+          }}
+        >
+          <div
+            style={{
+              marginBottom: 16,
+              fontWeight: 'bold',
+              fontSize: '14px',
+              color: token.colorText,
+            }}
+          >
+            Non-Streaming Response Configuration
+          </div>
+          <Row gutter={24}>
+            <Col span={12}>
+              <Form.Item
+                name={['field_mapping', 'content']}
+                label={
+                  <span>
+                    Content Field Path
+                    <Tooltip title='Dot-notation path to the main content in the response JSON (e.g., choices.0.message.content)'>
+                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                    </Tooltip>
+                  </span>
+                }
+                rules={[
+                  {
+                    required: true,
+                    message: 'Please specify content field path',
+                  },
+                ]}
+              >
+                <Input placeholder='choices.0.message.content' />
+              </Form.Item>
+            </Col>
 
-          <Col span={12}>
-            <Form.Item
-              name={['field_mapping', 'reasoning_content']}
-              label={
-                <span>
-                  Reasoning Content Path
-                  <Tooltip title='Dot-separated path to reasoning content field (optional)'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-            >
-              <Input placeholder='e.g. choices.0.message.reasoning_content' />
-            </Form.Item>
-          </Col>
-        </Row>
+            <Col span={12}>
+              <Form.Item
+                name={['field_mapping', 'reasoning_content']}
+                label={
+                  <span>
+                    Reasoning Field Path
+                    <Tooltip title='Dot-notation path to reasoning content (optional, for models with reasoning capabilities)'>
+                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                    </Tooltip>
+                  </span>
+                }
+              >
+                <Input placeholder='choices.0.message.reasoning_content' />
+              </Form.Item>
+            </Col>
+          </Row>
+        </div>
       )}
     </div>
   );
 
-  // create advanced settings panel content
-  const advancedPanelContent = (
-    <>
-      {/* Method configuration */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 8 }}>
-          <span>Method</span>
-        </div>
-        <Input value='POST' disabled style={{ width: '180px' }} />
+  const renderTab3Content = () => (
+    <div>
+      {/* Section 5: API Field Mapping */}
+      <div
+        style={{
+          margin: '32px 0 16px',
+          fontWeight: 'bold',
+          fontSize: '18px',
+          paddingBottom: '8px',
+        }}
+      >
+        <Space>
+          <ApiOutlined />
+          <span>API Field Mapping</span>
+        </Space>
       </div>
 
-      {/* Header configuration */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 8 }}>
-          <Space>
-            <span>Headers</span>
-            <Tooltip title='Note whether the Authorization needs to have the Bearer prefix'>
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        </div>
-        <Form.List name='headers'>
-          {(fields, { add, remove }) => (
-            <>
-              {fields.map(({ key, name, ...restField }) => {
-                const isFixed = form.getFieldValue(['headers', name, 'fixed']);
-                const headerKey = form.getFieldValue(['headers', name, 'key']);
-                const isAuth = headerKey === 'Authorization';
-
-                return (
-                  <Space key={key} style={{ display: 'flex', marginBottom: 8 }}>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'key']}
-                      style={{ flex: 1 }}
-                    >
-                      <Input placeholder='Header Key' disabled={isFixed} />
-                    </Form.Item>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'value']}
-                      style={{ flex: 1 }}
-                      rules={
-                        isAuth
-                          ? [
-                              {
-                                required: false,
-                                message:
-                                  'Please enter API Key with Bearer prefix',
-                              },
-                            ]
-                          : []
-                      }
-                    >
-                      <Input
-                        placeholder={isAuth ? 'API Key' : 'Header Value'}
-                        disabled={isFixed}
-                      />
-                    </Form.Item>
-                    {!isFixed && (
-                      <MinusCircleOutlined
-                        onClick={() => remove(name)}
-                        style={{ marginTop: 8 }}
-                      />
-                    )}
-                  </Space>
-                );
-              })}
-              <Button
-                type='dashed'
-                onClick={() => add()}
-                block
-                icon={<PlusOutlined />}
-              >
-                Add Header
-              </Button>
-            </>
-          )}
-        </Form.List>
-      </div>
-
-      {/* Cookies */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 8, fontWeight: 500 }}>
-          <Space>
-            <span style={{ fontWeight: 'bold' }}>Cookies</span>
-            <Tooltip title='Request cookies for authentication'>
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        </div>
-        <Form.List name='cookies'>
-          {(fields, { add, remove }) => (
-            <>
-              {fields.map(({ key, name, ...restField }) => {
-                return (
-                  <Space key={key} style={{ display: 'flex', marginBottom: 8 }}>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'key']}
-                      style={{ flex: 1 }}
-                    >
-                      <Input placeholder='Cookie Key (e.g. token, uaa_token)' />
-                    </Form.Item>
-                    <Form.Item
-                      {...restField}
-                      name={[name, 'value']}
-                      style={{ flex: 1 }}
-                    >
-                      <Input placeholder='Cookie Value' />
-                    </Form.Item>
-                    <MinusCircleOutlined
-                      onClick={() => remove(name)}
-                      style={{ marginTop: 8 }}
-                    />
-                  </Space>
-                );
-              })}
-              <Button
-                type='dashed'
-                onClick={() => add()}
-                block
-                icon={<PlusOutlined />}
-              >
-                Add Cookie
-              </Button>
-            </>
-          )}
-        </Form.List>
-      </div>
-
-      {/* Client certificate upload */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ marginBottom: 8, fontWeight: 500 }}>
-          <Space>
-            <span style={{ fontWeight: 'bold' }}>Client Certificate</span>
-            <Tooltip title='Certificate files required for HTTPS mutual authentication'>
-              <InfoCircleOutlined />
-            </Tooltip>
-          </Space>
-        </div>
-        <div>
-          <Radio.Group
-            defaultValue='combined'
-            onChange={e => form.setFieldsValue({ cert_type: e.target.value })}
-            style={{ marginBottom: 16 }}
-          >
-            <Radio value='combined'>Combined Upload</Radio>
-            <Radio value='separate'>Separate Upload</Radio>
-          </Radio.Group>
-
-          <Form.Item noStyle shouldUpdate>
-            {({ getFieldValue }) => {
-              const certType = getFieldValue('cert_type') || 'combined';
-              return certType === 'combined' ? (
-                <div style={{ padding: '8px 0' }}>
-                  <Upload
-                    maxCount={1}
-                    accept='.pem'
-                    customRequest={handleCombinedCertUpload}
-                    listType='text'
-                    style={{ width: '100%' }}
-                  >
-                    <Button
-                      icon={<UploadOutlined />}
-                      size='middle'
-                      style={{ width: '180px', height: '40px' }}
-                    >
-                      Upload Cert+Key File
-                    </Button>
-                  </Upload>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      color: token.colorTextSecondary,
-                      fontSize: '12px',
-                    }}
-                  >
-                    Supported format: .pem (contains certificate and private
-                    key)
-                  </div>
-                </div>
-              ) : (
-                <div style={{ padding: '8px 0' }}>
-                  <Space
-                    direction='horizontal'
-                    style={{
-                      width: '100%',
-                      display: 'flex',
-                      justifyContent: 'flex-start',
-                    }}
-                  >
-                    <div>
-                      <Upload
-                        maxCount={1}
-                        accept='.crt,.pem'
-                        customRequest={handleCertFileUpload}
-                        listType='text'
-                      >
-                        <Button
-                          icon={<UploadOutlined />}
-                          size='middle'
-                          style={{ width: '180px', height: '40px' }}
-                        >
-                          Upload Certificate
-                        </Button>
-                      </Upload>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          color: token.colorTextSecondary,
-                          fontSize: '12px',
-                        }}
-                      >
-                        Supported formats: .crt, .pem
-                      </div>
-                    </div>
-
-                    <div style={{ marginLeft: 24 }}>
-                      <Upload
-                        maxCount={1}
-                        accept='.key,.pem'
-                        customRequest={handleKeyFileUpload}
-                        listType='text'
-                      >
-                        <Button
-                          icon={<UploadOutlined />}
-                          size='middle'
-                          style={{ width: '180px', height: '40px' }}
-                        >
-                          Upload Private Key
-                        </Button>
-                      </Upload>
-                      <div
-                        style={{
-                          marginTop: 4,
-                          color: token.colorTextSecondary,
-                          fontSize: '12px',
-                        }}
-                      >
-                        Supported formats: .key, .pem
-                      </div>
-                    </div>
-                  </Space>
-                </div>
-              );
-            }}
-          </Form.Item>
-        </div>
-      </div>
-    </>
+      {fieldMappingSection}
+    </div>
   );
 
-  // define collapse panel items
-  const collapseItems = [
-    {
-      key: 'advanced',
-      label: (
-        <Space style={{ marginTop: 3 }}>
-          <span
-            style={{
-              fontSize: 16,
-              marginTop: '-2px',
-              display: 'inline-block',
-            }}
+  // Render tab action buttons
+  const renderTabActions = () => {
+    if (activeTabKey === '1') {
+      return (
+        <Space>
+          <Button
+            icon={<BugOutlined />}
+            onClick={handleTestAPI}
+            loading={testing}
+            disabled={!isFormValidForTest()}
+            className={isFormValidForTest() ? 'test-button-active' : ''}
           >
-            Advanced Settings
-          </span>
+            Test It
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button
+            type='primary'
+            htmlType='button'
+            icon={<RightOutlined />}
+            onClick={handleNextTab}
+          >
+            Next Step
+          </Button>
         </Space>
-      ),
-      children: advancedPanelContent,
-      styles: { header: { paddingLeft: 0 } },
-    },
-  ];
+      );
+    }
+    if (activeTabKey === '2') {
+      return (
+        <Space>
+          <Button icon={<LeftOutlined />} onClick={goToPreviousTab}>
+            Previous
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button
+            type='primary'
+            htmlType='button'
+            icon={<RightOutlined />}
+            onClick={handleNextTab}
+          >
+            Next Step
+          </Button>
+        </Space>
+      );
+    }
+    if (activeTabKey === '3') {
+      return (
+        <Space>
+          <Button icon={<LeftOutlined />} onClick={goToPreviousTab}>
+            Previous
+          </Button>
+          <Button onClick={onCancel}>Cancel</Button>
+          <Button type='primary' loading={submitting} onClick={handleSubmit}>
+            {submitting ? 'Submitting...' : 'Create'}
+          </Button>
+        </Space>
+      );
+    }
+  };
 
   return (
     <Card
@@ -1199,32 +1927,54 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           spawn_rate: 1,
           concurrent_users: 1,
           chat_type: 0,
+          test_data_input_type: 'default',
           temp_task_id: tempTaskId,
           target_host: '',
           api_path: '/v1/chat/completions',
           duration: '',
           model: '',
-          field_mapping: {
-            prompt: '',
-            stream_prefix: 'data:',
-            data_format: 'json',
-            content: 'choices.0.delta.content',
-            reasoning_content: 'choices.0.delta.reasoning_content',
-            end_prefix: 'data:',
-            stop_flag: '[DONE]',
-            end_condition: '',
-          },
+          system_prompt: '',
+          request_payload: '',
+          field_mapping: getDefaultFieldMapping('/v1/chat/completions'),
         }}
         onFinish={handleSubmit}
         onValuesChange={changedValues => {
-          if ('api_path' in changedValues) {
-            setApiPath(changedValues.api_path);
-          }
           if ('stream_mode' in changedValues) {
             setStreamMode(changedValues.stream_mode);
           }
           if ('concurrent_users' in changedValues) {
             setConcurrentUsers(changedValues.concurrent_users);
+          }
+          if ('api_path' in changedValues) {
+            handleApiPathChange(changedValues.api_path);
+            // Update field_mapping default values when API path changes (but not in copy mode)
+            if (!isCopyMode) {
+              const newFieldMapping = getDefaultFieldMapping(
+                changedValues.api_path
+              );
+              form.setFieldsValue({ field_mapping: newFieldMapping });
+            }
+          }
+
+          // Clear related fields when dataset source type changes
+          if ('test_data_input_type' in changedValues) {
+            const newInputType = changedValues.test_data_input_type;
+            if (newInputType === 'input') {
+              // Clear test_data_file and test_data when switching to custom input
+              form.setFieldsValue({
+                test_data_file: undefined,
+                test_data: undefined,
+              });
+            } else if (newInputType === 'upload') {
+              // Clear test_data when switching to file upload
+              form.setFieldsValue({ test_data: undefined });
+            } else {
+              // Clear both when switching to default or none
+              form.setFieldsValue({
+                test_data: undefined,
+                test_data_file: undefined,
+              });
+            }
           }
 
           // Check form validity for test button whenever any field changes
@@ -1244,280 +1994,61 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         <Form.Item name='key_file' hidden>
           <Input />
         </Form.Item>
-
-        {/* Basic configuration */}
-        <div style={{ margin: '16px 0', fontWeight: 'bold', fontSize: '16px' }}>
-          <Space>
-            <ApiOutlined />
-            <span>Basic Configuration</span>
-          </Space>
-        </div>
-
-        <Row gutter={24}>
-          <Col span={24}>
-            <Form.Item
-              name='name'
-              label='Task Name'
-              rules={[{ required: true, message: 'Please enter task name' }]}
-            >
-              <Input placeholder='Please enter task name' />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={24}>
-          <Col span={24}>
-            <Form.Item
-              name='api_url'
-              label={
-                <span>
-                  API URL
-                  <Tooltip title='API endpoint for testing.'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-              required
-            >
-              <div style={{ display: 'flex', width: '100%' }}>
-                <Form.Item
-                  name='target_host'
-                  noStyle
-                  rules={[{ required: true, message: 'Please enter API URL' }]}
-                >
-                  <Input
-                    style={{ width: '70%' }}
-                    placeholder='https://your-api-domain.com'
-                  />
-                </Form.Item>
-                <Form.Item
-                  name='api_path'
-                  noStyle
-                  rules={[
-                    {
-                      required: true,
-                      message: 'Please enter API path',
-                    },
-                  ]}
-                >
-                  <Input
-                    style={{ width: '30%' }}
-                    placeholder='/v1/chat/completions'
-                  />
-                </Form.Item>
-              </div>
-            </Form.Item>
-          </Col>
-        </Row>
-
-        {/* Test configuration */}
-        <div
-          style={{
-            margin: '24px 0 16px',
-            fontWeight: 'bold',
-            fontSize: '16px',
-          }}
-        >
-          <Space>
-            <RocketOutlined />
-            <span>Test Configuration</span>
-          </Space>
-        </div>
-
-        {/* Request Payload - only show for custom APIs */}
-        {!isChatCompletionsAPI && (
-          <Row gutter={24} style={{ marginBottom: 16 }}>
-            <Col span={24}>
-              <Form.Item
-                name='request_payload'
-                label={
-                  <span>
-                    Request Payload
-                    <Tooltip title='JSON payload to send to the custom API endpoint. To quickly test the connectivity, please use a simple prompt. The default dataset will be used in the formal load test.'>
-                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                    </Tooltip>
-                  </span>
-                }
-                rules={[
-                  {
-                    required: !isChatCompletionsAPI,
-                    message: 'Please enter request payload',
-                  },
-                  {
-                    validator: (_, value) => {
-                      // Skip validation if field is not required (chat completions API)
-                      if (isChatCompletionsAPI) return Promise.resolve();
-                      if (!value) return Promise.resolve();
-                      try {
-                        JSON.parse(value);
-                        return Promise.resolve();
-                      } catch (e) {
-                        return Promise.reject(
-                          new Error('Please enter valid JSON')
-                        );
-                      }
-                    },
-                  },
-                ]}
-              >
-                <TextArea
-                  rows={4}
-                  placeholder='JSON payload to send to the custom API endpoint. To quickly test the connectivity, please use a simple prompt. e.g. {"query": "Hi", "imgs": [], "model": "gpt-4o"}'
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-        )}
-
-        {/* Model Name, Chat Type (if chat completions), and Output Mode */}
-        <Row gutter={24}>
-          <Col span={isChatCompletionsAPI ? 8 : 12}>
-            <Form.Item
-              name='model'
-              label={
-                <span>
-                  Model Name
-                  <Tooltip title='Please enter an available model name'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-              rules={[{ required: true, message: 'Please enter model name' }]}
-            >
-              <Input placeholder='e.g. internlm3-latest' />
-            </Form.Item>
-          </Col>
-
-          {isChatCompletionsAPI && (
-            <Col span={8}>
-              <Form.Item
-                name='chat_type'
-                label={
-                  <span>
-                    Chat Type
-                    <Tooltip title='Text-only or image-text conversations'>
-                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                    </Tooltip>
-                  </span>
-                }
-                rules={[{ required: true }]}
-              >
-                <Select placeholder='Select chat type'>
-                  <Select.Option value={0}>Text-Only</Select.Option>
-                  <Select.Option value={1}>Image-Text</Select.Option>
-                </Select>
-              </Form.Item>
-            </Col>
-          )}
-
-          <Col span={isChatCompletionsAPI ? 8 : 12}>
-            <Form.Item
-              name='stream_mode'
-              label={
-                <span>
-                  Output Mode
-                  <Tooltip title='Whether to enable streaming response'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-              rules={[{ required: true }]}
-            >
-              <Select placeholder='Select output mode'>
-                <Select.Option value>Stream</Select.Option>
-                <Select.Option value={false}>Non-stream</Select.Option>
-              </Select>
-            </Form.Item>
-          </Col>
-        </Row>
-
-        <Row gutter={24}>
-          <Col span={8}>
-            <Form.Item
-              name='duration'
-              label='Test Duration (s)'
-              rules={[{ required: true, message: 'Please enter duration' }]}
-            >
-              <InputNumber min={1} style={{ width: '100%' }} />
-            </Form.Item>
-          </Col>
-
-          <Col span={8}>
-            <Form.Item
-              name='concurrent_users'
-              label='Concurrent Users'
-              rules={[
-                { required: true, message: 'Please enter concurrent users' },
-              ]}
-            >
-              <InputNumber
-                min={1}
-                style={{ width: '100%' }}
-                onChange={handleConcurrentUsersChange}
-              />
-            </Form.Item>
-          </Col>
-
-          <Col span={8}>
-            <Form.Item
-              name='spawn_rate'
-              label={
-                <span>
-                  User Spawn Rate
-                  <Tooltip title='Number of virtual users created per second'>
-                    <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                  </Tooltip>
-                </span>
-              }
-            >
-              <InputNumber
-                min={1}
-                style={{ width: '100%' }}
-                onChange={handleSpawnRateChange}
-              />
-            </Form.Item>
-          </Col>
-        </Row>
-
-        {/* Field Mapping Section - always show */}
-        {fieldMappingSection}
-
-        {/* More settings */}
-        <div
-          style={{
-            margin: '24px 0 8px',
-            fontWeight: 'bold',
-            fontSize: '16px',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <Collapse
-            ghost
-            defaultActiveKey={[]}
-            className='more-settings-collapse'
-            items={collapseItems}
-          />
-        </div>
-
-        <Form.Item className='form-actions'>
-          <Space>
-            <Button
-              icon={<BugOutlined />}
-              onClick={handleTestAPI}
-              loading={testing}
-              disabled={!isFormValidForTest()}
-              className={isFormValidForTest() ? 'test-button-active' : ''}
-            >
-              Test It
-            </Button>
-            <Button onClick={onCancel}>Cancel</Button>
-            <Button type='primary' htmlType='submit' loading={submitting}>
-              {submitting ? 'Submitting...' : isCopyMode ? 'Create' : 'Create'}
-            </Button>
-          </Space>
+        <Form.Item name='test_data_file' hidden>
+          <Input />
         </Form.Item>
+
+        {/* Tabs for organized form sections */}
+        <Tabs
+          activeKey={activeTabKey}
+          onChange={setActiveTabKey}
+          tabPosition='top'
+          size='large'
+          items={[
+            {
+              key: '1',
+              label: (
+                <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  <SettingOutlined style={{ marginRight: 8 }} />
+                  Basic & Request
+                </span>
+              ),
+              children: renderTab1Content(),
+            },
+            {
+              key: '2',
+              label: (
+                <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  <DatabaseOutlined style={{ marginRight: 8 }} />
+                  Data & Load
+                </span>
+              ),
+              children: renderTab2Content(),
+            },
+            {
+              key: '3',
+              label: (
+                <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
+                  <ApiOutlined style={{ marginRight: 8 }} />
+                  Field Mapping
+                </span>
+              ),
+              children: renderTab3Content(),
+            },
+          ]}
+          style={{
+            minHeight: '500px',
+          }}
+        />
       </Form>
+
+      {/* Action buttons outside of Form to prevent accidental submission */}
+      <div
+        className='form-actions'
+        style={{ marginTop: '24px', textAlign: 'right' }}
+      >
+        <Space>{renderTabActions()}</Space>
+      </div>
 
       {/* Test Result Modal */}
       <Modal
@@ -1669,7 +2200,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   style={{
                     padding: '12px 16px',
                     backgroundColor: token.colorFillQuaternary,
-                    borderBottom: `1px solid ${token.colorBorder}`,
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',

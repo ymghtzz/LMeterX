@@ -6,7 +6,7 @@ Copyright (c) 2025, All Rights Reserved.
 from sqlalchemy.orm import Session
 
 from model.task import TaskResult
-from utils.logger import st_logger as logger
+from utils.logger import logger
 
 
 class ResultService:

@@ -8,19 +8,20 @@ import subprocess  # nosec B404
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from config.config import (
+from engine.runner import LocustRunner
+from model.task import Task
+from service.result_service import ResultService
+from utils.config import (
     ST_ENGINE_DIR,
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
+    TASK_STATUS_FAILED_REQUESTS,
     TASK_STATUS_LOCKED,
     TASK_STATUS_RUNNING,
     TASK_STATUS_STOPPED,
     TASK_STATUS_STOPPING,
 )
-from engine.runner import LocustRunner
-from model.task import Task
-from service.result_service import ResultService
-from utils.logger import add_task_log_sink, remove_task_log_sink, st_logger
+from utils.logger import add_task_log_sink, logger, remove_task_log_sink
 
 
 class TaskService:
@@ -35,7 +36,11 @@ class TaskService:
         self.result_service = ResultService()
 
     def update_task_status(
-        self, session: Session, task: Task, status: str, error_message: str = None
+        self,
+        session: Session,
+        task: Task,
+        status: str,
+        error_message: str | None = None,
     ):
         """
         Updates the status of a given task.
@@ -47,16 +52,16 @@ class TaskService:
             error_message (str, optional): An error message to record if the task failed.
         """
         try:
-            task.status = status
+            task.status = status  # type: ignore
             if error_message:
-                task.error_message = error_message
+                task.error_message = error_message  # type: ignore
             session.commit()
         except Exception as e:
             if hasattr(task, "id") and task.id:
-                task_logger = st_logger.bind(task_id=task.id)
+                task_logger = logger.bind(task_id=task.id)
                 task_logger.exception(f"Failed to update status: {e}")
             else:
-                st_logger.exception(f"Failed to update status for a task: {e}")
+                logger.exception(f"Failed to update status for a task: {e}")
             session.rollback()
 
     def update_task_status_by_id(self, session: Session, task_id: str, status: str):
@@ -68,7 +73,7 @@ class TaskService:
             task_id (str): The ID of the task to update.
             status (str): The new status to set.
         """
-        task_logger = st_logger.bind(task_id=task_id)
+        task_logger = logger.bind(task_id=task_id)
         try:
             task = session.get(Task, task_id)
             if task:
@@ -99,14 +104,14 @@ class TaskService:
             )
             task = session.execute(query).scalar_one_or_none()
             if task:
-                task_logger = st_logger.bind(task_id=task.id)
+                task_logger = logger.bind(task_id=task.id)
                 task_logger.info(f"Claimed and locked new task {task.id}.")
                 task.status = "locked"  # Update status immediately
                 session.commit()
                 return task
             return None
         except Exception as e:
-            st_logger.exception(f"Error while trying to get and lock a task: {e}")
+            logger.exception(f"Error while trying to get and lock a task: {e}")
             session.rollback()
             return None
 
@@ -120,7 +125,7 @@ class TaskService:
         Args:
             session (Session): The SQLAlchemy database session.
         """
-        st_logger.info("Reconciling tasks on startup...")
+        logger.info("Reconciling tasks on startup...")
         try:
             # Find all tasks that were in a transient state (locked or running)
             # during the last shutdown.
@@ -135,16 +140,16 @@ class TaskService:
             )
 
             if not stale_tasks:
-                st_logger.info("No running or locked tasks found to reconcile.")
+                logger.info("No running or locked tasks found to reconcile.")
                 return
 
-            st_logger.info(f"Found {len(stale_tasks)} potentially stale tasks to check")
+            logger.info(f"Found {len(stale_tasks)} potentially stale tasks to check")
             for task in stale_tasks:
                 handler_id = None
                 try:
                     # Temporarily add a log sink for this specific task to capture reconciliation logs.
                     handler_id = add_task_log_sink(task.id)
-                    task_logger = st_logger.bind(task_id=task.id)
+                    task_logger = logger.bind(task_id=task.id)
 
                     if task.status == TASK_STATUS_LOCKED:
                         # The task was locked, but the engine restarted before the process
@@ -215,7 +220,7 @@ class TaskService:
                         remove_task_log_sink(handler_id)
 
         except Exception as e:
-            st_logger.exception(f"An error occurred during task reconciliation: {e}")
+            logger.exception(f"An error occurred during task reconciliation: {e}")
 
     def start_task(self, task: Task) -> dict:
         """
@@ -227,7 +232,7 @@ class TaskService:
         Returns:
             dict: The result dictionary from the Locust runner, including run status.
         """
-        task_logger = st_logger.bind(task_id=task.id)
+        task_logger = logger.bind(task_id=task.id)
         try:
             task_logger.info(f"Starting execution for task {task.id}.")
             result = self.runner.run_locust_process(task)
@@ -250,7 +255,7 @@ class TaskService:
             session (Session): The SQLAlchemy database session.
         """
         handler_id = None
-        task_logger = st_logger.bind(task_id=task.id)
+        task_logger = logger.bind(task_id=task.id)
         try:
             handler_id = add_task_log_sink(task.id)
             task_logger.info(f"Starting processing pipeline for task {task.id}.")
@@ -270,15 +275,34 @@ class TaskService:
                 )
                 self.update_task_status(session, task, TASK_STATUS_STOPPED)
             elif run_status == "COMPLETED":
-                task_logger.info(f"Runner completed. Processing results...")
+                task_logger.info(
+                    f"Runner completed successfully. Processing results..."
+                )
                 self.update_task_status(session, task, TASK_STATUS_COMPLETED)
                 if locust_result:
                     # Always insert results first, regardless of outcome
                     self.result_service.insert_locust_results(
                         session, locust_result, task.id
                     )
+                else:
+                    error_message = (
+                        f"Runner completed but no result file was generated."
+                    )
+                    task_logger.error(f"{error_message}")
+                    self.update_task_status(
+                        session, task, TASK_STATUS_FAILED, error_message
+                    )
+            elif run_status == "FAILED_REQUESTS":
+                task_logger.warning(
+                    f"Runner completed with failed requests. Processing results..."
+                )
+                if locust_result:
+                    # Insert results even when there are failures
+                    self.result_service.insert_locust_results(
+                        session, locust_result, task.id
+                    )
 
-                    # Determine final status based on test results by checking aggregated stats.
+                    # Get failure count from aggregated stats
                     total_failures = 0
                     aggregated_stats = None
                     for stats_entry in locust_result.get("stats", []):
@@ -289,21 +313,31 @@ class TaskService:
                     if aggregated_stats:
                         total_failures = aggregated_stats.get("num_failures", 0)
 
-                    if total_failures > 0:
-                        error_message = f"Task {task.id} completed but with {total_failures} failed requests."
-                        task_logger.warning(f"{error_message}")
-
-                else:
-                    error_message = (
-                        f"Runner completed but no result file was generated."
+                    error_message = f"Task {task.id} completed with {total_failures} failed requests."
+                    task_logger.warning(f"{error_message}")
+                    self.update_task_status(
+                        session, task, TASK_STATUS_FAILED_REQUESTS, error_message
                     )
+                else:
+                    error_message = f"Task {task.id} had request failures but no result file was generated."
                     task_logger.error(f"{error_message}")
                     self.update_task_status(
                         session, task, TASK_STATUS_FAILED, error_message
                     )
+            elif run_status == "FAILED":
+                return_code = run_result.get("return_code", "unknown")
+                stderr_details = run_result.get("stderr", "No stderr.")
+                error_message = f"Task {task.id} execution failed (Locust exit code: {return_code}). Details: {stderr_details}"
+                task_logger.error(f"Task execution failed.")
+                self.update_task_status(
+                    session, task, TASK_STATUS_FAILED, error_message
+                )
             else:
-                error_message = f"Task {task.id} execution failed. Details: {run_result.get('stderr', 'No stderr.')}"
-                task_logger.error(f"Task pipeline failed.")
+                # Unexpected status from runner
+                return_code = run_result.get("return_code", "unknown")
+                stderr_details = run_result.get("stderr", "No stderr.")
+                error_message = f"Task {task.id} returned unexpected status '{run_status}' (return code: {return_code}). Details: {stderr_details}"
+                task_logger.error(f"Unexpected runner status: {run_status}")
                 self.update_task_status(
                     session, task, TASK_STATUS_FAILED, error_message
                 )
@@ -327,7 +361,7 @@ class TaskService:
             bool: True if the process was stopped successfully or was already stopped,
                   False if the stop attempt failed.
         """
-        task_logger = st_logger.bind(task_id=task_id)
+        task_logger = logger.bind(task_id=task_id)
         process = self.runner.process_dict.get(task_id)
 
         if not process:
@@ -395,10 +429,10 @@ class TaskService:
         """
         try:
             query = select(Task.id).where(Task.status == TASK_STATUS_STOPPING)
-            stopping_task_ids = session.execute(query).scalars().all()
+            stopping_task_ids = list(session.execute(query).scalars().all())
             if stopping_task_ids:
-                st_logger.info(f"Found stopping tasks: {stopping_task_ids}")
+                logger.info(f"Found stopping tasks: {stopping_task_ids}")
             return stopping_task_ids
         except Exception as e:
-            st_logger.exception("Failed to get stopping task IDs from the database.")
+            logger.exception("Failed to get stopping task IDs from the database.")
             return []

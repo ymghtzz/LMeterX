@@ -139,6 +139,13 @@ const BenchmarkJobs: React.FC = () => {
 
       setTaskToCopy(jobToCopyData);
       setIsModalVisible(true);
+
+      // Show toast notification about re-entering sensitive information
+      messageApi.warning({
+        content:
+          'Please note: Authentication credentials and uploaded files need to be re-entered.',
+        duration: 5,
+      });
     },
     [messageApi]
   );

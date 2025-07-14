@@ -9,17 +9,174 @@ import os
 import queue
 import re
 from functools import lru_cache
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import tiktoken
 
-from utils.logger import st_logger as logger
+from utils.config import (
+    DEFAULT_TOKEN_RATIO,
+    IMAGES_DIR,
+    MAX_QUEUE_SIZE,
+    PROMPTS_DIR,
+    SENSITIVE_KEYS,
+    TOKENIZER_CACHE_SIZE,
+    UPLOAD_FOLDER,
+)
+from utils.logger import logger
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-SENSITIVE_KEYS = ["authorization"]
+# === DATA CLASSES ===
+class PromptData:
+    """Structured prompt data representation."""
+
+    def __init__(
+        self,
+        prompt_id: Union[str, int],
+        prompt: str,
+        image_base64: str = "",
+        image_url: str = "",
+    ):
+        """Initialize PromptData with prompt information and optional image data.
+
+        Args:
+            prompt_id: Unique identifier for the prompt
+            prompt: The text prompt content
+            image_base64: Base64 encoded image data (optional)
+            image_url: URL to image (optional)
+        """
+        self.id = prompt_id
+        self.prompt = prompt
+        self.image_base64 = image_base64
+        self.image_url = image_url
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary format."""
+        result = {"id": self.id, "prompt": self.prompt}
+        if self.image_base64:
+            result["image_base64"] = self.image_base64
+        if self.image_url:
+            result["image_url"] = self.image_url
+        return result
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PromptData":
+        """Create from dictionary."""
+        return cls(
+            prompt_id=data.get("id", "unknown"),
+            prompt=data.get("prompt", ""),
+            image_base64=data.get("image_base64", ""),
+            image_url=data.get("image_url", ""),
+        )
 
 
+# === FILE PATH UTILITIES ===
+class FilePathUtils:
+    """Utility class for handling file paths and SSL certificates."""
+
+    @staticmethod
+    def resolve_upload_file_path(file_path: str) -> str:
+        """Resolve file path to absolute path, handling both relative and absolute paths.
+
+        Args:
+            file_path (str): Relative path from upload folder or absolute path
+
+        Returns:
+            str: Absolute path to the file
+
+        Raises:
+            ValueError: If the resolved path is invalid or outside upload folder
+            FileNotFoundError: If the file doesn't exist
+        """
+        if not file_path:
+            raise ValueError("File path cannot be empty")
+
+        normalized_path = os.path.normpath(file_path)
+
+        # Handle special case: paths starting with /upload_files/ should be treated as relative
+        if normalized_path.startswith("/upload_files/"):
+            # Extract relative part after /upload_files/
+            relative_part = normalized_path[len("/upload_files/") :]
+            if relative_part.startswith("../"):
+                raise ValueError(
+                    f"Invalid relative path (contains parent directory): {file_path}"
+                )
+            absolute_path = os.path.join(UPLOAD_FOLDER, relative_part)
+        elif os.path.isabs(normalized_path):
+            # Handle absolute path - ensure it's within upload folder
+            upload_folder_abs = os.path.abspath(UPLOAD_FOLDER)
+            if not normalized_path.startswith(upload_folder_abs):
+                raise ValueError(
+                    f"Absolute path must be within upload folder: {file_path}"
+                )
+            absolute_path = normalized_path
+        else:
+            # Handle relative path
+            if normalized_path.startswith(".."):
+                raise ValueError(
+                    f"Invalid relative path (contains parent directory): {file_path}"
+                )
+            absolute_path = os.path.join(UPLOAD_FOLDER, normalized_path)
+
+        # Verify the file exists
+        if not os.path.exists(absolute_path):
+            raise FileNotFoundError(f"Upload file not found: {absolute_path}")
+
+        return absolute_path
+
+    @staticmethod
+    def configure_certificates(
+        cert_file: Optional[str], key_file: Optional[str], task_logger
+    ) -> Optional[Union[str, Tuple[str, str]]]:
+        """Configure client certificate and key for SSL connections.
+
+        Args:
+            cert_file (Optional[str]): Path to certificate file
+            key_file (Optional[str]): Path to key file
+            task_logger: Logger instance for task-specific logging
+
+        Returns:
+            Optional[Union[str, Tuple[str, str]]]:
+                - None if no certificates provided
+                - str if only cert_file provided (for combined cert+key files)
+                - Tuple[str, str] if both cert and key files provided
+
+        Raises:
+            ValueError: If certificate configuration is invalid
+            FileNotFoundError: If certificate files don't exist
+        """
+        if not cert_file and not key_file:
+            return None
+
+        if cert_file and not key_file:
+            # Single file contains both certificate and key
+            try:
+                cert_path = FilePathUtils.resolve_upload_file_path(cert_file)
+                task_logger.info(f"Using combined certificate file: {cert_path}")
+                return cert_path
+            except (ValueError, FileNotFoundError) as e:
+                task_logger.error(f"Certificate file error: {e}")
+                raise
+
+        if cert_file and key_file:
+            # Separate certificate and key files
+            try:
+                cert_path = FilePathUtils.resolve_upload_file_path(cert_file)
+                key_path = FilePathUtils.resolve_upload_file_path(key_file)
+                task_logger.info(f"Using certificate: {cert_path}, key: {key_path}")
+                return (cert_path, key_path)
+            except (ValueError, FileNotFoundError) as e:
+                task_logger.error(f"Certificate/key file error: {e}")
+                raise
+
+        if not cert_file and key_file:
+            # Key file without certificate file is invalid
+            raise ValueError("Key file provided without certificate file")
+
+        # This should never be reached, but added for linter satisfaction
+        raise ValueError("Unexpected certificate configuration state")
+
+
+# === UTILITY FUNCTIONS ===
 def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
     """Masks sensitive information for safe logging.
 
@@ -29,9 +186,8 @@ def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
     Returns:
         Union[dict, list]: The masked data.
     """
-
     if isinstance(data, dict):
-        safe_dict = {}
+        safe_dict: Dict[Any, Any] = {}
         try:
             for key, value in data.items():
                 if isinstance(key, str) and key.lower() in SENSITIVE_KEYS:
@@ -49,8 +205,7 @@ def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
 
 
 def mask_sensitive_command(command_list: list) -> list:
-    """
-    Masks sensitive command for safe logging.
+    """Masks sensitive command for safe logging.
 
     Args:
         command_list (list): The list of commands to mask.
@@ -58,149 +213,26 @@ def mask_sensitive_command(command_list: list) -> list:
     Returns:
         list: The masked command list.
     """
-    if isinstance(command_list, list):
-        safe_list = []
-        try:
-            for item in command_list:
-                new_item = re.sub(
-                    r'("Authorization"\s*:\s*").*?(")',
-                    r"\1********\2",
-                    item,
-                    flags=re.IGNORECASE,
-                )
-                safe_list.append(new_item)
-            return safe_list
-        except Exception as e:
-            logger.warning(f"Error masking sensitive command: {str(e)}")
-            return command_list
-    else:
+    if not isinstance(command_list, list):
+        return command_list
+
+    safe_list = []
+    try:
+        for item in command_list:
+            new_item = re.sub(
+                r'("Authorization"\s*:\s*").*?(")',
+                r"\1********\2",
+                item,
+                flags=re.IGNORECASE,
+            )
+            safe_list.append(new_item)
+        return safe_list
+    except Exception as e:
+        logger.warning(f"Error masking sensitive command: {str(e)}")
         return command_list
 
 
-def load_data(
-    data_file: str, chat_type: int = 0, task_logger=None
-) -> List[Tuple[str, Union[str, Dict]]]:
-    """Load all stress test data.
-
-    Args:
-        data_file (str): Path to the JSONL file containing ids and prompts.
-        chat_type (int): The chat type, 0 for text-only, 1 for multimodal (text and image).
-
-    Returns:
-        List[Tuple[str, Union[str, Dict]]]: A list of data, formatted as (id, prompt) or (id, {prompt, image_base64}).
-    """
-    logger = task_logger if task_logger else logger
-    prompts = []
-    try:
-        with open(data_file, "r", encoding="utf-8") as f:
-            for line in f:
-                try:
-                    json_obj = json.loads(line.strip())
-
-                    if "id" in json_obj and "prompt" in json_obj:
-                        if chat_type == 1:  # Multimodal chat
-                            prompt = json_obj["prompt"]
-                            prompt_text = ""
-                            image_path = None
-                            if isinstance(prompt, list) and len(prompt) > 0:
-                                prompt_text = prompt[0]
-                            elif isinstance(prompt, str):
-                                prompt_text = prompt
-
-                            if "image_path" in json_obj:
-                                if isinstance(json_obj["image_path"], list):
-                                    image_path = json_obj["image_path"][0]
-                                elif isinstance(json_obj["image_path"], str):
-                                    image_path = json_obj["image_path"]
-                            if image_path:
-                                image_base64 = encode_image(image_path)
-                                prompts.append(
-                                    (
-                                        json_obj["id"],
-                                        {
-                                            "prompt": prompt_text,
-                                            "image_base64": image_base64,
-                                        },
-                                    )
-                                )
-                            else:
-                                prompts.append((json_obj["id"], prompt_text))
-                        else:  # Text-only chat
-                            prompt = json_obj["prompt"]
-                            if isinstance(prompt, list) and len(prompt) > 0:
-                                # Take the first element from the prompts list
-                                prompts.append((json_obj["id"], prompt[0]))
-                            elif isinstance(prompt, str):
-                                prompts.append((json_obj["id"], prompt))
-                            else:
-                                logger.warning(f"Invalid prompt format: {line}")
-
-                except json.JSONDecodeError:
-                    logger.error(f"Error parsing line: {line}")
-
-    except Exception as e:
-        logger.error(f"Error loading prompts: {str(e)}")
-    return prompts
-
-
-def init_prompt_queue(
-    chat_type: int = 0,
-    data_file: str = os.path.join(BASE_DIR, "data", "prompts", "0.jsonl"),
-    task_logger=None,
-) -> queue.Queue:
-    """Initializes the test data queue based on the chat type.
-
-    Args:
-        chat_type (int): The chat type, 0 for text-only, 1 for multimodal.
-        data_file (str, optional): The path to the data file. If None, it's automatically selected based on chat_type.
-        task_logger: An optional task-specific logger instance.
-
-    Returns:
-        queue.Queue: A queue containing the data.
-    """
-    logger = task_logger if task_logger else logger
-    if chat_type == 0:
-        data_file = os.path.join(BASE_DIR, "data", "prompts", "0.jsonl")
-    else:
-        data_file = os.path.join(BASE_DIR, "data", "prompts", "1.jsonl")
-
-    # logger.info(f"Initializing data queue for chat_type={chat_type}")
-
-    if not os.path.exists(data_file):
-        logger.error(f"Data file not found: {data_file}")
-        raise ValueError(f"Data file not found: {data_file}")
-
-    q: queue.Queue[Tuple[str, Union[str, Dict]]] = queue.Queue()
-
-    try:
-        prompts = load_data(data_file, chat_type, logger)
-        if not prompts:
-            logger.error("No prompts were loaded from the data file")
-            raise ValueError("No prompts were loaded from the data file")
-
-        for prompt_id, prompt_data in prompts:
-            try:
-                q.put_nowait((prompt_id, prompt_data))
-            except queue.Full:
-                logger.error("Queue is full, cannot add more items")
-                raise RuntimeError("Queue is full, cannot add more items")
-            except Exception as e:
-                logger.error(
-                    f"An unexpected error occurred while adding an item to the queue: {str(e)}"
-                )
-                raise RuntimeError(
-                    f"An unexpected error occurred while adding an item to the queue: {str(e)}"
-                )
-
-        # logger.info(f"Successfully initialized queue with {q.qsize()} prompts")
-        return q
-
-    except Exception as e:
-        logger.error(f"Failed to initialize prompt queue: {str(e)}")
-        raise RuntimeError(f"Failed to initialize prompt queue: {str(e)}")
-
-
-def encode_image(image_path):
+def encode_image(image_path: str) -> str:
     """Encodes an image file into a base64 string.
 
     Args:
@@ -208,42 +240,334 @@ def encode_image(image_path):
 
     Returns:
         str: The base64 encoded image string.
+
+    Raises:
+        FileNotFoundError: If the image file doesn't exist.
+        IOError: If there's an issue reading the file.
     """
-    image_full_path = os.path.join(BASE_DIR, "data", "pic", image_path)
-    with open(image_full_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
+    image_full_path = os.path.join(IMAGES_DIR, image_path)
+
+    if not os.path.exists(image_full_path):
+        raise FileNotFoundError(f"Image file not found: {image_full_path}")
+
+    try:
+        with open(image_full_path, "rb") as image_file:
+            return base64.b64encode(image_file.read()).decode("utf-8")
+    except IOError as e:
+        raise IOError(f"Failed to read image file {image_full_path}: {e}")
 
 
-@lru_cache(maxsize=128)
-def get_tokenizer(model_name):
+# === DATA PROCESSING ===
+def _normalize_prompt_field(prompt: Any) -> str:
+    """Normalize prompt field to string."""
+    if isinstance(prompt, str):
+        return prompt
+    elif isinstance(prompt, list) and prompt:
+        return str(prompt[0])
+    else:
+        return ""
+
+
+def _normalize_image_path(image_path: Any) -> Optional[str]:
+    """Normalize image path field."""
+    if isinstance(image_path, str):
+        return image_path
+    elif isinstance(image_path, list) and image_path:
+        return str(image_path[0])
+    else:
+        return None
+
+
+def _parse_jsonl_line(
+    line: str, line_num: int, task_logger=None
+) -> Optional[PromptData]:
+    """Parse a single JSONL line into PromptData.
+
+    Args:
+        line: The JSONL line to parse
+        line_num: Line number for error reporting
+        task_logger: Optional logger for this task
+
+    Returns:
+        PromptData object or None if parsing fails
+    """
+    effective_logger = task_logger if task_logger else logger
+
+    try:
+        json_obj = json.loads(line.strip())
+
+        # Extract ID
+        prompt_id = json_obj.get("id", line_num)
+
+        # Extract and normalize prompt
+        prompt = _normalize_prompt_field(json_obj.get("prompt"))
+        if not prompt:
+            effective_logger.warning(f"Empty prompt in line {line_num}: {line}")
+            return None
+
+        # Handle images
+        image_base64 = ""
+        image_url = ""
+
+        # Process image_path for base64 encoding
+        image_path = _normalize_image_path(json_obj.get("image_path"))
+        if image_path:
+            try:
+                image_base64 = encode_image(image_path)
+            except IOError as e:
+                effective_logger.warning(f"Failed to encode image {image_path}: {e}")
+
+        # Process image_url
+        if "image_url" in json_obj:
+            image_url_raw = json_obj["image_url"]
+            if isinstance(image_url_raw, list) and image_url_raw:
+                image_url = str(image_url_raw[0])
+            elif isinstance(image_url_raw, str):
+                image_url = image_url_raw
+
+        return PromptData(prompt_id, prompt, image_base64, image_url)
+
+    except json.JSONDecodeError as e:
+        effective_logger.error(
+            f"JSON decode error in line {line_num}: {line}. Error: {e}"
+        )
+        return None
+    except Exception as e:
+        effective_logger.error(f"Unexpected error parsing line {line_num}: {e}")
+        return None
+
+
+def load_data(data_file: str, task_logger=None) -> List[Dict[str, Any]]:
+    """Load all stress test data from file.
+
+    Args:
+        data_file (str): Path to the JSONL file containing ids and prompts.
+        task_logger: Optional task-specific logger instance.
+
+    Returns:
+        List[Dict[str, Any]]: A list of prompt data dictionaries.
+    """
+    effective_logger = task_logger if task_logger else logger
+    prompts: List[Dict[str, Any]] = []
+
+    if not os.path.exists(data_file):
+        effective_logger.error(f"Data file not found: {data_file}")
+        return prompts
+
+    try:
+        with open(data_file, "r", encoding="utf-8") as f:
+            for line_num, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+
+                prompt_data = _parse_jsonl_line(line, line_num, task_logger)
+                if prompt_data:
+                    prompts.append(prompt_data.to_dict())
+
+    except IOError as e:
+        effective_logger.error(f"Error reading file {data_file}: {e}")
+    except Exception as e:
+        effective_logger.error(f"Error loading prompts from {data_file}: {e}")
+
+    effective_logger.info(f"Loaded {len(prompts)} prompts from {data_file}")
+    return prompts
+
+
+def init_prompt_queue_from_string(jsonl_content: str, task_logger=None) -> queue.Queue:
+    """Initializes the test data queue from JSONL string content.
+
+    Args:
+        jsonl_content (str): JSONL format string content.
+        task_logger: An optional task-specific logger instance.
+
+    Returns:
+        queue.Queue: A queue containing the data.
+
+    Raises:
+        ValueError: If no valid prompts are found.
+        RuntimeError: If queue initialization fails.
+    """
+    effective_logger = task_logger if task_logger else logger
+    q: queue.Queue = queue.Queue()
+
+    if not jsonl_content.strip():
+        raise ValueError("Empty JSONL content provided")
+
+    try:
+        lines = jsonl_content.strip().split("\n")
+        prompts: List[Dict[str, Any]] = []
+
+        for line_num, line in enumerate(lines, 1):
+            if not line.strip():
+                continue
+
+            prompt_data = _parse_jsonl_line(line, line_num, task_logger)
+            if prompt_data:
+                prompts.append(prompt_data.to_dict())
+
+        if not prompts:
+            raise ValueError("No valid prompts were parsed from the JSONL content")
+
+        # Add to queue with size validation
+        if len(prompts) > MAX_QUEUE_SIZE:
+            effective_logger.warning(
+                f"Large dataset ({len(prompts)} items), consider splitting"
+            )
+
+        for prompt_dict in prompts:
+            q.put_nowait(prompt_dict)
+
+        effective_logger.info(
+            f"Successfully initialized queue with {q.qsize()} prompts from JSONL content"
+        )
+        return q
+
+    except Exception as e:
+        effective_logger.error(
+            f"Failed to initialize prompt queue from JSONL content: {e}"
+        )
+        raise RuntimeError(f"Failed to initialize prompt queue from JSONL content: {e}")
+
+
+def init_prompt_queue_from_file(file_path: str, task_logger=None) -> queue.Queue:
+    """Initializes the test data queue from a custom file.
+
+    Args:
+        file_path (str): Path to the JSONL file.
+        task_logger: An optional task-specific logger instance.
+
+    Returns:
+        queue.Queue: A queue containing the data.
+
+    Raises:
+        ValueError: If file not found or no prompts loaded.
+        RuntimeError: If queue initialization fails.
+    """
+    effective_logger = task_logger if task_logger else logger
+
+    if not os.path.exists(file_path):
+        raise ValueError(f"Custom data file not found: {file_path}")
+
+    q: queue.Queue = queue.Queue()
+
+    try:
+        prompts = load_data(file_path, task_logger)
+        if not prompts:
+            raise ValueError("No prompts were loaded from the custom data file")
+
+        for prompt_data in prompts:
+            q.put_nowait(prompt_data)
+
+        effective_logger.info(
+            f"Successfully initialized queue with {q.qsize()} prompts from file: {file_path}"
+        )
+        return q
+
+    except Exception as e:
+        effective_logger.error(
+            f"Failed to initialize prompt queue from file {file_path}: {e}"
+        )
+        raise RuntimeError(
+            f"Failed to initialize prompt queue from file {file_path}: {e}"
+        )
+
+
+def init_prompt_queue(
+    chat_type: int = 0,
+    test_data: str = "",
+    task_logger=None,
+) -> queue.Queue:
+    """Initializes the test data queue based on the chat type and custom test data.
+
+    Args:
+        chat_type (int): The chat type, 0 for text-only, 1 for multimodal.
+        test_data (str, optional): Custom test data - can be JSONL string content, file path, "default", or empty.
+        task_logger: An optional task-specific logger instance.
+
+    Returns:
+        queue.Queue: A queue containing the data.
+    """
+    effective_logger = task_logger if task_logger else logger
+
+    # Case 1: Empty test_data - no dataset mode, use request_payload directly
+    if not test_data or test_data.strip() == "":
+        effective_logger.info(
+            "No test_data provided, will use request_payload directly"
+        )
+        # Return empty queue for no-dataset mode
+        return queue.Queue()
+
+    # Case 2: test_data is "default" - use built-in dataset based on chat_type
+    if test_data.strip().lower() == "default":
+        effective_logger.info(f"Using default dataset for chat_type={chat_type}")
+        filename = "0.jsonl" if chat_type == 0 else "1.jsonl"
+        data_file = os.path.join(PROMPTS_DIR, filename)
+
+        if not os.path.exists(data_file):
+            raise ValueError(f"Default data file not found: {data_file}")
+
+        return init_prompt_queue_from_file(data_file, task_logger)
+
+    # Case 3: test_data is JSONL content string (starts with "{")
+    if test_data.strip().startswith("{"):
+        effective_logger.info("Processing test_data as JSONL content string")
+        return init_prompt_queue_from_string(test_data, task_logger)
+
+    # Case 4: test_data is a file path - handle both absolute and relative paths
+    effective_logger.info(f"Processing test_data as file path: {test_data}")
+
+    # Try to resolve the path using FilePathUtils for upload files
+    try:
+        # First, try to resolve as an upload file path (handles both relative and absolute paths)
+        resolved_path = FilePathUtils.resolve_upload_file_path(test_data)
+        effective_logger.info(f"Resolved upload file path: {resolved_path}")
+        return init_prompt_queue_from_file(resolved_path, task_logger)
+    except (ValueError, FileNotFoundError) as e:
+        effective_logger.warning(f"Failed to resolve as upload file path: {e}")
+
+        # Fallback: try as direct file path for backward compatibility
+        if os.path.exists(test_data):
+            effective_logger.info(f"Using direct file path: {test_data}")
+            return init_prompt_queue_from_file(test_data, task_logger)
+
+    # Invalid test_data provided
+    raise ValueError(
+        f"Invalid test_data provided: '{test_data}'. "
+        f"Expected empty string, 'default', JSONL content string, or valid file path."
+    )
+
+
+# === TOKEN PROCESSING ===
+@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
+def get_tokenizer(model_name: str) -> Optional[tiktoken.Encoding]:
     """Gets the tokenizer for a specified model, using LRU cache to reduce creation overhead.
 
     Args:
         model_name (str): The name of the model to get the tokenizer for.
 
     Returns:
-        tiktoken.Encoding: The tokenizer for the specified model.
+        tiktoken.Encoding: The tokenizer for the specified model, or None if failed.
     """
     try:
         # Get the appropriate encoder based on the model name
-        if "gpt-4" in model_name:
+        if "gpt-4" in model_name.lower():
             return tiktoken.encoding_for_model("gpt-4")
-        elif "gpt-3.5" in model_name:
+        elif "gpt-3.5" in model_name.lower():
             return tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "claude" in model_name:
+        elif "claude" in model_name.lower():
             # Claude uses tokenization similar to GPT-4
             return tiktoken.encoding_for_model("gpt-4")
         else:
-            # Default to cl100k_base encoder
-            # return tiktoken.get_encoding("cl100k_base")
+            # Default to gpt-3.5-turbo encoder
             return tiktoken.encoding_for_model("gpt-3.5-turbo")
     except Exception as e:
-        # If getting the tokenizer fails, return None, and a simple estimation will be used later
-        logger.warning(f"Failed to get tokenizer: {str(e)}, will use simple estimation")
+        logger.warning(
+            f"Failed to get tokenizer for {model_name}: {e}, will use simple estimation"
+        )
         return None
 
 
-def count_tokens(text, model_name="gpt-3.5-turbo"):
+def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     """Calculates the number of tokens in a text.
 
     Args:
@@ -253,82 +577,113 @@ def count_tokens(text, model_name="gpt-3.5-turbo"):
     Returns:
         int: The number of tokens in the text.
     """
+    if not text:
+        return 0
+
     try:
         # Try to use the standard tokenizer
         tokenizer = get_tokenizer(model_name)
         if tokenizer:
             return len(tokenizer.encode(text))
         else:
-            return len(text) // 4
+            return max(1, len(text) // DEFAULT_TOKEN_RATIO)
     except Exception as e:
         # Use simple estimation on error
         logger.warning(
-            f"Standard token counting failed: {str(e)}, using simple estimation"
+            f"Token counting failed for {model_name}: {e}, using simple estimation"
         )
-        return len(text) // 4
+        return max(1, len(text) // DEFAULT_TOKEN_RATIO)
 
 
-def calculate_custom_metrics(task_id, global_task_queue, exc_time):
-    """Calculates custom performance metrics."""
+# === METRICS PROCESSING ===
+def _drain_queue(q: queue.Queue) -> List[int]:
+    """Safely drain all items from a queue."""
+    items = []
+    while not q.empty():
+        try:
+            items.append(q.get_nowait())
+        except queue.Empty:
+            break
+    return items
+
+
+def calculate_custom_metrics(
+    task_id: str, global_task_queue: Dict[str, queue.Queue], exc_time: float
+) -> Dict[str, float]:
+    """Calculates custom performance metrics.
+
+    Args:
+        task_id: Task identifier
+        global_task_queue: Dictionary containing token queues
+        exc_time: Execution time in seconds
+
+    Returns:
+        Dictionary containing calculated metrics
+    """
     task_logger = logger.bind(task_id=task_id)
-    custom_metrics_result = {
+
+    # Initialize metrics
+    metrics = {
         "reqs_num": 0,
-        "req_throughput": 0,
-        "completion_tps": 0,
-        "total_tps": 0,
-        "avg_total_tokens_per_req": 0,
-        "avg_completion_tokens_per_req": 0,
+        "req_throughput": 0.0,
+        "completion_tps": 0.0,
+        "total_tps": 0.0,
+        "avg_total_tokens_per_req": 0.0,
+        "avg_completion_tokens_per_req": 0.0,
     }
 
-    completion_tokens_list = []
-    while not global_task_queue["completion_tokens_queue"].empty():
-        try:
-            element = global_task_queue["completion_tokens_queue"].get_nowait()
-            completion_tokens_list.append(element)
-        except queue.Empty:
-            break
-    completion_tokens = sum(completion_tokens_list)
-
-    custom_metrics_result["reqs_num"] = len(completion_tokens_list)
-
-    all_tokens_list = []
-    while not global_task_queue["all_tokens_queue"].empty():
-        try:
-            element = global_task_queue["all_tokens_queue"].get_nowait()
-            all_tokens_list.append(element)
-        except queue.Empty:
-            break
-    all_tokens = sum(all_tokens_list)
-
-    if exc_time is not None and exc_time > 0:
-        custom_metrics_result["completion_tps"] = completion_tokens / exc_time
-        custom_metrics_result["total_tps"] = all_tokens / exc_time
-        custom_metrics_result["req_throughput"] = (
-            custom_metrics_result["reqs_num"] / exc_time
+    try:
+        # Process completion tokens
+        completion_tokens_list = _drain_queue(
+            global_task_queue["completion_tokens_queue"]
         )
-    else:
-        task_logger.warning(
-            f"Invalid test execution time ({exc_time}s), throughput-related metrics will be set to 0."
-        )
+        completion_tokens = sum(completion_tokens_list)
+        metrics["reqs_num"] = len(completion_tokens_list)
 
-    if len(all_tokens_list) > 0:
-        custom_metrics_result["avg_total_tokens_per_req"] = sum(all_tokens_list) / len(
-            all_tokens_list
-        )
+        # Process all tokens
+        all_tokens_list = _drain_queue(global_task_queue["all_tokens_queue"])
+        all_tokens = sum(all_tokens_list)
 
-    if len(completion_tokens_list) > 0:
-        custom_metrics_result["avg_completion_tokens_per_req"] = sum(
-            completion_tokens_list
-        ) / len(completion_tokens_list)
+        # Calculate throughput metrics
+        if exc_time and exc_time > 0:
+            metrics["completion_tps"] = completion_tokens / exc_time
+            metrics["total_tps"] = all_tokens / exc_time
+            metrics["req_throughput"] = metrics["reqs_num"] / exc_time
+        else:
+            task_logger.warning(
+                f"Invalid execution time ({exc_time}s), throughput metrics set to 0"
+            )
 
-    task_logger.info(f"custom_metrics_result: {custom_metrics_result}")
-    return custom_metrics_result
+        # Calculate average tokens per request
+        if completion_tokens_list:
+            metrics["avg_completion_tokens_per_req"] = completion_tokens / len(
+                completion_tokens_list
+            )
+
+        if all_tokens_list:
+            metrics["avg_total_tokens_per_req"] = all_tokens / len(all_tokens_list)
+
+        task_logger.info(f"Custom metrics calculated: {metrics}")
+        return metrics
+
+    except Exception as e:
+        task_logger.error(f"Failed to calculate custom metrics: {e}")
+        return metrics
 
 
-def get_locust_stats(task_id, environment_stats) -> list:
-    """Gets and formats Locust statistics for database use."""
+def get_locust_stats(task_id: str, environment_stats) -> List[Dict[str, Any]]:
+    """Gets and formats Locust statistics for database use.
+
+    Args:
+        task_id: Task identifier
+        environment_stats: Locust environment statistics
+
+    Returns:
+        List of formatted metrics dictionaries
+    """
     task_logger = logger.bind(task_id=task_id)
     all_metrics_list = []
+
     try:
         from datetime import datetime
 
@@ -352,9 +707,10 @@ def get_locust_stats(task_id, environment_stats) -> list:
             all_metrics_list.append(raw_params)
 
         task_logger.info(
-            f"List of performance metrics collected by Locust: {all_metrics_list}"
+            f"Locust performance metrics collected: {len(all_metrics_list)} entries"
         )
+        return all_metrics_list
+
     except Exception as e:
-        task_logger.error(f"Failed to get Locust statistics results: {str(e)}")
-        raise RuntimeError(f"Failed to get Locust statistics results: {str(e)}")
-    return all_metrics_list
+        task_logger.error(f"Failed to get Locust statistics: {e}")
+        raise RuntimeError(f"Failed to get Locust statistics: {e}")

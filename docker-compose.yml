@@ -34,7 +34,7 @@ services:
       - DB_NAME=lmeterx
     volumes:
       - ./logs:/logs
-      - upload_files:/app/upload_files
+      - ./upload_files:/app/upload_files
     ports:
       - "5001:5001"
     healthcheck:
@@ -60,7 +60,7 @@ services:
       - DB_NAME=lmeterx
     volumes:
       - ./logs:/logs
-      - upload_files:/app/upload_files
+      - ./upload_files:/app/upload_files
     ports:
       - "5002:5002"
     healthcheck:
@@ -88,11 +88,10 @@ services:
       timeout: 5s
       retries: 3
     volumes:
-      - upload_files:/usr/share/nginx/html/uploads
+      - ./upload_files:/usr/share/nginx/html/uploads
 
 volumes:
   mysql_data:
-  upload_files:
 
 networks:
   default:

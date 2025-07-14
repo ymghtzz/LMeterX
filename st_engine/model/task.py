@@ -158,8 +158,14 @@ class TaskCreateReq(BaseModel):
     system_prompt: Optional[str] = Field(
         default="", description="System prompt for the model"
     )
-    user_prompt: Optional[str] = Field(
-        default="", description="User prompt for the model"
+    request_payload: Optional[str] = Field(
+        default="", description="Custom request payload for non-chat APIs (JSON string)"
+    )
+    field_mapping: Optional[Dict[str, str]] = Field(
+        default=None, description="Field mapping configuration for custom APIs"
+    )
+    test_data: Optional[str] = Field(
+        default="", description="Custom test data in JSONL format or file path"
     )
 
 
@@ -214,7 +220,6 @@ class Task(Base):
     target_host = Column(String(255), nullable=False)
     model = Column(String(100), nullable=True)
     system_prompt = Column(Text, nullable=True)
-    user_prompt = Column(Text, nullable=True)
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)
@@ -232,6 +237,7 @@ class Task(Base):
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    test_data = Column(Text, nullable=True)
 
 
 class TaskResult(Base):

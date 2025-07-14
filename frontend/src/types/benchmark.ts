@@ -22,9 +22,13 @@ export interface BenchmarkJob {
     end_condition?: string;
   };
   concurrent_users?: number;
+  spawn_rate?: number;
   dataset_id?: string;
   duration: number;
   concurrency?: number;
+  chat_type?: number;
+  stream_mode?: boolean;
+  system_prompt?: string;
   headers?: Array<{
     key: string;
     value: string;
@@ -33,11 +37,17 @@ export interface BenchmarkJob {
     key: string;
     value: string;
   }>;
+  cert_config?: {
+    cert_file?: string;
+    key_file?: string;
+  };
+  test_data?: string;
   status:
     | 'pending'
     | 'running'
     | 'completed'
     | 'failed'
+    | 'failed_requests'
     | 'stopped'
     | 'created'
     | 'idle';

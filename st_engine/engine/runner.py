@@ -11,7 +11,8 @@ import tempfile
 import threading
 
 from model.task import Task
-from utils.logger import st_logger
+from utils.logger import logger
+from utils.tools import FilePathUtils, mask_sensitive_command
 
 
 class LocustRunner:
@@ -47,11 +48,9 @@ class LocustRunner:
                   including status, stdout, stderr, return code, and
                   the parsed Locust result JSON.
         """
-        task_logger = st_logger.bind(task_id=task.id)
+        task_logger = logger.bind(task_id=task.id)
         try:
             cmd = self._build_locust_command(task)
-            from utils.tools import mask_sensitive_command
-
             masked_cmd = mask_sensitive_command(cmd)
             task_logger.info(
                 f"Task {task.id}, Executing Locust command: {' '.join(masked_cmd)}"
@@ -83,10 +82,15 @@ class LocustRunner:
             locust_result = self._load_locust_result(result_file, str(task.id))
 
             # Locust exit codes: 0 = success, 1 = test failures, >1 = locust error
-            if process.returncode in [0, 1]:
+            if process.returncode == 0:
                 status = "COMPLETED"
                 task_logger.info(
-                    f"Locust process completed with exit code {process.returncode}."
+                    f"Locust process completed successfully with exit code {process.returncode}."
+                )
+            elif process.returncode == 1:
+                status = "FAILED_REQUESTS"
+                task_logger.warning(
+                    f"Locust process completed with test failures (exit code {process.returncode})."
                 )
             else:
                 status = "FAILED"
@@ -168,60 +172,26 @@ class LocustRunner:
         if task.api_path:
             command.extend(["--api_path", task.api_path])
 
+        # Add system prompt if specified
+        if task.system_prompt:
+            command.extend(["--system_prompt", task.system_prompt])
+
+        # Add test_data if specified
+        if task.test_data:
+            command.extend(["--test_data", task.test_data])
+
         # Add certificate file parameters if they exist
         if task.cert_file:
             # Convert relative path to absolute path for st_engine
-            cert_file_path = self._resolve_upload_file_path(str(task.cert_file))
+            cert_file_path = FilePathUtils.resolve_upload_file_path(str(task.cert_file))
             command.extend(["--cert_file", cert_file_path])
 
         if task.key_file:
             # Convert relative path to absolute path for st_engine
-            key_file_path = self._resolve_upload_file_path(str(task.key_file))
+            key_file_path = FilePathUtils.resolve_upload_file_path(str(task.key_file))
             command.extend(["--key_file", key_file_path])
 
         return command
-
-    def _resolve_upload_file_path(self, relative_path: str) -> str:
-        """
-        Resolves upload file path for different deployment environments.
-
-        Args:
-            relative_path (str): The relative path from database
-
-        Returns:
-            str: The absolute path that can be accessed by st_engine
-        """
-        if not relative_path:
-            return ""
-
-        # If it's already an absolute path, return as is
-        if os.path.isabs(relative_path):
-            return relative_path
-
-        # For Docker deployment, use /app/upload_files
-        docker_path = f"/app/upload_files/{relative_path}"
-        if os.path.exists(docker_path):
-            return docker_path
-
-        # For local development, try different possible paths
-        possible_paths = [
-            os.path.join(
-                os.getcwd(), "upload_files", relative_path
-            ),  # Current directory
-            os.path.join(
-                os.path.dirname(self.base_dir), "upload_files", relative_path
-            ),  # Parent directory
-            os.path.join(
-                tempfile.gettempdir(), "upload_files", relative_path
-            ),  # Secure temp directory
-        ]
-
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-
-        # Return the Docker path as fallback (even if file doesn't exist yet)
-        return docker_path
 
     def _capture_process_output(
         self, process: subprocess.Popen, task_id: str, task_duration_seconds: int
@@ -243,7 +213,7 @@ class LocustRunner:
         """
         stdout: list[str] = []
         stderr: list[str] = []
-        task_logger = st_logger.bind(task_id=task_id)
+        task_logger = logger.bind(task_id=task_id)
 
         def read_output(pipe, lines, stream_name):
             """Reads lines from a stream and appends them to a list."""
@@ -356,7 +326,7 @@ class LocustRunner:
         Returns:
             dict: The parsed JSON data from the result file, or an empty dict if an error occurs.
         """
-        task_logger = st_logger.bind(task_id=task_id)
+        task_logger = logger.bind(task_id=task_id)
         result_dir = os.path.dirname(result_file)
         try:
             if not os.path.exists(result_file):

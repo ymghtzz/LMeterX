@@ -18,7 +18,7 @@ CREATE TABLE `tasks` (
   `field_mapping` json DEFAULT NULL COMMENT 'Field mapping configuration for custom APIs',
   `model` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `system_prompt` longtext COLLATE utf8mb4_unicode_ci,
-  `user_prompt` longtext COLLATE utf8mb4_unicode_ci,
+  `test_data` longtext COLLATE utf8mb4_unicode_ci,
   `stream_mode` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'True',
   `concurrent_users` int(11) DEFAULT '1',
   `spawn_rate` int(11) DEFAULT '0',

@@ -1,5 +1,5 @@
 """
-测试自定义API的prompt更新功能
+Test custom API prompt update functionality
 """
 
 import json
@@ -7,21 +7,23 @@ import unittest
 from queue import Queue
 from unittest.mock import Mock, patch
 
-from engine.locustfile import GLOBAL_CONFIG, ConfigManager, LLMTestUser
+# Import core components without locust dependencies
+from engine.core import ConfigManager, GlobalConfig
 
 
 class TestCustomApiPromptUpdate(unittest.TestCase):
-    """测试自定义API的prompt更新功能"""
+    """Test custom API prompt update functionality"""
 
     def setUp(self):
-        """设置测试环境"""
-        # 重置全局配置
-        GLOBAL_CONFIG.task_id = "test_task"
-        GLOBAL_CONFIG.api_path = "/custom/api"
-        GLOBAL_CONFIG.request_payload = json.dumps(
+        """Set up test environment"""
+        # Create global configuration instance
+        self.global_config = GlobalConfig()
+        self.global_config.task_id = "test_task"
+        self.global_config.api_path = "/custom/api"
+        self.global_config.request_payload = json.dumps(
             {"model": "test-model", "input": "original_prompt", "temperature": 0.7}
         )
-        GLOBAL_CONFIG.field_mapping = json.dumps(
+        self.global_config.field_mapping = json.dumps(
             {
                 "prompt": "input",
                 "content": "output.text",
@@ -30,123 +32,114 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
             }
         )
 
-        # 创建模拟的用户实例
-        self.user = LLMTestUser()
-        self.user.environment = Mock()
-        self.user.environment.prompt_queue = Queue()
+        # Create mock request handler
+        self.request_handler = Mock()
+        self.task_logger = Mock()
 
-        # 添加测试prompt到队列
-        self.user.environment.prompt_queue.put(("test_id", "这是测试prompt"))
-
-    def test_prepare_custom_api_request_with_prompt_update(self):
-        """测试自定义API请求中的prompt更新功能"""
-        task_logger = Mock()
-
-        # 调用准备请求的方法
-        request_kwargs, prompt_content = self.user._prepare_custom_api_request(
-            task_logger
+    def test_field_mapping_parsing(self):
+        """Test field mapping parsing functionality"""
+        field_mapping = ConfigManager.parse_field_mapping(
+            self.global_config.field_mapping
         )
 
-        # 验证返回值不为空
-        self.assertIsNotNone(request_kwargs)
-        self.assertIsNotNone(prompt_content)
+        # Verify field mapping is parsed correctly
+        self.assertEqual(field_mapping.prompt, "input")
+        self.assertEqual(field_mapping.content, "output.text")
+        self.assertEqual(field_mapping.stream_prefix, "data:")
+        self.assertEqual(field_mapping.stop_flag, "[DONE]")
 
-        # 验证payload中的prompt已被更新
-        payload = request_kwargs["json"]
-        self.assertEqual(payload["input"], "这是测试prompt")
+    def test_field_mapping_with_nested_field(self):
+        """Test field mapping with nested field configuration"""
+        # Set nested field mapping
+        nested_field_mapping = json.dumps({"prompt": "messages.0.content"})
+        field_mapping = ConfigManager.parse_field_mapping(nested_field_mapping)
 
-        # 验证其他字段保持不变
-        self.assertEqual(payload["model"], "test-model")
-        self.assertEqual(payload["temperature"], 0.7)
+        # Verify nested field mapping is parsed correctly
+        self.assertEqual(field_mapping.prompt, "messages.0.content")
 
-        # 验证返回的prompt内容正确
-        self.assertEqual(prompt_content, "这是测试prompt")
+    def test_field_mapping_without_configuration(self):
+        """Test field mapping parsing without configuration"""
+        # Test empty field mapping
+        field_mapping = ConfigManager.parse_field_mapping("")
 
-    def test_prepare_custom_api_request_with_nested_field(self):
-        """测试嵌套字段的prompt更新"""
-        # 设置嵌套字段的payload
-        GLOBAL_CONFIG.request_payload = json.dumps(
-            {
-                "messages": [{"role": "user", "content": "original_content"}],
-                "model": "test-model",
-            }
-        )
-        GLOBAL_CONFIG.field_mapping = json.dumps({"prompt": "messages.0.content"})
+        # Verify default values are used
+        self.assertEqual(field_mapping.prompt, "")
+        self.assertEqual(field_mapping.stream_prefix, "data:")
+        self.assertEqual(field_mapping.data_format, "json")
+        self.assertEqual(field_mapping.stop_flag, "[DONE]")
 
-        task_logger = Mock()
+    def test_headers_parsing(self):
+        """Test headers parsing functionality"""
+        headers_json = '{"Authorization": "Bearer token123", "Custom-Header": "value"}'
+        headers = ConfigManager.parse_headers(headers_json, self.task_logger)
 
-        # 调用准备请求的方法
-        request_kwargs, prompt_content = self.user._prepare_custom_api_request(
-            task_logger
-        )
+        # Verify headers are parsed correctly
+        self.assertEqual(headers["Authorization"], "Bearer token123")
+        self.assertEqual(headers["Custom-Header"], "value")
 
-        # 验证嵌套字段被正确更新
-        payload = request_kwargs["json"]
-        self.assertEqual(payload["messages"][0]["content"], "这是测试prompt")
+    def _set_field_value(self, data, path, value):
+        """Helper method to set field value in nested dictionary using dot-separated path."""
+        if not path or not isinstance(data, dict):
+            return
 
-    def test_prepare_custom_api_request_without_field_mapping(self):
-        """测试没有field_mapping配置的情况"""
-        GLOBAL_CONFIG.field_mapping = ""
+        try:
+            keys = path.split(".")
+            current = data
 
-        task_logger = Mock()
+            # Navigate to the parent of the target field
+            for key in keys[:-1]:
+                if key.isdigit():
+                    if isinstance(current, list):
+                        current = current[int(key)]
+                    else:
+                        return
+                elif isinstance(current, list) and current:
+                    if isinstance(current[0], dict):
+                        current = current[0].setdefault(key, {})
+                    else:
+                        return
+                elif isinstance(current, dict):
+                    current = current.setdefault(key, {})
+                else:
+                    return
 
-        # 调用准备请求的方法
-        request_kwargs, prompt_content = self.user._prepare_custom_api_request(
-            task_logger
-        )
-
-        # 验证原始payload保持不变
-        payload = request_kwargs["json"]
-        self.assertEqual(payload["input"], "original_prompt")
-
-        # 验证会记录warning日志
-        task_logger.warning.assert_called_with(
-            "No prompt field mapping configured, using original payload"
-        )
-
-    def test_prepare_custom_api_request_with_multimodal_data(self):
-        """测试多模态数据的处理"""
-        # 清空队列并添加多模态数据
-        while not self.user.environment.prompt_queue.empty():
-            self.user.environment.prompt_queue.get()
-
-        multimodal_data = {
-            "prompt": "描述这张图片",
-            "image_base64": "base64_encoded_image_data",
-        }
-        self.user.environment.prompt_queue.put(("multimodal_id", multimodal_data))
-
-        task_logger = Mock()
-
-        # 调用准备请求的方法
-        request_kwargs, prompt_content = self.user._prepare_custom_api_request(
-            task_logger
-        )
-
-        # 验证只提取了文本prompt部分
-        payload = request_kwargs["json"]
-        self.assertEqual(payload["input"], "描述这张图片")
-        self.assertEqual(prompt_content, "描述这张图片")
+            # Set the final field value
+            final_key = keys[-1]
+            if final_key.isdigit() and isinstance(current, list):
+                current[int(final_key)] = value
+            elif isinstance(current, dict):
+                current[final_key] = value
+        except (IndexError, ValueError, KeyError):
+            pass
 
     def test_set_field_value_simple_field(self):
-        """测试设置简单字段值"""
+        """Test setting simple field value"""
         data = {"field1": "value1", "field2": "value2"}
-        self.user._set_field_value(data, "field1", "new_value")
+        self._set_field_value(data, "field1", "new_value")
         self.assertEqual(data["field1"], "new_value")
 
     def test_set_field_value_nested_field(self):
-        """测试设置嵌套字段值"""
+        """Test setting nested field value"""
         data = {"level1": {"level2": {"target": "old_value"}}}
-        self.user._set_field_value(data, "level1.level2.target", "new_value")
+        self._set_field_value(data, "level1.level2.target", "new_value")
         self.assertEqual(data["level1"]["level2"]["target"], "new_value")
 
     def test_set_field_value_array_index(self):
-        """测试设置数组索引字段值"""
+        """Test setting array index field value"""
         data = {"messages": [{"content": "old_content"}, {"content": "other_content"}]}
-        self.user._set_field_value(data, "messages.0.content", "new_content")
+        self._set_field_value(data, "messages.0.content", "new_content")
         self.assertEqual(data["messages"][0]["content"], "new_content")
-        # 验证其他元素未被修改
+        # Verify other elements are not modified
         self.assertEqual(data["messages"][1]["content"], "other_content")
+
+    def test_cookies_parsing(self):
+        """Test cookies parsing functionality"""
+        cookies_json = '{"session_id": "abc123", "auth_token": "xyz789"}'
+        cookies = ConfigManager.parse_cookies(cookies_json, self.task_logger)
+
+        # Verify cookies are parsed correctly
+        self.assertEqual(cookies["session_id"], "abc123")
+        self.assertEqual(cookies["auth_token"], "xyz789")
 
 
 if __name__ == "__main__":

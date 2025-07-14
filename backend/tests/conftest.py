@@ -62,7 +62,6 @@ def sample_task_data():
         "stream_mode": True,
         "headers": [],
         "system_prompt": "You are a helpful assistant",
-        "user_prompt": "Please introduce artificial intelligence",
     }
 
 
