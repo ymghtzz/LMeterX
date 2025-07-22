@@ -241,30 +241,43 @@ class RequestHandler:
 
             # Navigate to the parent of the target field
             for key in keys[:-1]:
-                if key.isdigit():
+                # Check if key is a valid integer (including negative numbers)
+                try:
+                    index = int(key)
                     if isinstance(current, list):
-                        current = current[int(key)]
+                        current = current[index]
                     else:
                         return
-                elif isinstance(current, list) and current:
-                    if isinstance(current[0], dict):
-                        current = current[0].setdefault(key, {})
+                except ValueError:
+                    # Key is not an integer, treat as dict key
+                    if isinstance(current, list) and current:
+                        if isinstance(current[0], dict):
+                            current = current[0].setdefault(key, {})
+                        else:
+                            return
+                    elif isinstance(current, dict):
+                        current = current.setdefault(key, {})
                     else:
                         return
-                elif isinstance(current, dict):
-                    current = current.setdefault(key, {})
-                else:
-                    return
 
             # Set the final field value
             final_key = keys[-1]
-            if final_key.isdigit():
-                if isinstance(current, list) and len(current) > int(final_key):
-                    current[int(final_key)] = value
-            elif isinstance(current, dict):
-                current[final_key] = value
-            elif isinstance(current, list) and current and isinstance(current[0], dict):
-                current[0][final_key] = value
+            try:
+                final_index = int(final_key)
+                if isinstance(current, list):
+                    # For negative indices, ensure we're within bounds
+                    if -len(current) <= final_index < len(current):
+                        current[final_index] = value
+            except ValueError:
+                # Final key is not an integer, treat as dict key
+                if isinstance(current, dict):
+                    current[final_key] = value
+                elif (
+                    isinstance(current, list)
+                    and current
+                    and isinstance(current[0], dict)
+                ):
+                    current[0][final_key] = value
 
         except (KeyError, IndexError, TypeError, ValueError):
             # If we can't set the nested field, log a warning but don't fail
@@ -351,11 +364,27 @@ class StreamHandler:
                             len(metrics.model_output) + len(metrics.reasoning_content),
                         )
                         response.success()
+                        # self.task_logger.info(
+                        #     f"Recv model output: {metrics.model_output}"
+                        # )
+                        # self.task_logger.info(
+                        #     f"Recv reasoning content: {metrics.reasoning_content}"
+                        # )
 
                 except OSError as e:
-                    self.task_logger.error(
-                        f"Network error during stream processing: {e}"
-                    )
+                    error_details = str(e)
+                    if "Read timed out" in error_details:
+                        self.task_logger.error(
+                            f"Stream request timeout (current timeout: {DEFAULT_TIMEOUT} seconds): {error_details}. "
+                        )
+                    elif "Connection" in error_details:
+                        self.task_logger.error(
+                            f"Network connection error: {error_details}."
+                        )
+                    else:
+                        self.task_logger.error(
+                            f"Stream processing network error: {error_details}"
+                        )
                     response_time = (time.time() - start_time) * 1000
                     ErrorHandler.handle_general_exception(
                         str(e), self.task_logger, response, response_time, request_name

@@ -41,6 +41,7 @@ const FINAL_TASK_STATUSES = [
   'STOPPED',
   'CANCELLED',
   'ERROR',
+  'FAILED_REQUESTS',
 ];
 
 const isTaskInFinalState = (status: string | null | undefined): boolean => {
