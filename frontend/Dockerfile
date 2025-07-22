@@ -37,6 +37,7 @@ RUN npm run build
 # Run stage
 FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx-main.conf /etc/nginx/nginx.conf
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY nginx-map.conf /etc/nginx/conf.d/map.conf
 

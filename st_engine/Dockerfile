@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y curl && apt-get clean
+RUN apt-get update && apt-get install -y curl procps && apt-get clean
 
 COPY requirements.txt .
 RUN pip config set global.index-url https://pypi.org/simple && \

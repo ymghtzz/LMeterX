@@ -587,7 +587,7 @@ async def get_task_status_svc(request: Request, task_id: str):
 async def get_model_tasks_for_comparison_svc(request: Request):
     """
     Get available model tasks that can be used for performance comparison.
-    Only returns tasks with status 'completed' that have results.
+    Only returns tasks with status 'completed' or 'failed_requests' that have results.
 
     Args:
         request: The FastAPI request object.
@@ -598,12 +598,12 @@ async def get_model_tasks_for_comparison_svc(request: Request):
     try:
         db = request.state.db
 
-        # Query for completed tasks that have results
+        # Query for completed and failed_requests tasks that have results
         query = (
             select(
                 Task.id, Task.name, Task.model, Task.concurrent_users, Task.created_at
             )
-            .where(Task.status == "completed")
+            .where(Task.status.in_(["completed", "failed_requests"]))
             .join(TaskResult, Task.id == TaskResult.task_id)
             .distinct()
             .order_by(Task.created_at.desc(), Task.model, Task.concurrent_users)
@@ -688,7 +688,9 @@ async def compare_performance_svc(
             )
 
         incomplete_tasks = [
-            task_id for task_id, task in tasks.items() if task.status != "completed"
+            task_id
+            for task_id, task in tasks.items()
+            if task.status not in ["completed", "failed_requests"]
         ]
         if incomplete_tasks:
             return ComparisonResponse(

@@ -127,20 +127,24 @@ class StreamProcessor:
             current = data
 
             for key in keys:
-                if key.isdigit():
+                # Check if key is a valid integer (including negative numbers)
+                try:
+                    index = int(key)
                     if isinstance(current, list):
-                        current = current[int(key)]
+                        current = current[index]
                     else:
                         return ""
-                elif isinstance(current, list) and current:
-                    if isinstance(current[0], dict):
-                        current = current[0].get(key, {})
+                except ValueError:
+                    # Key is not an integer, treat as dict key
+                    if isinstance(current, list) and current:
+                        if isinstance(current[0], dict):
+                            current = current[0].get(key, {})
+                        else:
+                            return ""
+                    elif isinstance(current, dict):
+                        current = current.get(key, {})
                     else:
                         return ""
-                elif isinstance(current, dict):
-                    current = current.get(key, {})
-                else:
-                    return ""
 
             return str(current) if current else ""
         except (KeyError, IndexError, TypeError, ValueError):
@@ -276,6 +280,7 @@ class StreamProcessor:
                 EventManager.fire_metric_event(
                     "Time_to_first_output_token", ttfot, len(content_chunk)
                 )
+                # task_logger.info(f"Recv first output token: {content_chunk}")
 
         # Process reasoning tokens with safety checks
         if reasoning_chunk and len(reasoning_chunk.strip()) > 0:
@@ -301,6 +306,7 @@ class StreamProcessor:
                 EventManager.fire_metric_event(
                     "Time_to_first_reasoning_token", ttfrt, len(reasoning_chunk)
                 )
+                # task_logger.info(f"Recv first reasoning token: {reasoning_chunk}")
         elif (
             metrics.reasoning_is_active
             and not reasoning_chunk
@@ -313,6 +319,9 @@ class StreamProcessor:
                 EventManager.fire_metric_event(
                     "Time_to_reasoning_completion", ttrc, len(metrics.reasoning_content)
                 )
+                # task_logger.info(
+                #     f"Recv reasoning completion: {metrics.reasoning_content}"
+                # )
 
         return metrics
 

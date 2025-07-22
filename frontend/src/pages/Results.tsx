@@ -440,7 +440,9 @@ const TaskResults: React.FC = () => {
                 {taskInfo?.name || 'Unnamed Task'}
               </Descriptions.Item>
               <Descriptions.Item label='Target URL'>
-                {taskInfo?.target_host || 'N/A'}
+                {taskInfo?.target_host && taskInfo?.api_path
+                  ? `${taskInfo.target_host}${taskInfo.api_path}`
+                  : taskInfo?.target_host || 'N/A'}
               </Descriptions.Item>
               <Descriptions.Item label='Model Name'>
                 {taskInfo?.model || 'N/A'}
