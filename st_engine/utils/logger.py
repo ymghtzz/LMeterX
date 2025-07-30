@@ -44,7 +44,8 @@ logger.add(
 logger.add(
     sys.stdout,
     level="INFO",
-    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
+    # format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {file}:{line} | {message}",
 )
 
 
@@ -64,7 +65,13 @@ def add_task_log_sink(task_id: str) -> int:
         return "task_id" in record["extra"] and record["extra"]["task_id"] == task_id
 
     try:
-        handler_id = logger.add(
+        # Create a completely independent logger for task logs to avoid format conflicts
+        from loguru import logger as task_logger
+
+        # Remove any existing handlers from the task logger to ensure clean state
+        task_logger.remove()
+
+        handler_id = task_logger.add(
             task_log_file,
             rotation="20 MB",
             retention="10 days",
@@ -72,7 +79,7 @@ def add_task_log_sink(task_id: str) -> int:
             encoding="utf-8",
             level="INFO",
             backtrace=False,
-            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {file}:{line} | {message}",
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level}| {message}",
             filter=is_current_task_log,
             enqueue=False,
         )

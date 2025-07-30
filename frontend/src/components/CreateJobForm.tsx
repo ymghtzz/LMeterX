@@ -388,6 +388,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleCertFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        message.error(`File size exceeds 10MB limit.`);
+        onError();
+        return;
+      }
+
       form.setFieldsValue({
         temp_task_id: tempTaskId,
         cert_file: file,
@@ -404,6 +412,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleKeyFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        message.error(
+          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+        );
+        onError();
+        return;
+      }
+
       form.setFieldsValue({
         temp_task_id: tempTaskId,
         key_file: file,
@@ -420,6 +438,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleCombinedCertUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        message.error(
+          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+        );
+        onError();
+        return;
+      }
+
       form.setFieldsValue({
         temp_task_id: tempTaskId,
         cert_file: file,
@@ -437,6 +465,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleDatasetFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
+      // Validate file size (10MB limit)
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        message.error(
+          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+        );
+        onError();
+        return;
+      }
+
       form.setFieldsValue({
         temp_task_id: tempTaskId,
         test_data_file: file,
@@ -475,10 +513,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         return;
       }
 
-      if (values.cert_file) {
+      // Handle certificate files if present
+      if (values.cert_file || values.key_file) {
         try {
           const certType = form.getFieldValue('cert_type') || 'combined';
 
+          // Upload certificate files
           const result = await uploadCertificateFiles(
             values.cert_file,
             certType === 'separate' ? values.key_file : null,
@@ -486,12 +526,26 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             certType
           );
 
+          // Update values with certificate configuration
           values.cert_config = result.cert_config;
+          values.temp_task_id = tempTaskId;
+
+          // Clean up file references
           delete values.cert_file;
           delete values.key_file;
-          values.temp_task_id = tempTaskId;
         } catch (error) {
-          message.error('Certificate upload failed, please try again');
+          console.error('Certificate upload error:', error);
+          let errorMessage = 'Certificate upload failed, please try again';
+
+          if (error?.message) {
+            errorMessage = error.message;
+          } else if (error?.response?.data?.detail) {
+            errorMessage = error.response.data.detail;
+          } else if (error?.response?.data?.error) {
+            errorMessage = error.response.data.error;
+          }
+
+          message.error(errorMessage);
           return;
         }
       }
@@ -574,8 +628,18 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
           // keep temp_task_id for backend association
           values.temp_task_id = tempTaskId;
-        } catch (error) {
-          message.error('Certificate upload failed, please try again');
+        } catch (error: any) {
+          let errorMessage = 'Certificate upload failed, please try again';
+
+          if (error?.message) {
+            errorMessage = error.message;
+          } else if (error?.response?.data?.detail) {
+            errorMessage = error.response.data.detail;
+          } else if (error?.response?.data?.error) {
+            errorMessage = error.response.data.error;
+          }
+
+          message.error(errorMessage);
           setSubmitting(false);
           return;
         }
@@ -590,8 +654,18 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           values.test_data = result.test_data;
           delete values.test_data_file;
           values.temp_task_id = tempTaskId;
-        } catch (error) {
-          message.error('Test data upload failed, please try again');
+        } catch (error: any) {
+          let errorMessage = 'Test data upload failed, please try again';
+
+          if (error?.message) {
+            errorMessage = error.message;
+          } else if (error?.response?.data?.detail) {
+            errorMessage = error.response.data.detail;
+          } else if (error?.response?.data?.error) {
+            errorMessage = error.response.data.error;
+          }
+
+          message.error(errorMessage);
           setSubmitting(false);
           return;
         }
@@ -1454,7 +1528,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           >
             <InputNumber
               min={1}
-              max={3600}
+              max={172800}
               style={{ width: '100%' }}
               placeholder='60'
             />
@@ -1504,7 +1578,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           >
             <InputNumber
               min={1}
-              max={100}
+              max={1000}
               style={{ width: '100%' }}
               placeholder='1'
               onChange={handleSpawnRateChange}

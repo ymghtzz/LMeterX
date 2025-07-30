@@ -3,26 +3,34 @@ Author: Charm
 Copyright (c) 2025, All Rights Reserved.
 """
 
+import mimetypes
 import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import File, Form, Request, UploadFile
+from fastapi import File, Form, HTTPException, Request, UploadFile
 from starlette.responses import JSONResponse
 from werkzeug.utils import secure_filename
 
 from model.upload import UploadedFileInfo, UploadFileRsp
-from utils.be_config import UPLOAD_FOLDER
+from utils.be_config import (
+    ALLOWED_EXTENSIONS,
+    ALLOWED_MIME_TYPES,
+    MAX_FILE_SIZE,
+    MAX_FILENAME_LENGTH,
+    MAX_TASK_ID_LENGTH,
+    UPLOAD_FOLDER,
+)
 from utils.logger import logger
-
-# Ensure the global upload folder exists.
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Define allowed file extensions for different upload types.
-ALLOWED_EXTENSIONS = {
-    "cert": {"crt", "pem", "key"},
-    "dataset": {"json", "csv", "txt", "jsonl"},
-}
+from utils.security import (
+    safe_join,
+    validate_file_extension,
+    validate_file_size,
+    validate_filename,
+    validate_mime_type,
+    validate_task_id,
+    validate_upload_path,
+)
 
 # In-memory dictionary to store certificate configurations per task.
 _task_cert_configs: Dict[str, Dict[str, str]] = {}
@@ -76,13 +84,6 @@ def determine_cert_config(
     return config
 
 
-def allowed_file(filename: str, file_type: str) -> bool:
-    """Checks if the file extension is allowed for the given file type."""
-    return "." in filename and filename.rsplit(".", 1)[
-        1
-    ].lower() in ALLOWED_EXTENSIONS.get(file_type, set())
-
-
 async def process_cert_files(
     task_id: str, files: List[UploadFile], cert_type: Optional[str]
 ):
@@ -97,53 +98,84 @@ async def process_cert_files(
     Returns:
         A tuple containing the list of uploaded file info and the certificate configuration.
     """
-    task_upload_dir = os.path.join(UPLOAD_FOLDER, task_id)
-    os.makedirs(task_upload_dir, exist_ok=True)
+    try:
+        # Validate task_id
+        validated_task_id = validate_task_id(task_id)
 
-    uploaded_files_info = []
-    for file in files:
-        if file and file.filename and allowed_file(file.filename, "cert"):
-            filename = secure_filename(file.filename)
-            absolute_file_path = os.path.join(task_upload_dir, filename)
-            with open(absolute_file_path, "wb") as f:
-                f.write(await file.read())
+        # Create safe upload directory path using safe_join
+        task_upload_dir = safe_join(UPLOAD_FOLDER, validated_task_id)
 
-            file_info = {
-                "originalname": filename,
-                "path": absolute_file_path,  # Keep absolute path for file info
-                "size": os.path.getsize(absolute_file_path),
-            }
-            uploaded_files_info.append(file_info)
-            logger.info(f"Certificate file uploaded successfully, type: {cert_type}")
+        # Validate upload path
+        validate_upload_path(task_upload_dir, UPLOAD_FOLDER)
 
-    # Retrieve existing config for the task, if any.
-    existing_config = get_task_cert_config(task_id)
-    # Determine the new config based on the uploaded files - use relative paths
-    uploaded_files_with_relative_paths = []
-    for file_info in uploaded_files_info:
-        # Convert absolute path to relative path for cert config
-        abs_path = str(file_info["path"])
-        if abs_path.startswith(UPLOAD_FOLDER + "/"):
-            relative_path = abs_path.replace(UPLOAD_FOLDER + "/", "")
-        else:
-            # Fallback: extract relative part
-            relative_path = os.path.join(task_id, os.path.basename(abs_path))
+        os.makedirs(task_upload_dir, exist_ok=True)
 
-        uploaded_files_with_relative_paths.append(
-            {
-                "originalname": file_info["originalname"],
-                "path": relative_path,  # Use relative path for config
-                "size": file_info["size"],
-            }
+        uploaded_files_info = []
+        for file in files:
+            if file and file.filename:
+                # Validate filename
+                validated_filename = validate_filename(file.filename)
+
+                # Validate file extension
+                validate_file_extension(validated_filename, ALLOWED_EXTENSIONS["cert"])
+
+                # Read file content for validation
+                file_content = await file.read()
+
+                # Validate file size
+                validate_file_size(len(file_content))
+
+                # Validate MIME type
+                validate_mime_type(file_content, validated_filename, "cert")
+
+                # Reset file pointer for subsequent operations
+                await file.seek(0)
+
+                filename = secure_filename(validated_filename)
+                # Use safe_join for final file path
+                absolute_file_path = safe_join(task_upload_dir, filename)
+
+                # Additional safety check for the final path
+                validate_upload_path(absolute_file_path, UPLOAD_FOLDER)
+
+                with open(absolute_file_path, "wb") as f:
+                    f.write(file_content)
+
+                file_info = {
+                    "originalname": filename,
+                    "path": absolute_file_path,  # Keep absolute path for file info
+                    "size": os.path.getsize(absolute_file_path),
+                }
+                uploaded_files_info.append(file_info)
+                logger.info(
+                    f"Certificate file uploaded successfully, type: {cert_type}"
+                )
+
+        # Retrieve existing config for the task, if any.
+        existing_config = get_task_cert_config(validated_task_id)
+        # Determine the new config based on the uploaded files - use absolute paths
+        uploaded_files_with_absolute_paths = []
+        for file_info in uploaded_files_info:
+            uploaded_files_with_absolute_paths.append(
+                {
+                    "originalname": file_info["originalname"],
+                    "path": file_info["path"],  # Use absolute path for config
+                    "size": file_info["size"],
+                }
+            )
+
+        cert_config = determine_cert_config(
+            uploaded_files_with_absolute_paths, cert_type, existing_config
         )
+        # Save the updated configuration.
+        save_task_cert_config(validated_task_id, cert_config)
 
-    cert_config = determine_cert_config(
-        uploaded_files_with_relative_paths, cert_type, existing_config
-    )
-    # Save the updated configuration.
-    save_task_cert_config(task_id, cert_config)
-
-    return uploaded_files_info, cert_config
+        return uploaded_files_info, cert_config
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing certificate files: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def process_dataset_files(task_id: str, files: List[UploadFile]):
@@ -157,40 +189,76 @@ async def process_dataset_files(task_id: str, files: List[UploadFile]):
     Returns:
         A tuple containing the list of uploaded file info and the file path.
     """
-    task_upload_dir = os.path.join(UPLOAD_FOLDER, task_id)
-    os.makedirs(task_upload_dir, exist_ok=True)
+    try:
+        # Validate task_id
+        validated_task_id = validate_task_id(task_id)
 
-    uploaded_files_info = []
-    file_path = None
+        # Create safe upload directory path using safe_join
+        task_upload_dir = safe_join(UPLOAD_FOLDER, validated_task_id)
 
-    for file in files:
-        if file and file.filename and allowed_file(file.filename, "dataset"):
-            filename = secure_filename(file.filename)
-            absolute_file_path = os.path.join(task_upload_dir, filename)
-            with open(absolute_file_path, "wb") as f:
-                f.write(await file.read())
+        # Validate upload path
+        validate_upload_path(task_upload_dir, UPLOAD_FOLDER)
 
-            # Return relative path from upload folder for cross-service compatibility
-            relative_file_path = os.path.join(task_id, filename)
+        os.makedirs(task_upload_dir, exist_ok=True)
 
-            file_info = {
-                "originalname": filename,
-                "path": absolute_file_path,  # Keep absolute path for file info
-                "size": os.path.getsize(absolute_file_path),
-            }
-            uploaded_files_info.append(file_info)
-            file_path = relative_file_path  # Use relative path for test_data
-            logger.info(f"Dataset file uploaded successfully: {filename}")
+        uploaded_files_info = []
+        file_path = None
 
-    return uploaded_files_info, file_path
+        for file in files:
+            if file and file.filename:
+                # Validate filename
+                validated_filename = validate_filename(file.filename)
+
+                # Validate file extension
+                validate_file_extension(
+                    validated_filename, ALLOWED_EXTENSIONS["dataset"]
+                )
+
+                # Read file content for validation
+                file_content = await file.read()
+
+                # Validate file size
+                validate_file_size(len(file_content))
+
+                # Validate MIME type
+                validate_mime_type(file_content, validated_filename, "dataset")
+
+                # Reset file pointer for subsequent operations
+                await file.seek(0)
+
+                filename = secure_filename(validated_filename)
+                # Use safe_join for final file path
+                absolute_file_path = safe_join(task_upload_dir, filename)
+
+                # Additional safety check for the final path
+                validate_upload_path(absolute_file_path, UPLOAD_FOLDER)
+
+                with open(absolute_file_path, "wb") as f:
+                    f.write(file_content)
+
+                file_info = {
+                    "originalname": filename,
+                    "path": absolute_file_path,  # Keep absolute path for file info
+                    "size": os.path.getsize(absolute_file_path),
+                }
+                uploaded_files_info.append(file_info)
+                file_path = absolute_file_path  # Use absolute path for test_data
+                logger.info(f"Dataset file uploaded successfully: {filename}")
+
+        return uploaded_files_info, file_path
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error processing dataset files: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def upload_file_svc(
     request: Request,
-    files: List[UploadFile] = File(..., description="The files to upload"),
-    type: str = Form("cert"),
-    cert_type: Optional[str] = Form(None),
-    task_id: Optional[str] = Form(None),
+    task_id: Optional[str],
+    file_type: Optional[str],
+    cert_type: Optional[str],
+    files: List[UploadFile],
 ):
     """
     Main service function for handling file uploads.
@@ -198,6 +266,8 @@ async def upload_file_svc(
     It validates the request, generates a task ID if not provided, and routes
     the processing to the appropriate handler based on the file type.
     """
+    if files and files[0].filename:
+        logger.info(f"Uploading file: {files[0].filename}")
 
     if not files or not files[0].filename:
         return JSONResponse(
@@ -209,9 +279,25 @@ async def upload_file_svc(
         )
 
     # Generate a new task_id if one is not provided.
-    effective_task_id = task_id if task_id else str(uuid.uuid4())
+    effective_task_id = str(uuid.uuid4())
 
-    if type == "cert":
+    # Validate task_id if provided
+    if task_id:
+        try:
+            effective_task_id = validate_task_id(task_id)
+            # logger.info(f"Validated task_id: {effective_task_id}")
+        except ValueError as e:
+            logger.error(f"Task ID validation failed: {e}")
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "error": str(e)},
+            )
+
+    if not file_type:
+        file_type = "dataset"
+
+    if file_type == "cert":
+        # logger.info(f"Processing certificate files for task: {effective_task_id}")
         uploaded_files, cert_config = await process_cert_files(
             effective_task_id, files, cert_type
         )
@@ -222,7 +308,8 @@ async def upload_file_svc(
             cert_config=cert_config,
         )
 
-    if type == "dataset":
+    if file_type == "dataset":
+        # logger.info(f"Processing dataset files for task: {effective_task_id}")
         uploaded_files, file_path = await process_dataset_files(
             effective_task_id, files
         )
@@ -234,9 +321,9 @@ async def upload_file_svc(
         )
 
     # In the future, it could handle other file types here.
-    # e.g., if type == "dataset": ...
+    # e.g., if file_type == "dataset": ...
 
     return JSONResponse(
         status_code=400,
-        content={"status": "error", "error": f"Unsupported file type: {type}"},
+        content={"status": "error", "error": f"Unsupported file type: {file_type}"},
     )

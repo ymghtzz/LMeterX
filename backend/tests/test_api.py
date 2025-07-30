@@ -319,7 +319,7 @@ class TestUploadAPI:
         mock_upload.return_value = mock_response
 
         # Send upload request
-        files = {"file": ("cert.pem", test_file, "application/x-pem-file")}
+        files = {"files": ("cert.pem", test_file, "application/x-pem-file")}
         data = {"type": "cert", "cert_type": "cert_file", "task_id": "task_123"}
 
         response = client.post("/api/upload", files=files, data=data)
@@ -355,10 +355,13 @@ class TestUploadAPI:
         # Prepare test files
         files = [
             (
-                "file",
+                "files",
                 ("cert.pem", io.BytesIO(b"cert content"), "application/x-pem-file"),
             ),
-            ("file", ("key.pem", io.BytesIO(b"key content"), "application/x-pem-file")),
+            (
+                "files",
+                ("key.pem", io.BytesIO(b"key content"), "application/x-pem-file"),
+            ),
         ]
         data = {"type": "cert", "cert_type": "both", "task_id": "task_456"}
 

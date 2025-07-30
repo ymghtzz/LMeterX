@@ -161,7 +161,7 @@ export const uploadCertificateFiles = async (
   if (certType === 'combined' && certFile) {
     // Combined certificate mode
     const formData = new FormData();
-    formData.append('file', certFile);
+    formData.append('files', certFile);
     return uploadFiles(formData, 'cert', taskId, certType);
   }
   if (certType === 'separate') {
@@ -171,7 +171,7 @@ export const uploadCertificateFiles = async (
     // If there is a certificate file, upload it first
     if (certFile) {
       const certFormData = new FormData();
-      certFormData.append('file', certFile);
+      certFormData.append('files', certFile);
       const certResult = await uploadFiles(
         certFormData,
         'cert',
@@ -184,7 +184,7 @@ export const uploadCertificateFiles = async (
     // If there is a key file, upload it
     if (keyFile) {
       const keyFormData = new FormData();
-      keyFormData.append('file', keyFile);
+      keyFormData.append('files', keyFile);
       const keyResult = await uploadFiles(
         keyFormData,
         'cert',
@@ -207,6 +207,6 @@ export const uploadDatasetFile = async (datasetFile: File, taskId: string) => {
   }
 
   const formData = new FormData();
-  formData.append('file', datasetFile);
+  formData.append('files', datasetFile);
   return uploadFiles(formData, 'dataset', taskId);
 };

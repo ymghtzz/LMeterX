@@ -9,7 +9,7 @@ import os
 import queue
 import re
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 
 import tiktoken
 
@@ -20,7 +20,6 @@ from utils.config import (
     PROMPTS_DIR,
     SENSITIVE_KEYS,
     TOKENIZER_CACHE_SIZE,
-    UPLOAD_FOLDER,
 )
 from utils.logger import logger
 
@@ -67,113 +66,6 @@ class PromptData:
             image_base64=data.get("image_base64", ""),
             image_url=data.get("image_url", ""),
         )
-
-
-# === FILE PATH UTILITIES ===
-class FilePathUtils:
-    """Utility class for handling file paths and SSL certificates."""
-
-    @staticmethod
-    def resolve_upload_file_path(file_path: str) -> str:
-        """Resolve file path to absolute path, handling both relative and absolute paths.
-
-        Args:
-            file_path (str): Relative path from upload folder or absolute path
-
-        Returns:
-            str: Absolute path to the file
-
-        Raises:
-            ValueError: If the resolved path is invalid or outside upload folder
-            FileNotFoundError: If the file doesn't exist
-        """
-        if not file_path:
-            raise ValueError("File path cannot be empty")
-
-        normalized_path = os.path.normpath(file_path)
-
-        # Handle special case: paths starting with /upload_files/ should be treated as relative
-        if normalized_path.startswith("/upload_files/"):
-            # Extract relative part after /upload_files/
-            relative_part = normalized_path[len("/upload_files/") :]
-            if relative_part.startswith("../"):
-                raise ValueError(
-                    f"Invalid relative path (contains parent directory): {file_path}"
-                )
-            absolute_path = os.path.join(UPLOAD_FOLDER, relative_part)
-        elif os.path.isabs(normalized_path):
-            # Handle absolute path - ensure it's within upload folder
-            upload_folder_abs = os.path.abspath(UPLOAD_FOLDER)
-            if not normalized_path.startswith(upload_folder_abs):
-                raise ValueError(
-                    f"Absolute path must be within upload folder: {file_path}"
-                )
-            absolute_path = normalized_path
-        else:
-            # Handle relative path
-            if normalized_path.startswith(".."):
-                raise ValueError(
-                    f"Invalid relative path (contains parent directory): {file_path}"
-                )
-            absolute_path = os.path.join(UPLOAD_FOLDER, normalized_path)
-
-        # Verify the file exists
-        if not os.path.exists(absolute_path):
-            raise FileNotFoundError(f"Upload file not found: {absolute_path}")
-
-        return absolute_path
-
-    @staticmethod
-    def configure_certificates(
-        cert_file: Optional[str], key_file: Optional[str], task_logger
-    ) -> Optional[Union[str, Tuple[str, str]]]:
-        """Configure client certificate and key for SSL connections.
-
-        Args:
-            cert_file (Optional[str]): Path to certificate file
-            key_file (Optional[str]): Path to key file
-            task_logger: Logger instance for task-specific logging
-
-        Returns:
-            Optional[Union[str, Tuple[str, str]]]:
-                - None if no certificates provided
-                - str if only cert_file provided (for combined cert+key files)
-                - Tuple[str, str] if both cert and key files provided
-
-        Raises:
-            ValueError: If certificate configuration is invalid
-            FileNotFoundError: If certificate files don't exist
-        """
-        if not cert_file and not key_file:
-            return None
-
-        if cert_file and not key_file:
-            # Single file contains both certificate and key
-            try:
-                cert_path = FilePathUtils.resolve_upload_file_path(cert_file)
-                task_logger.info(f"Using combined certificate file: {cert_path}")
-                return cert_path
-            except (ValueError, FileNotFoundError) as e:
-                task_logger.error(f"Certificate file error: {e}")
-                raise
-
-        if cert_file and key_file:
-            # Separate certificate and key files
-            try:
-                cert_path = FilePathUtils.resolve_upload_file_path(cert_file)
-                key_path = FilePathUtils.resolve_upload_file_path(key_file)
-                task_logger.info(f"Using certificate: {cert_path}, key: {key_path}")
-                return (cert_path, key_path)
-            except (ValueError, FileNotFoundError) as e:
-                task_logger.error(f"Certificate/key file error: {e}")
-                raise
-
-        if not cert_file and key_file:
-            # Key file without certificate file is invalid
-            raise ValueError("Key file provided without certificate file")
-
-        # This should never be reached, but added for linter satisfaction
-        raise ValueError("Unexpected certificate configuration state")
 
 
 # === UTILITY FUNCTIONS ===
@@ -369,7 +261,6 @@ def load_data(data_file: str, task_logger=None) -> List[Dict[str, Any]]:
     except Exception as e:
         effective_logger.error(f"Error loading prompts from {data_file}: {e}")
 
-    effective_logger.info(f"Loaded {len(prompts)} prompts from {data_file}")
     return prompts
 
 
@@ -417,9 +308,6 @@ def init_prompt_queue_from_string(jsonl_content: str, task_logger=None) -> queue
         for prompt_dict in prompts:
             q.put_nowait(prompt_dict)
 
-        effective_logger.info(
-            f"Successfully initialized queue with {q.qsize()} prompts from JSONL content"
-        )
         return q
 
     except Exception as e:
@@ -458,9 +346,9 @@ def init_prompt_queue_from_file(file_path: str, task_logger=None) -> queue.Queue
         for prompt_data in prompts:
             q.put_nowait(prompt_data)
 
-        effective_logger.info(
-            f"Successfully initialized queue with {q.qsize()} prompts from file: {file_path}"
-        )
+        # effective_logger.info(
+        #     f"Successfully initialized queue with {q.qsize()} prompts from file: {file_path}"
+        # )
         return q
 
     except Exception as e:
@@ -491,15 +379,15 @@ def init_prompt_queue(
 
     # Case 1: Empty test_data - no dataset mode, use request_payload directly
     if not test_data or test_data.strip() == "":
-        effective_logger.info(
-            "No test_data provided, will use request_payload directly"
-        )
+        # effective_logger.info(
+        #     "No test_data provided, will use request_payload directly"
+        # )
         # Return empty queue for no-dataset mode
         return queue.Queue()
 
     # Case 2: test_data is "default" - use built-in dataset based on chat_type
     if test_data.strip().lower() == "default":
-        effective_logger.info(f"Using default dataset for chat_type={chat_type}")
+        # effective_logger.info(f"Using default dataset for chat_type={chat_type}")
         filename = "0.jsonl" if chat_type == 0 else "1.jsonl"
         data_file = os.path.join(PROMPTS_DIR, filename)
 
@@ -510,24 +398,20 @@ def init_prompt_queue(
 
     # Case 3: test_data is JSONL content string (starts with "{")
     if test_data.strip().startswith("{"):
-        effective_logger.info("Processing test_data as JSONL content string")
+        # effective_logger.info("Processing test_data as JSONL content string")
         return init_prompt_queue_from_string(test_data, task_logger)
 
     # Case 4: test_data is a file path - handle both absolute and relative paths
-    effective_logger.info(f"Processing test_data as file path: {test_data}")
+    # effective_logger.info(f"Processing test_data as file path: {test_data}")
 
     # Try to resolve the path using FilePathUtils for upload files
     try:
-        # First, try to resolve as an upload file path (handles both relative and absolute paths)
-        resolved_path = FilePathUtils.resolve_upload_file_path(test_data)
-        effective_logger.info(f"Resolved upload file path: {resolved_path}")
-        return init_prompt_queue_from_file(resolved_path, task_logger)
+        return init_prompt_queue_from_file(test_data, task_logger)
     except (ValueError, FileNotFoundError) as e:
         effective_logger.warning(f"Failed to resolve as upload file path: {e}")
 
         # Fallback: try as direct file path for backward compatibility
         if os.path.exists(test_data):
-            effective_logger.info(f"Using direct file path: {test_data}")
             return init_prompt_queue_from_file(test_data, task_logger)
 
     # Invalid test_data provided
@@ -663,7 +547,7 @@ def calculate_custom_metrics(
         if all_tokens_list:
             metrics["avg_total_tokens_per_req"] = all_tokens / len(all_tokens_list)
 
-        task_logger.info(f"Custom metrics calculated: {metrics}")
+        # task_logger.info(f"Custom metrics calculated: {metrics}")
         return metrics
 
     except Exception as e:
@@ -706,9 +590,6 @@ def get_locust_stats(task_id: str, environment_stats) -> List[Dict[str, Any]]:
             }
             all_metrics_list.append(raw_params)
 
-        task_logger.info(
-            f"Locust performance metrics collected: {len(all_metrics_list)} entries"
-        )
         return all_metrics_list
 
     except Exception as e:

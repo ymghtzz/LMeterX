@@ -58,6 +58,9 @@ services:
       - DB_USER=root
       - DB_PASSWORD=lmeterx123
       - DB_NAME=lmeterx
+      - DOCKER_CONTAINER=true
+      - TERM=dumb
+      - PYTHONUNBUFFERED=1
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
