@@ -4,6 +4,7 @@ Copyright (c) 2025, All Rights Reserved.
 """
 
 import json
+import os
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple, Union
@@ -61,13 +62,13 @@ def _normalize_file_path(file_path: str) -> str:
 
 def _get_cert_config(body: TaskCreateReq) -> Tuple[str, str]:
     """
-    Get and normalize certificate configuration from the request body.
+    Get certificate configuration from the request body.
 
     Args:
         body: The task creation request body
 
     Returns:
-        A tuple of (cert_file, key_file) normalized paths
+        A tuple of (cert_file, key_file) absolute paths
     """
     cert_file = ""
     key_file = ""
@@ -82,10 +83,6 @@ def _get_cert_config(body: TaskCreateReq) -> Tuple[str, str]:
         cert_config = get_task_cert_config(body.temp_task_id)
         cert_file = cert_config.get("cert_file", "")
         key_file = cert_config.get("key_file", "")
-
-    # Normalize paths
-    cert_file = _normalize_file_path(cert_file)
-    key_file = _normalize_file_path(key_file)
 
     return cert_file, key_file
 
@@ -327,15 +324,8 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     }
     cookies_json = json.dumps(cookies)
 
-    # Normalize test_data path to ensure cross-service compatibility
+    # Use test_data as provided (should be absolute path from upload service)
     test_data = body.test_data or ""
-    if (
-        test_data
-        and not test_data.strip().lower() in ("", "default")
-        and not test_data.strip().startswith("{")
-    ):
-        # If test_data is a file path, convert it to relative path
-        test_data = _normalize_file_path(test_data)
 
     db = request.state.db
     try:
@@ -848,11 +838,25 @@ def _prepare_request_payload(body: TaskCreateReq) -> Dict:
 def _prepare_client_cert(body: TaskCreateReq):
     """Prepare SSL certificate configuration for the HTTP client."""
     client_cert: Optional[Union[str, Tuple[str, str]]] = None
-    if hasattr(body, "cert_config") and body.cert_config:
-        if body.cert_config.cert_file and body.cert_config.key_file:
-            client_cert = (body.cert_config.cert_file, body.cert_config.key_file)
-        elif body.cert_config.cert_file:
-            client_cert = body.cert_config.cert_file
+
+    # Get certificate configuration
+    cert_file, key_file = _get_cert_config(body)
+
+    # Use absolute paths directly from upload service
+    if cert_file or key_file:
+        try:
+            if cert_file and key_file:
+                # Both cert and key files provided
+                if os.path.exists(cert_file) and os.path.exists(key_file):
+                    client_cert = (cert_file, key_file)
+            elif cert_file:
+                # Only cert file provided (combined cert+key file)
+                if os.path.exists(cert_file):
+                    client_cert = cert_file
+        except Exception as e:
+            logger.error(f"Error preparing certificate configuration: {e}")
+            return None
+
     return client_cert
 
 
@@ -1016,8 +1020,8 @@ async def _handle_streaming_response(response, full_url: str) -> Dict:
             }
 
         # For testing purposes, we limit the time and data we collect
-        max_chunks = 300  # max chunks to collect for testing
-        max_duration = 15  # max duration to wait for testing
+        max_chunks = 5000  # max chunks to collect for testing
+        max_duration = 60  # max duration to wait for testing
 
         start_time = asyncio.get_event_loop().time()
 

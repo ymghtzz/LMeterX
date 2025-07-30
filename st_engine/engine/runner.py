@@ -12,7 +12,7 @@ import threading
 
 from model.task import Task
 from utils.logger import logger
-from utils.tools import FilePathUtils, mask_sensitive_command
+from utils.tools import mask_sensitive_command
 
 
 class LocustRunner:
@@ -182,14 +182,10 @@ class LocustRunner:
 
         # Add certificate file parameters if they exist
         if task.cert_file:
-            # Convert relative path to absolute path for st_engine
-            cert_file_path = FilePathUtils.resolve_upload_file_path(str(task.cert_file))
-            command.extend(["--cert_file", cert_file_path])
+            command.extend(["--cert_file", task.cert_file])
 
         if task.key_file:
-            # Convert relative path to absolute path for st_engine
-            key_file_path = FilePathUtils.resolve_upload_file_path(str(task.key_file))
-            command.extend(["--key_file", key_file_path])
+            command.extend(["--key_file", task.key_file])
 
         return command
 

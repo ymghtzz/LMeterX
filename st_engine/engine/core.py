@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, Union
 
 from utils.config import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
-from utils.tools import FilePathUtils
 
 
 # === DATA CLASSES ===
@@ -140,12 +139,48 @@ class ConfigManager:
 class CertificateManager:
     """Manages SSL certificate configuration."""
 
+    # @staticmethod
+    # def configure_certificates(
+    #     cert_file: Optional[str], key_file: Optional[str], task_logger
+    # ) -> Optional[Union[str, Tuple[str, str]]]:
+    #     """Configure client certificate and key."""
+    #     return FilePathUtils.configure_certificates(cert_file, key_file, task_logger)
     @staticmethod
     def configure_certificates(
         cert_file: Optional[str], key_file: Optional[str], task_logger
     ) -> Optional[Union[str, Tuple[str, str]]]:
-        """Configure client certificate and key."""
-        return FilePathUtils.configure_certificates(cert_file, key_file, task_logger)
+        """Configure client certificate and key for SSL connections.
+
+        Args:
+            cert_file (Optional[str]): Path to certificate file
+            key_file (Optional[str]): Path to key file
+            task_logger: Logger instance for task-specific logging
+
+        Returns:
+            Optional[Union[str, Tuple[str, str]]]:
+                - None if no certificates provided
+                - str if only cert_file provided (for combined cert+key files)
+                - Tuple[str, str] if both cert and key files provided
+
+        Raises:
+            ValueError: If certificate configuration is invalid
+        """
+        if not cert_file and not key_file:
+            return None
+
+        if cert_file and not key_file:
+            # Single file contains both certificate and key
+            return cert_file
+
+        if cert_file and key_file:
+            # Separate certificate and key files
+            return (cert_file, key_file)
+
+        if not cert_file and key_file:
+            # Key file without certificate file is invalid
+            raise ValueError("Key file provided without certificate file")
+
+        return None
 
 
 # === VALIDATION ===
