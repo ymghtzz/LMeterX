@@ -82,7 +82,6 @@ class RequestHandler:
 
             # Check if test_data is empty (no dataset mode)
             if not self.config.test_data or self.config.test_data.strip() == "":
-                self.task_logger.info("Using original request payload without dataset")
                 user_prompt = self._extract_prompt_from_payload(payload)
             else:
                 # Dataset mode - update payload with prompt data
@@ -615,7 +614,7 @@ def on_locust_init(environment, **kwargs):
 
         environment.global_config = GLOBAL_CONFIG
         masked_config = mask_sensitive_data(GLOBAL_CONFIG.__dict__)
-        task_logger.info(f"Locust initialization complete. Config: {masked_config}")
+        # task_logger.info(f"Locust initialization complete. Config: {masked_config}")
         _start_time = time.time()
 
     except Exception as e:
@@ -631,14 +630,10 @@ def on_test_stop(environment, **kwargs):
     end_time = time.time()
 
     execution_time = (end_time - _start_time) if _start_time else 0
-    if execution_time > 0:
-        task_logger.info(f"Test duration: {execution_time:.2f} seconds.")
-    else:
+    if execution_time <= 0:
         task_logger.warning(
             "Start time was not recorded; cannot calculate execution time."
         )
-
-    task_logger.info("Test stopped. Calculating token throughput metrics...")
 
     try:
         from utils.tools import calculate_custom_metrics, get_locust_stats
@@ -686,11 +681,6 @@ class LLMTestUser(HttpUser):
 
     def get_next_prompt(self) -> Dict[str, Any]:
         """Fetch the next prompt from the shared queue."""
-        # Check if we're in no-dataset mode
-        if not GLOBAL_CONFIG.test_data or GLOBAL_CONFIG.test_data.strip() == "":
-            self.task_logger.warning("No dataset mode - returning empty prompt data")
-            return {"id": "no_dataset", "prompt": ""}
-
         try:
             prompt_data = self.environment.prompt_queue.get_nowait()
             self.environment.prompt_queue.put_nowait(prompt_data)

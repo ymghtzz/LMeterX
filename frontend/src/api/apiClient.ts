@@ -128,7 +128,7 @@ export const api = {
 // Add file upload method
 export const uploadFiles = async (
   files: FormData,
-  type: string = 'cert',
+  file_type: string,
   taskId: string,
   certType?: string
 ) => {
@@ -137,11 +137,19 @@ export const uploadFiles = async (
     taskId = `temp-${Date.now()}`;
   }
 
-  let url = `${BASE_URL}/upload?type=${type}&task_id=${taskId}`;
+  // Validate taskId format (alphanumeric with hyphens and underscores only)
+  const taskIdRegex = /^[a-zA-Z0-9_-]+$/;
+  if (!taskIdRegex.test(taskId)) {
+    throw new Error(
+      'Invalid task ID format. Only alphanumeric characters, hyphens, and underscores are allowed.'
+    );
+  }
+
+  let url = `${BASE_URL}/upload?file_type=${file_type}&task_id=${encodeURIComponent(taskId)}`;
 
   // If a certificate type is provided, add it to the URL
   if (certType) {
-    url += `&cert_type=${certType}`;
+    url += `&cert_type=${encodeURIComponent(certType)}`;
   }
 
   const response = await fetch(url, {
@@ -151,7 +159,18 @@ export const uploadFiles = async (
   });
 
   if (!response.ok) {
-    throw new Error(`Upload failed: ${response.statusText}`);
+    const errorText = await response.text();
+    let errorMessage = `Upload failed: ${response.statusText}`;
+
+    try {
+      const errorData = JSON.parse(errorText);
+      errorMessage = errorData.detail || errorData.error || errorMessage;
+    } catch {
+      // If not JSON, use the text as is
+      errorMessage = errorText || errorMessage;
+    }
+
+    throw new Error(errorMessage);
   }
 
   return response.json();
