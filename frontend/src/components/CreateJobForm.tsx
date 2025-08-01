@@ -838,7 +838,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 icon={<PlusOutlined />}
                 style={{ marginTop: 8 }}
               >
-                Add Custom Header
+                Add Header
               </Button>
             </>
           )}

@@ -65,7 +65,7 @@ METRIC_TTFOT = "Time_to_first_output_token"
 METRIC_TTFRT = "Time_to_first_reasoning_token"
 METRIC_TTRC = "Time_to_reasoning_completion"
 METRIC_TTOC = "Time_to_output_completion"
-METRIC_TTT = "Total_turnaround_time"
+METRIC_TTT = "Total_time"
 
 # === LOCUST CONFIGURATION ===
 LOCUST_STOP_TIMEOUT = 99

@@ -44,8 +44,7 @@ logger.add(
 logger.add(
     sys.stdout,
     level="INFO",
-    # format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
-    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {file}:{line} | {message}",
+    format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
 )
 
 
@@ -79,7 +78,7 @@ def add_task_log_sink(task_id: str) -> int:
             encoding="utf-8",
             level="INFO",
             backtrace=False,
-            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level}| {message}",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
             filter=is_current_task_log,
             enqueue=False,
         )

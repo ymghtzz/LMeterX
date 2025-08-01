@@ -98,7 +98,7 @@ const TaskResults: React.FC = () => {
   // Define metric results
   const TpsResult = results.find(item => item.metric_type === 'token_metrics');
   const CompletionResult = results.find(
-    item => item.metric_type === 'Total_turnaround_time'
+    item => item.metric_type === 'Total_time'
   );
   const firstTokenResult = results.find(
     item => item.metric_type === 'Time_to_first_output_token'
@@ -135,11 +135,11 @@ const TaskResults: React.FC = () => {
   const metricExplanations: Record<string, string> = {
     Time_to_first_output_token:
       'Time to output the first token in the final answer (content field)',
-    Time_to_output_completion: 'Total time for final answer generation',
-    Total_turnaround_time: 'Total time to complete the entire request',
+    Time_to_output_completion: 'Generation time for the final answer ',
+    Total_time: 'Total time to complete the entire request',
     Time_to_first_reasoning_token:
       'Time to output the first token in the reasoning part (reasoning_content field)',
-    Time_to_reasoning_completion: 'Total time for reasoning part generation',
+    Time_to_reasoning_completion: 'Generation time for the reasoning part',
   };
 
   const statisticExplanations: Record<string, string> = {
@@ -444,6 +444,93 @@ const TaskResults: React.FC = () => {
                   ? `${taskInfo.target_host}${taskInfo.api_path}`
                   : taskInfo?.target_host || 'N/A'}
               </Descriptions.Item>
+              <Descriptions.Item label='Request Payload'>
+                {taskInfo?.request_payload ? (
+                  <div style={{ maxWidth: '400px', wordBreak: 'break-all' }}>
+                    {taskInfo.request_payload.length > 200 ? (
+                      <Tooltip
+                        title={
+                          <div style={{ position: 'relative' }}>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '8px',
+                                zIndex: 1,
+                              }}
+                            >
+                              <CopyButton
+                                text={taskInfo.request_payload}
+                                successMessage='Request payload copied to clipboard'
+                                tooltip='Copy'
+                                size='small'
+                              />
+                            </div>
+                            <pre
+                              style={{
+                                maxWidth: '600px',
+                                maxHeight: '300px',
+                                overflow: 'auto',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                fontSize: '12px',
+                                backgroundColor: '#ffffff',
+                                color: '#333333',
+                                padding: '12px',
+                                borderRadius: '6px',
+                                margin: 0,
+                                fontFamily:
+                                  'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                lineHeight: '1.4',
+                              }}
+                            >
+                              {taskInfo.request_payload}
+                            </pre>
+                          </div>
+                        }
+                        placement='top'
+                        styles={{
+                          body: {
+                            maxWidth: '600px',
+                            backgroundColor: '#ffffff',
+                            color: '#ffffff',
+                          },
+                        }}
+                      >
+                        <div style={{ cursor: 'pointer' }}>
+                          {`${taskInfo.request_payload.substring(0, 200)}...`}
+                        </div>
+                      </Tooltip>
+                    ) : (
+                      <div>{taskInfo.request_payload}</div>
+                    )}
+                  </div>
+                ) : (
+                  'N/A'
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label='Dataset Source'>
+                {(() => {
+                  if (taskInfo?.test_data === 'default') {
+                    return 'Built-in Dataset';
+                  }
+                  if (taskInfo?.test_data && taskInfo.test_data !== 'default') {
+                    return 'Custom Dataset';
+                  }
+                  return '-';
+                })()}
+              </Descriptions.Item>
+              <Descriptions.Item label='Dataset Type'>
+                {(() => {
+                  if (taskInfo?.test_data === 'default') {
+                    if (taskInfo?.chat_type === 1) {
+                      return 'Multimodal (Text + Image)';
+                    }
+                    return 'Text-Only Conversations';
+                  }
+                  return '-';
+                })()}
+              </Descriptions.Item>
               <Descriptions.Item label='Model Name'>
                 {taskInfo?.model || 'N/A'}
               </Descriptions.Item>
@@ -646,7 +733,9 @@ const TaskResults: React.FC = () => {
                 item =>
                   item.metric_type !== 'total_tokens_per_second' &&
                   item.metric_type !== 'completion_tokens_per_second' &&
-                  item.metric_type !== 'token_metrics'
+                  item.metric_type !== 'token_metrics' &&
+                  (results.length <= 1 ||
+                    item.metric_type !== 'chat_completions')
               )}
               columns={columns}
               rowKey='metric_type'

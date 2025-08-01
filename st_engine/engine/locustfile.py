@@ -401,7 +401,7 @@ class StreamHandler:
 
     def handle_non_stream_request(
         self, client, base_request_kwargs: Dict[str, Any], start_time: float
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, Dict[str, Optional[int]]]:
         """Handle non-streaming API request."""
         request_kwargs = {**base_request_kwargs, "stream": False}
         model_output, reasoning_content = "", ""
@@ -409,6 +409,10 @@ class StreamHandler:
             self.config.field_mapping or ""
         )
         request_name = base_request_kwargs.get("name", "failure")
+        usage_tokens: Dict[str, Optional[int]] = {
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
 
         has_failed = False
         try:
@@ -417,11 +421,10 @@ class StreamHandler:
 
                 if self._handle_response_error(response, start_time, request_name):
                     has_failed = True
-                    return "", ""
+                    return "", "", usage_tokens
 
                 try:
                     resp_json = response.json()
-
                     error_msg = ErrorHandler.check_json_error(resp_json)
                     if error_msg:
                         ErrorHandler.handle_general_exception(
@@ -432,7 +435,7 @@ class StreamHandler:
                             request_name,
                         )
                         has_failed = True
-                        return "", ""
+                        return "", "", usage_tokens
 
                     model_output = (
                         StreamProcessor.get_field_value(
@@ -448,6 +451,24 @@ class StreamHandler:
                         if field_mapping.reasoning_content
                         else ""
                     )
+
+                    # Extract token counts from usage field if available
+                    if "usage" in resp_json and isinstance(resp_json["usage"], dict):
+                        usage = resp_json["usage"]
+                        # Look for completion tokens
+                        for key, value in usage.items():
+                            if "completion" in key.lower() and isinstance(
+                                value, (int, float)
+                            ):
+                                usage_tokens["completion_tokens"] = int(value)
+                                break
+                        # Look for total tokens
+                        for key, value in usage.items():
+                            if "total" in key.lower() and isinstance(
+                                value, (int, float)
+                            ):
+                                usage_tokens["total_tokens"] = int(value)
+                                break
 
                     # Only mark as success if no failures occurred
                     if not has_failed:
@@ -472,7 +493,7 @@ class StreamHandler:
             )
             has_failed = True
 
-        return reasoning_content, model_output
+        return reasoning_content, model_output, usage_tokens
 
     def _handle_response_error(
         self, response, start_time: float = 0, request_name: str = "failure"
@@ -690,21 +711,38 @@ class LLMTestUser(HttpUser):
             return {"id": "default", "prompt": DEFAULT_PROMPT}
 
     def _log_token_counts(
-        self, user_prompt: str, reasoning_content: str, model_output: str
+        self,
+        user_prompt: str,
+        reasoning_content: str,
+        model_output: str,
+        usage_tokens: Optional[Dict[str, Optional[int]]] = None,
     ) -> None:
         """Calculate and log token counts for the completed request."""
         try:
             model_name = GLOBAL_CONFIG.model_name or ""
-            system_tokens = count_tokens(GLOBAL_CONFIG.system_prompt or "", model_name)
-            user_tokens = count_tokens(user_prompt, model_name)
-            reasoning_tokens = count_tokens(reasoning_content, model_name)
-            completion_tokens = count_tokens(model_output, model_name)
+            system_prompt = GLOBAL_CONFIG.system_prompt or ""
 
-            total_output_tokens = reasoning_tokens + completion_tokens
-            total_tokens = total_output_tokens + user_tokens + system_tokens
+            # Prefer usage_tokens if available and valid
+            completion_tokens = None
+            total_tokens = None
 
-            GLOBAL_TASK_QUEUE["completion_tokens_queue"].put(int(total_output_tokens))
+            if usage_tokens:
+                completion_tokens = usage_tokens.get("completion_tokens")
+                total_tokens = usage_tokens.get("total_tokens")
+
+            # Fallback: manual counting if completion_tokens and total_tokens are missing
+            if completion_tokens is None or total_tokens is None:
+                system_tokens = count_tokens(system_prompt, model_name)
+                user_tokens = count_tokens(user_prompt, model_name)
+                reasoning_tokens = count_tokens(reasoning_content, model_name)
+                output_tokens = count_tokens(model_output, model_name)
+                completion_tokens = reasoning_tokens + output_tokens
+                total_tokens = system_tokens + user_tokens + completion_tokens
+
+            # Ensure integer and log
+            GLOBAL_TASK_QUEUE["completion_tokens_queue"].put(int(completion_tokens))
             GLOBAL_TASK_QUEUE["all_tokens_queue"].put(int(total_tokens))
+
         except Exception as e:
             self.task_logger.error(f"Failed to count tokens: {e}", exc_info=True)
 
@@ -743,8 +781,9 @@ class LLMTestUser(HttpUser):
                         self.client, base_request_kwargs, start_time
                     )
                 )
+                usage_tokens = None
             else:
-                reasoning_content, model_output = (
+                reasoning_content, model_output, usage_tokens = (
                     self.stream_handler.handle_non_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
@@ -763,5 +802,7 @@ class LLMTestUser(HttpUser):
                 request_name=request_name,
             )
 
-        if reasoning_content or model_output:
-            self._log_token_counts(user_prompt or "", reasoning_content, model_output)
+        if reasoning_content or model_output or usage_tokens:
+            self._log_token_counts(
+                user_prompt or "", reasoning_content, model_output, usage_tokens
+            )
