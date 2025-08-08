@@ -1554,7 +1554,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           >
             <InputNumber
               min={1}
-              max={1000}
+              max={5000}
               style={{ width: '100%' }}
               placeholder='10'
               onChange={handleConcurrentUsersChange}
