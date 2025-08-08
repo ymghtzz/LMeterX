@@ -7,6 +7,7 @@ Optimized and refactored Locust test file for LLM performance testing.
 
 import json
 import os
+import sys
 import tempfile
 import time
 from typing import Any, Dict, List, Optional, Tuple
@@ -15,6 +16,9 @@ import urllib3
 from gevent import queue
 from locust import HttpUser, between, events, task
 from urllib3.exceptions import InsecureRequestWarning
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.core import (
     CertificateManager,
@@ -739,9 +743,11 @@ class LLMTestUser(HttpUser):
                 completion_tokens = reasoning_tokens + output_tokens
                 total_tokens = system_tokens + user_tokens + completion_tokens
 
-            # Ensure integer and log
-            GLOBAL_TASK_QUEUE["completion_tokens_queue"].put(int(completion_tokens))
-            GLOBAL_TASK_QUEUE["all_tokens_queue"].put(int(total_tokens))
+            # Ensure integer and log - only if tokens are not None
+            if completion_tokens is not None:
+                GLOBAL_TASK_QUEUE["completion_tokens_queue"].put(int(completion_tokens))
+            if total_tokens is not None:
+                GLOBAL_TASK_QUEUE["all_tokens_queue"].put(int(total_tokens))
 
         except Exception as e:
             self.task_logger.error(f"Failed to count tokens: {e}", exc_info=True)
@@ -768,6 +774,7 @@ class LLMTestUser(HttpUser):
 
         start_time = time.time()
         reasoning_content, model_output = "", ""
+        usage_tokens = None
         request_name = (
             base_request_kwargs.get("name", "failure")
             if base_request_kwargs
@@ -781,7 +788,6 @@ class LLMTestUser(HttpUser):
                         self.client, base_request_kwargs, start_time
                     )
                 )
-                usage_tokens = None
             else:
                 reasoning_content, model_output, usage_tokens = (
                     self.stream_handler.handle_non_stream_request(

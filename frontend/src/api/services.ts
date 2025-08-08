@@ -190,7 +190,7 @@ export const systemApi = {
 
   // Get AI service configuration
   getAIServiceConfig: () => api.get<any>('/system/ai-service'),
-};
+} as const;
 
 // Define the upload service
 export const uploadCertificateFiles = async (

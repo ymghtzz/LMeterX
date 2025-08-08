@@ -273,7 +273,7 @@ const SystemConfiguration: React.FC = () => {
           >
             {/* <Input.Password placeholder='Enter your API key' visibilityToggle /> */}
             <Input.Password
-              placeholder='Enter your API key'
+              placeholder='Enter your API key without `Bearer` prefix'
               visibilityToggle={false}
               onCopy={e => e.preventDefault()}
               onCut={e => e.preventDefault()}
