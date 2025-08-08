@@ -20,7 +20,7 @@ class MySqlSettings(BaseSettings):
     DB_PASSWORD: str = os.environ.get("DB_PASSWORD", "lmeterx_password")
     DB_HOST: str = os.environ.get("DB_HOST", "lmeterx_url")
     DB_PORT: int = int(os.environ.get("DB_PORT", 3306))
-    DB_NAME: str = os.environ.get("DB_NAME", "lmeterx_db")
+    DB_NAME: str = os.environ.get("DB_NAME", "lmeterx")
 
     # Connection pool settings
     DB_POOL_SIZE: int = 20

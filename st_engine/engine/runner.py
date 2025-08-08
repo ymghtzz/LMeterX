@@ -145,7 +145,7 @@ class LocustRunner:
             "--stop-timeout",
             "99",
             "--api_path",
-            task.api_path or "/v1/chat/completions",
+            task.api_path or "/chat/completions",
             "--headers",
             task.headers,
             "--cookies",

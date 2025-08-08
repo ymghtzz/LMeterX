@@ -7,7 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from api.api_analysis import router as analysis
 from api.api_log import router as log
+from api.api_system import router as system
 from api.api_task import router as task
 from api.api_upload import router as upload
 from middleware.db_middleware import DBSessionMiddleware
@@ -44,6 +46,8 @@ def read_root():
 
 
 # add api routers
+app.include_router(analysis, prefix="/api/analyze", tags=["analysis"])
+app.include_router(system, prefix="/api/system", tags=["system"])
 app.include_router(task, prefix="/api/tasks", tags=["tasks"])
 app.include_router(log, prefix="/api/logs", tags=["logs"])
 app.include_router(upload, prefix="/api/upload", tags=["upload"])

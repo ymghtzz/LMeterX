@@ -5,7 +5,7 @@
 
 // API Configuration
 export const API_PATHS = {
-  CHAT_COMPLETIONS: '/v1/chat/completions',
+  CHAT_COMPLETIONS: '/chat/completions',
   EMBEDDINGS: '/v1/embeddings',
   COMPLETIONS: '/v1/completions',
   MODELS: '/v1/models',

@@ -79,7 +79,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
   // Get default field_mapping based on API path
   const getDefaultFieldMapping = (apiPath: string) => {
-    if (apiPath === '/v1/chat/completions') {
+    if (apiPath === '/chat/completions') {
       return {
         prompt: 'messages.0.content',
         stream_prefix: 'data:',
@@ -144,10 +144,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         const currentTestDataInputType =
           form.getFieldValue('test_data_input_type') || 'default';
         const currentApiPath =
-          form.getFieldValue('api_path') || '/v1/chat/completions';
+          form.getFieldValue('api_path') || '/chat/completions';
         if (
           currentTestDataInputType === 'default' &&
-          currentApiPath === '/v1/chat/completions'
+          currentApiPath === '/chat/completions'
         ) {
           requiredFields.push('chat_type');
         }
@@ -205,7 +205,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   useEffect(() => {
     if (isFormReady && !isCopyMode && !initialData) {
       const currentApiPath =
-        form.getFieldValue('api_path') || '/v1/chat/completions';
+        form.getFieldValue('api_path') || '/chat/completions';
       const defaultFieldMapping = getDefaultFieldMapping(currentApiPath);
       form.setFieldsValue({ field_mapping: defaultFieldMapping });
     }
@@ -1103,7 +1103,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               >
                 <Input
                   style={{ width: '30%' }}
-                  placeholder='/v1/chat/completions'
+                  placeholder='/chat/completions'
                 />
               </Form.Item>
             </div>
@@ -1231,8 +1231,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       <Form.Item noStyle shouldUpdate>
         {({ getFieldValue }) => {
           const currentApiPath =
-            getFieldValue('api_path') || '/v1/chat/completions';
-          return currentApiPath === '/v1/chat/completions' ? (
+            getFieldValue('api_path') || '/chat/completions';
+          return currentApiPath === '/chat/completions' ? (
             <Row gutter={24}>
               <Col span={24}>
                 <Form.Item
@@ -1304,9 +1304,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         {({ getFieldValue }) => {
           const inputType = getFieldValue('test_data_input_type');
           const currentApiPath =
-            getFieldValue('api_path') || '/v1/chat/completions';
-          const isChatCompletionsApi =
-            currentApiPath === '/v1/chat/completions';
+            getFieldValue('api_path') || '/chat/completions';
+          const isChatCompletionsApi = currentApiPath === '/chat/completions';
 
           return (
             <div>
@@ -2004,12 +2003,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           test_data_input_type: 'default',
           temp_task_id: tempTaskId,
           target_host: '',
-          api_path: '/v1/chat/completions',
+          api_path: '/chat/completions',
           duration: '',
           model: '',
           system_prompt: '',
           request_payload: '',
-          field_mapping: getDefaultFieldMapping('/v1/chat/completions'),
+          field_mapping: getDefaultFieldMapping('/chat/completions'),
         }}
         onFinish={handleSubmit}
         onValuesChange={changedValues => {

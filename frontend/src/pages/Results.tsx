@@ -6,8 +6,11 @@
  * */
 import {
   DownloadOutlined,
+  DownOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
+  RobotOutlined,
+  UpOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
@@ -16,7 +19,9 @@ import {
   Col,
   Descriptions,
   message,
+  Modal,
   Row,
+  Space,
   Statistic,
   Table,
   Tooltip,
@@ -24,10 +29,11 @@ import {
 import html2canvas from 'html2canvas';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { benchmarkJobApi, resultApi } from '../api/services';
+import { analysisApi, benchmarkJobApi, resultApi } from '../api/services';
 import { CopyButton } from '../components/ui/CopyButton';
 import { IconTooltip } from '../components/ui/IconTooltip';
 import { LoadingSpinner } from '../components/ui/LoadingState';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const TaskResults: React.FC = () => {
@@ -37,10 +43,36 @@ const TaskResults: React.FC = () => {
   const [results, setResults] = useState<any[]>([]);
   const [taskInfo, setTaskInfo] = useState<any>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisModalVisible, setAnalysisModalVisible] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [showAnalysisReport, setShowAnalysisReport] = useState(false);
+  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
   const configCardRef = useRef<HTMLDivElement | null>(null);
   const overviewCardRef = useRef<HTMLDivElement | null>(null);
   const detailsCardRef = useRef<HTMLDivElement | null>(null);
   const responseTimeCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Function to fetch analysis result
+  const fetchAnalysisResult = async () => {
+    if (!id) return;
+
+    try {
+      const response = await analysisApi.getAnalysis(id);
+      if (response.data?.status === 'success' && response.data?.data) {
+        setAnalysisResult(response.data.data);
+        // 如果有分析结果，自动展开显示
+        setShowAnalysisReport(true);
+        setIsAnalysisExpanded(true);
+      } else if (response.data?.status === 'error') {
+        // Log the error but don't show to user as this is just fetching existing analysis
+        console.warn('Failed to fetch analysis result:', response.data?.error);
+      }
+    } catch (err: any) {
+      // Analysis not found or other error - ignore for fetching
+      console.warn('Error fetching analysis result:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -93,6 +125,9 @@ const TaskResults: React.FC = () => {
     };
 
     fetchData();
+
+    // Fetch analysis result if available
+    fetchAnalysisResult();
   }, [id]);
 
   // Define metric results
@@ -100,9 +135,14 @@ const TaskResults: React.FC = () => {
   const CompletionResult = results.find(
     item => item.metric_type === 'Total_time'
   );
-  const firstTokenResult = results.find(
+  const firstReasoningToken = results.find(
+    item => item.metric_type === 'Time_to_first_reasoning_token'
+  );
+  const firstOutputToken = results.find(
     item => item.metric_type === 'Time_to_first_output_token'
   );
+  // Use Time_to_first_reasoning_token if available, otherwise use Time_to_first_output_token
+  const firstTokenResult = firstReasoningToken || firstOutputToken;
   const outputCompletionResult = results.find(
     item => item.metric_type === 'Time_to_output_completion'
   );
@@ -256,6 +296,76 @@ const TaskResults: React.FC = () => {
     },
   ];
 
+  // Function to handle AI Summary
+  const handleAnalysis = async () => {
+    if (!id) return;
+
+    setIsAnalyzing(true);
+    try {
+      const response = await analysisApi.analyzeTask(id);
+
+      // Check if the response indicates an error
+      if (
+        response.data?.status === 'error' ||
+        response.data?.status === 'failed'
+      ) {
+        // Extract the most specific error message
+        const errorMessage =
+          response.data?.error_message ||
+          response.data?.error ||
+          'AI analysis failed';
+
+        // If backend returns error_message, show it directly without prefix
+        if (response.data?.error_message) {
+          message.error(errorMessage);
+        } else {
+          // Only add prefix for generic errors
+          message.error(`AI summary failed: ${errorMessage}`);
+        }
+        return;
+      }
+
+      setAnalysisResult(response.data);
+      setAnalysisModalVisible(false);
+      setShowAnalysisReport(true); // 分析成功后自动展开显示
+      setIsAnalysisExpanded(true); // 默认展开
+      message.success('AI summary completed!');
+
+      // Fetch the analysis result to display
+      await fetchAnalysisResult();
+    } catch (err: any) {
+      // Handle different types of errors
+      let errorMessage = 'AI summary failed';
+
+      if (err.data) {
+        // API error response - prioritize error_message over error
+        if (err.data.error_message) {
+          errorMessage = err.data.error_message;
+        } else if (err.data.error) {
+          errorMessage = err.data.error;
+        } else if (err.data.detail) {
+          errorMessage = err.data.detail;
+        }
+      } else if (err.message) {
+        // Network or other error
+        errorMessage = err.message;
+      }
+
+      // If backend returns error_message, show it directly without prefix
+      if (err.data?.error_message) {
+        message.error(errorMessage);
+      } else {
+        // Only add prefix for generic errors
+        message.error(`AI summary failed: ${errorMessage}`);
+      }
+
+      // Log the error for debugging
+      console.error('AI analysis error:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   // Function to handle report download
   const handleDownloadReport = async () => {
     if (
@@ -379,23 +489,46 @@ const TaskResults: React.FC = () => {
     <div className='page-container'>
       <div className='flex justify-between align-center mb-24'>
         <PageHeader
-          title='Results report'
+          title=' Results report'
           icon={<FileTextOutlined />}
           level={3}
           className='text-center w-full'
         />
       </div>
 
-      <Button
-        type='primary'
-        icon={<DownloadOutlined />}
-        onClick={handleDownloadReport}
-        loading={isDownloading}
-        disabled={loading || !!error || !results || results.length === 0}
-        className='mb-24'
-      >
-        Download Report
-      </Button>
+      <Space className='mb-24'>
+        <Button
+          type='default'
+          icon={<RobotOutlined />}
+          onClick={() => setAnalysisModalVisible(true)}
+          loading={isAnalyzing}
+          disabled={loading || !!error || !results || results.length === 0}
+          style={{
+            backgroundColor: '#52c41a',
+            borderColor: '#52c41a',
+            color: '#ffffff',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.backgroundColor = '#73d13d';
+            e.currentTarget.style.borderColor = '#73d13d';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.backgroundColor = '#52c41a';
+            e.currentTarget.style.borderColor = '#52c41a';
+          }}
+        >
+          AI Summary
+        </Button>
+        <Button
+          type='primary'
+          icon={<DownloadOutlined />}
+          onClick={handleDownloadReport}
+          loading={isDownloading}
+          disabled={loading || !!error || !results || results.length === 0}
+        >
+          Download Report
+        </Button>
+      </Space>
 
       {loading ? (
         <div className='loading-container'>
@@ -425,10 +558,76 @@ const TaskResults: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* AI Summary Report - 自适应展开 */}
+          {showAnalysisReport && analysisResult && (
+            <Card
+              title={
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    AI Summary
+                  </span>
+                  <Space>
+                    <CopyButton
+                      text={analysisResult.analysis_report}
+                      successMessage='Analysis copied to clipboard'
+                      tooltip='Copy analysis'
+                    />
+                    <Button
+                      type='text'
+                      size='small'
+                      icon={
+                        isAnalysisExpanded ? <UpOutlined /> : <DownOutlined />
+                      }
+                      onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                      style={{ padding: '4px 8px' }}
+                    >
+                      {isAnalysisExpanded ? '收起' : '展开'}
+                    </Button>
+                  </Space>
+                </div>
+              }
+              variant='borderless'
+              className='mb-24 form-card'
+              style={{
+                border: '1px solid #f0f0f0',
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              }}
+            >
+              {isAnalysisExpanded && (
+                <div style={{ padding: '16px 0' }}>
+                  <MarkdownRenderer
+                    content={analysisResult.analysis_report}
+                    className='analysis-content'
+                  />
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Test Configuration */}
           <Card
             ref={configCardRef}
-            title='Test Configuration'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                Test Configuration
+              </div>
+            }
             variant='borderless'
             className='mb-24 form-card'
           >
@@ -546,9 +745,21 @@ const TaskResults: React.FC = () => {
           {/* Results Overview */}
           <Card
             ref={overviewCardRef}
-            title='Results Overview'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                Results Overview
+              </div>
+            }
             variant='borderless'
             className='mb-24 form-card'
+            style={{
+              border: '2px solid #1890ff',
+              borderRadius: '12px',
+              boxShadow: '0 4px 16px rgba(24, 144, 255, 0.15)',
+              backgroundColor: '#f8fbff',
+            }}
           >
             {(() => {
               if (!hasValidResults) {
@@ -721,7 +932,13 @@ const TaskResults: React.FC = () => {
           {/* Response Time */}
           <Card
             ref={responseTimeCardRef}
-            title='Response Time'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                Response Time
+              </div>
+            }
             variant='borderless'
             className='mb-24'
             style={{
@@ -746,7 +963,13 @@ const TaskResults: React.FC = () => {
           {/* Test Result Details */}
           <Card
             ref={detailsCardRef}
-            title='Result Details'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                Result Details
+              </div>
+            }
             variant='borderless'
             className='mb-24'
             style={{
@@ -783,6 +1006,44 @@ const TaskResults: React.FC = () => {
           </Card>
         </>
       )}
+
+      {/* AI Summary Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <RobotOutlined style={{ color: '#52c41a' }} />
+            AI Summary
+          </div>
+        }
+        open={analysisModalVisible}
+        onCancel={() => setAnalysisModalVisible(false)}
+        footer={null}
+        width={500}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <Alert
+            description='Please ensure that the test results are complete and the AI analysis model has been configured'
+            type='info'
+            showIcon
+            style={{ marginBottom: '16px' }}
+          />
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Space>
+            <Button
+              type='primary'
+              onClick={handleAnalysis}
+              loading={isAnalyzing}
+              icon={<RobotOutlined />}
+            >
+              Start Analysis
+            </Button>
+            <Button onClick={() => setAnalysisModalVisible(false)}>
+              Cancel
+            </Button>
+          </Space>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -11,3 +11,4 @@ werkzeug
 python-multipart
 httpx
 python-magic
+requests

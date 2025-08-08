@@ -9,6 +9,7 @@ import {
   BarChartOutlined,
   ExperimentOutlined,
   MonitorOutlined,
+  SettingOutlined,
 } from '@ant-design/icons';
 import { ConfigProvider, Layout, Menu } from 'antd';
 import React from 'react';
@@ -23,18 +24,23 @@ const Sidebar: React.FC = () => {
   const menuItems = [
     {
       key: '/jobs',
-      icon: <ExperimentOutlined />,
+      icon: <ExperimentOutlined style={{ color: '#1890ff' }} />,
       label: <span className='text-bold text-xl'>Test Tasks</span>,
     },
     {
       key: '/result-comparison',
-      icon: <BarChartOutlined />,
+      icon: <BarChartOutlined style={{ color: '#52c41a' }} />,
       label: <span className='text-bold text-xl'>Model Arena</span>,
     },
     {
       key: '/system-monitor',
-      icon: <MonitorOutlined />,
+      icon: <MonitorOutlined style={{ color: '#fa8c16' }} />,
       label: <span className='text-bold text-xl'>Monitor Hub</span>,
+    },
+    {
+      key: '/system-config',
+      icon: <SettingOutlined style={{ color: '#722ed1' }} />,
+      label: <span className='text-bold text-xl'>System Config</span>,
     },
   ];
 

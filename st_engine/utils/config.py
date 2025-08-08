@@ -52,7 +52,7 @@ DEFAULT_WAIT_TIME_MAX = 3
 
 # === DEFAULT VALUES ===
 DEFAULT_PROMPT = "Tell me about the history of Artificial Intelligence."
-DEFAULT_API_PATH = "/v1/chat/completions"
+DEFAULT_API_PATH = "/chat/completions"
 
 # === STREAMING CONSTANTS ===
 STREAM_END_MARKERS = ["[DONE]", "[END]", "DONE", "END"]

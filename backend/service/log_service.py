@@ -9,6 +9,7 @@ from starlette.responses import JSONResponse
 
 from model.log import LogContentResponse
 from utils.be_config import LOG_DIR
+from utils.error_handler import ErrorMessages, ErrorResponse
 from utils.logger import logger
 
 
@@ -140,21 +141,14 @@ async def get_service_log_svc(service_name: str, offset: int, tail: int):
         message on failure.
     """
     if not service_name:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": "Service name cannot be empty"},
-        )
+        return ErrorResponse.bad_request(ErrorMessages.SERVICE_NAME_EMPTY)
 
     log_file_path = os.path.join(LOG_DIR, f"{service_name}.log")
 
     if not os.path.exists(log_file_path):
         logger.warning(f"Log file not found: {log_file_path}")
-        return JSONResponse(
-            status_code=404,
-            content={
-                "status": "error",
-                "error": f"Log file for service '{service_name}' not found",
-            },
+        return ErrorResponse.not_found(
+            f"Log file for service '{service_name}' not found"
         )
     try:
         content = read_local_file(log_file_path, tail, offset)
@@ -162,10 +156,7 @@ async def get_service_log_svc(service_name: str, offset: int, tail: int):
         return LogContentResponse(content=content, file_size=file_size)
     except Exception as e:
         logger.error(f"Failed to read log file {log_file_path}: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "error": "Failed to read log file"},
-        )
+        return ErrorResponse.internal_server_error(ErrorMessages.LOG_FILE_READ_FAILED)
 
 
 async def get_task_log_svc(task_id: str, offset: int, tail: int):
@@ -176,21 +167,14 @@ async def get_task_log_svc(task_id: str, offset: int, tail: int):
     based on the offset and tail parameters.
     """
     if not task_id:
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "error": "Task ID cannot be empty"},
-        )
+        return ErrorResponse.bad_request(ErrorMessages.TASK_ID_EMPTY)
 
     log_file_path = os.path.join(LOG_DIR, "task", f"task_{task_id}.log")
 
     if not os.path.exists(log_file_path):
         logger.warning(f"Log file not found: {log_file_path}")
-        return JSONResponse(
-            status_code=404,
-            content={
-                "status": "error",
-                "error": f"Log file for task '{task_id}' not found at {log_file_path}",
-            },
+        return ErrorResponse.not_found(
+            f"Log file for task '{task_id}' not found at {log_file_path}"
         )
 
     try:
@@ -199,7 +183,4 @@ async def get_task_log_svc(task_id: str, offset: int, tail: int):
         return LogContentResponse(content=content, file_size=file_size)
     except Exception as e:
         logger.error(f"Failed to read log file {log_file_path}: {str(e)}")
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "error": "Failed to read log file"},
-        )
+        return ErrorResponse.internal_server_error(ErrorMessages.LOG_FILE_READ_FAILED)

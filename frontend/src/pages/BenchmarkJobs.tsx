@@ -207,7 +207,7 @@ const BenchmarkJobs: React.FC = () => {
         key: 'target_host',
         width: 280,
         render: (target_host: string, record: BenchmarkJob) => {
-          const apiPath = record.api_path || '/v1/chat/completions';
+          const apiPath = record.api_path || '/chat/completions';
           const fullUrl = target_host + apiPath;
           return (
             <div className='table-cell-with-copy'>
@@ -413,7 +413,7 @@ const BenchmarkJobs: React.FC = () => {
   return (
     <div className='page-container'>
       <PageHeader
-        title='Test Tasks'
+        title=' Test Tasks'
         icon={<ExperimentOutlined />}
         description='Test task management and monitoring'
       />

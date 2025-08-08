@@ -554,7 +554,7 @@ const ResultComparison: React.FC = () => {
       {contextHolder}
 
       <PageHeader
-        title='Model Arena'
+        title=' Model Arena'
         description='Model performance comparison with multi-metric'
         icon={<BarChartOutlined />}
         className='mb-24'

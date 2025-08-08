@@ -14,6 +14,7 @@ import BenchmarkJobs from './pages/BenchmarkJobs';
 import NotFound from './pages/NotFound';
 import ResultComparison from './pages/ResultComparison';
 import TaskResults from './pages/Results';
+import SystemConfiguration from './pages/SystemConfiguration';
 import SystemMonitor from './pages/SystemMonitor';
 import TaskLog from './pages/TaskLog';
 
@@ -38,6 +39,10 @@ const App: React.FC = () => {
                   element={<ResultComparison />}
                 />
                 <Route path='/system-monitor' element={<SystemMonitor />} />
+                <Route
+                  path='/system-config'
+                  element={<SystemConfiguration />}
+                />
                 <Route path='*' element={<NotFound />} />
               </Routes>
             </Content>

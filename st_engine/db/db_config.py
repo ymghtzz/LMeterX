@@ -67,7 +67,7 @@ class MySqlSettings(BaseSettings):
     DB_PASSWORD: str = Field(default="lmeterx_password")
     DB_HOST: str = Field(default="lmeterx_url")
     DB_PORT: int = Field(default=3306)
-    DB_NAME: str = Field(default="lmeterx_db")
+    DB_NAME: str = Field(default="lmeterx")
 
     # --- Connection Pool Settings ---
     DB_POOL_SIZE: int = 20
@@ -96,7 +96,7 @@ class MySqlSettings(BaseSettings):
             "DB_PASSWORD": "lmeterx_password",
             "DB_HOST": "lmeterx_url",
             "DB_PORT": 3306,
-            "DB_NAME": "lmeterx_db",
+            "DB_NAME": "lmeterx",
         }
 
         # Process each field
