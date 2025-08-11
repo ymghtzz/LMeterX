@@ -6,19 +6,21 @@
  * */
 import { Button, Result } from 'antd';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 const NotFound: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   return (
     <Result
       status='404'
-      title='404'
-      subTitle='Sorry, the page you visited does not exist'
+      title={t('pages.notFound.title')}
+      subTitle={t('pages.notFound.description')}
       extra={
         <Button type='primary' onClick={() => navigate('/')}>
-          Back Home
+          {t('pages.notFound.backHome')}
         </Button>
       }
     />

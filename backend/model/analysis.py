@@ -33,9 +33,13 @@ class AnalysisRequest(BaseModel):
 
     Attributes:
         task_id: The task ID to analyze.
+        language: The language for analysis prompt (en/zh).
     """
 
     eval_prompt: Optional[str] = Field(None, description="Custom evaluation prompt")
+    language: Optional[str] = Field(
+        "en", description="Language for analysis prompt (en/zh)"
+    )
 
 
 class AnalysisResponse(BaseModel):

@@ -7,6 +7,7 @@
 import type { MessageInstance } from 'antd/es/message/interface';
 import axios from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Pagination as ApiPagination, BenchmarkJob } from '../types/benchmark';
 
 // Frontend pagination state uses Ant Design's format
@@ -19,6 +20,7 @@ interface AntdPagination {
 const VITE_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
 
 export const useBenchmarkJobs = (messageApi: MessageInstance) => {
+  const { t } = useTranslation();
   const [jobs, setJobs] = useState<BenchmarkJob[]>([]);
   const [pagination, setPagination] = useState<AntdPagination>({
     current: 1,
@@ -94,7 +96,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
         }
       } catch (err) {
         // Failed to fetch tasks
-        setError('Failed to fetch task list, please try again later');
+        setError(t('common.fetchTasksFailed'));
       } finally {
         setLoading(false);
         fetchingRef.current = false;
@@ -103,7 +105,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
         }
       }
     },
-    [pagination.current, pagination.pageSize, statusFilter, searchText]
+    [pagination.current, pagination.pageSize, statusFilter, searchText, t]
   );
 
   const fetchJobStatuses = useCallback(async () => {
@@ -310,36 +312,38 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
       try {
         const response = await axios.post(`${VITE_API_BASE_URL}/tasks`, values);
         if (response.data?.task_id) {
-          messageApi.success('Created successfully');
+          messageApi.success(t('common.createSuccess'));
           await fetchJobs(true); // Refresh list to show the new job
           return true;
         }
-        messageApi.error('Failed to create task: Unable to get task ID');
+        messageApi.error(t('common.createFailed'));
         return false;
       } catch (error: any) {
-        const errorMsg = error.response?.data?.error || 'Failed to create task';
-        messageApi.error(`Failed to create task: ${errorMsg}`);
+        const errorMsg =
+          error.response?.data?.error || t('common.createFailed');
+        messageApi.error(`${t('common.createFailed')}: ${errorMsg}`);
         return false;
       } finally {
         setLoading(false);
       }
     },
-    [fetchJobs, messageApi]
+    [fetchJobs, messageApi, t]
   );
 
   const stopJob = useCallback(
     async (jobId: string) => {
-      messageApi.loading({ content: 'Stopping task...', key: jobId });
+      messageApi.loading({ content: t('common.stoppingTask'), key: jobId });
       try {
         await axios.post(`${VITE_API_BASE_URL}/tasks/stop/${jobId}`);
-        messageApi.success({ content: 'Task is being stopped...', key: jobId });
+        messageApi.success({ content: t('common.taskStopping'), key: jobId });
         setTimeout(() => fetchJobs(true), 1000); // Refresh list after a short delay
       } catch (error: any) {
-        const errorMsg = error.response?.data?.message || 'Failed to stop task';
+        const errorMsg =
+          error.response?.data?.message || t('common.stopTaskFailed');
         messageApi.error({ content: errorMsg, key: jobId });
       }
     },
-    [fetchJobs, messageApi]
+    [fetchJobs, messageApi, t]
   );
 
   const setSearchTextWithReset = useCallback(

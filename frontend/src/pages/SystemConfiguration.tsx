@@ -18,34 +18,40 @@ import {
   Typography,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { systemApi } from '../api/services';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const { Text } = Typography;
 
 const SystemConfiguration: React.FC = () => {
+  const { t } = useTranslation();
   const [configs, setConfigs] = useState<any[]>([]);
   const [aiConfigModalVisible, setAiConfigModalVisible] = useState(false);
   const [aiForm] = Form.useForm();
   const { message } = App.useApp();
   const isInitializedRef = useRef(false);
 
-  const fetchConfigs = async () => {
-    // 防止重复调用
-    if (isInitializedRef.current) {
+  const fetchConfigs = async (forceRefresh: boolean = false) => {
+    // prevent duplicate calls unless force refresh is requested
+    if (isInitializedRef.current && !forceRefresh) {
       return;
     }
 
     try {
-      isInitializedRef.current = true;
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true;
+      }
       const response = await systemApi.getSystemConfigs();
       if (response.data?.status === 'success') {
         setConfigs(response.data.data || []);
       } else {
-        message.error('Failed to load system configurations');
+        message.error(t('pages.systemConfig.loadConfigFailed'));
       }
     } catch (err: any) {
-      message.error(`Failed to load configurations: ${err.message}`);
+      message.error(
+        `${t('pages.systemConfig.loadConfigFailed')}: ${err.message}`
+      );
     }
   };
 
@@ -73,13 +79,15 @@ const SystemConfiguration: React.FC = () => {
       // Use batch operation instead of multiple individual API calls
       await systemApi.batchUpsertSystemConfigs(configsToUpdate);
 
-      message.success('AI service configuration updated successfully');
+      message.success(t('pages.systemConfig.configSaved'));
       setAiConfigModalVisible(false);
 
-      // Update configs
-      await fetchConfigs();
+      // Update configs with force refresh
+      await fetchConfigs(true);
     } catch (err: any) {
-      message.error(`Failed to save AI service configuration: ${err.message}`);
+      message.error(
+        `${t('pages.systemConfig.configSaveFailed')}: ${err.message}`
+      );
     }
   };
 
@@ -109,10 +117,12 @@ const SystemConfiguration: React.FC = () => {
         });
         setAiConfigModalVisible(true);
       } else {
-        message.error('Failed to load system configurations');
+        message.error(t('pages.systemConfig.loadConfigFailed'));
       }
     } catch (err: any) {
-      message.error(`Failed to load configurations: ${err.message}`);
+      message.error(
+        `${t('pages.systemConfig.loadConfigFailed')}: ${err.message}`
+      );
     }
   };
 
@@ -123,21 +133,21 @@ const SystemConfiguration: React.FC = () => {
   const aiServiceConfigs = [
     {
       key: 'ai_service_host',
-      label: 'Host',
+      label: t('pages.systemConfig.baseUrl'),
       placeholder: 'https://api.openai.com',
-      description: 'The host URL for the AI service',
+      description: t('pages.systemConfig.baseUrlDescription'),
     },
     {
       key: 'ai_service_model',
-      label: 'Model',
+      label: t('pages.systemConfig.model'),
       placeholder: 'gpt-3.5-turbo',
-      description: 'The AI model to use for analysis',
+      description: t('pages.systemConfig.modelDescription'),
     },
     {
       key: 'ai_service_api_key',
-      label: 'API Key',
-      placeholder: 'Enter your API key',
-      description: 'The API key for authentication',
+      label: t('pages.systemConfig.apiKey'),
+      placeholder: t('pages.systemConfig.enterApiKey'),
+      description: t('pages.systemConfig.apiKeyDescription'),
       isPassword: true,
     },
   ];
@@ -145,7 +155,7 @@ const SystemConfiguration: React.FC = () => {
   return (
     <div className='page-container'>
       <PageHeader
-        title=' System Configuration'
+        title={t('pages.systemConfig.title')}
         icon={<SettingOutlined />}
         level={3}
         className='text-center w-full'
@@ -161,18 +171,17 @@ const SystemConfiguration: React.FC = () => {
               marginBottom: 16,
             }}
           >
-            <h3>AI Service Configuration</h3>
+            <h3>{t('pages.systemConfig.aiConfig')}</h3>
             <Button
               type='primary'
               icon={<SettingOutlined />}
               onClick={handleConfigureAI}
             >
-              Configure
+              {t('pages.systemConfig.configure')}
             </Button>
           </div>
           <p style={{ color: '#666', marginBottom: 16 }}>
-            These settings are used when performing AI analysis on performance
-            results.
+            {t('pages.systemConfig.aiConfigDescription')}
           </p>
         </div>
 
@@ -210,7 +219,11 @@ const SystemConfiguration: React.FC = () => {
                         <Text>{existingConfig.config_value}</Text>
                       )
                     ) : (
-                      <Text style={{ color: '#999' }}>Not configured</Text>
+                      <Text style={{ color: '#999' }}>
+                        {t('common.notConfigured', {
+                          defaultValue: 'Not configured',
+                        })}
+                      </Text>
                     )}
                   </div>
                 </div>
@@ -222,7 +235,7 @@ const SystemConfiguration: React.FC = () => {
 
       {/* AI Service Configuration Modal */}
       <Modal
-        title='Configuration'
+        title={t('pages.systemConfig.aiConfig')}
         open={aiConfigModalVisible}
         onCancel={() => {
           aiForm.resetFields();
@@ -233,12 +246,15 @@ const SystemConfiguration: React.FC = () => {
       >
         <Form form={aiForm} layout='vertical' onFinish={handleAiConfigSubmit}>
           <Form.Item
-            label='Host'
+            label={t('pages.systemConfig.baseUrl')}
             name='host'
             rules={[
-              { required: true, message: 'Please enter AI service host URL' },
+              {
+                required: true,
+                message: t('pages.systemConfig.pleaseEnterHostUrl'),
+              },
             ]}
-            extra='Enter the base URL for your AI service (e.g., https://api.openai.com)'
+            extra={t('pages.systemConfig.enterBaseUrlDescription')}
           >
             <Input
               placeholder='https://your-api-domain.com'
@@ -257,23 +273,33 @@ const SystemConfiguration: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            label='Model'
+            label={t('pages.systemConfig.model')}
             name='model'
-            rules={[{ required: true, message: 'Please enter AI model name' }]}
-            extra='Enter the model name to use for analysis (e.g., gpt-3.5-turbo, gpt-4)'
+            rules={[
+              {
+                required: true,
+                message: t('pages.systemConfig.pleaseEnterModelName'),
+              },
+            ]}
+            extra={t('pages.systemConfig.enterModelDescription')}
           >
             <Input placeholder='gpt-3.5-turbo' />
           </Form.Item>
 
           <Form.Item
-            label='API Key'
+            label={t('pages.systemConfig.apiKey')}
             name='api_key'
-            rules={[{ required: true, message: 'Please enter API key' }]}
-            extra='Enter your API key for authentication'
+            rules={[
+              {
+                required: true,
+                message: t('pages.systemConfig.pleaseEnterApiKey'),
+              },
+            ]}
+            extra={t('pages.systemConfig.enterApiKeyDescription')}
           >
             {/* <Input.Password placeholder='Enter your API key' visibilityToggle /> */}
             <Input.Password
-              placeholder='Enter your API key without `Bearer` prefix'
+              placeholder={t('pages.systemConfig.enterApiKeyWithoutBearer')}
               visibilityToggle={false}
               onCopy={e => e.preventDefault()}
               onCut={e => e.preventDefault()}
@@ -289,10 +315,10 @@ const SystemConfiguration: React.FC = () => {
                     setAiConfigModalVisible(false);
                   }}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button type='primary' htmlType='submit'>
-                  Save
+                  {t('common.save')}
                 </Button>
               </Space>
             </div>

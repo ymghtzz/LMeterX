@@ -138,6 +138,7 @@ async def analyze_task_svc(
                 ai_config.api_key,
                 json.dumps(test_config, ensure_ascii=False, indent=2),
                 json.dumps(key_metrics, ensure_ascii=False, indent=2),
+                analysis_request.language or "en",
             )
 
             # Check if analysis already exists for this task
@@ -197,7 +198,7 @@ async def analyze_task_svc(
                 task_id=task_id,
                 analysis_report="",
                 status="failed",
-                error_message="AI analysis failed. Please try again later.",
+                error_message="AI analysis failed. Please check the AI service configuration and try again.",
                 created_at="",
             )
 
@@ -274,7 +275,12 @@ async def get_analysis_svc(request: Request, task_id: str) -> GetAnalysisRespons
 
 
 async def _call_ai_service(
-    host: str, model: str, api_key: str, test_config: str, results: str
+    host: str,
+    model: str,
+    api_key: str,
+    test_config: str,
+    results: str,
+    language: str = "en",
 ) -> str:
     """
     Call AI service for analysis.
@@ -285,6 +291,7 @@ async def _call_ai_service(
         api_key: The API key for authentication.
         test_config: The test configuration data.
         results: The test results data.
+        language: The language for analysis prompt (en/zh).
 
     Returns:
         str: The analysis content.
@@ -298,9 +305,10 @@ async def _call_ai_service(
         "Authorization": f"Bearer {api_key}",
     }
 
-    from utils.prompt import ANALYSIS_PROMPT
+    from utils.prompt import get_analysis_prompt
 
-    prompt = ANALYSIS_PROMPT.format(test_config=test_config, results=results)
+    prompt_template = get_analysis_prompt(language)
+    prompt = prompt_template.format(test_config=test_config, results=results)
 
     data = {
         "model": model,

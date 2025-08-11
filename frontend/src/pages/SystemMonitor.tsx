@@ -6,31 +6,41 @@
  * */
 import { Tabs } from 'antd';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import SystemLogs from '../components/SystemLogs';
 
 const SystemMonitor: React.FC = () => {
   const [activeTab, setActiveTab] = useState('engine-logs');
+  const { t } = useTranslation();
 
   // Define tabs using the items attribute
   const tabItems = [
     {
-      label: 'Engine Logs',
+      label: t('components.systemLogs.engineLogs', {
+        defaultValue: 'Engine Logs',
+      }),
       key: 'engine-logs',
       children: (
         <SystemLogs
           serviceName='engine'
-          displayName='Engine Logs'
+          displayName={t('components.systemLogs.engineLogs', {
+            defaultValue: 'Engine Logs',
+          })}
           isActive={activeTab === 'engine-logs'}
         />
       ),
     },
     {
-      label: 'Backend Service Logs',
+      label: t('components.systemLogs.backendLogs', {
+        defaultValue: 'Backend Service Logs',
+      }),
       key: 'backend-logs',
       children: (
         <SystemLogs
           serviceName='backend'
-          displayName='Backend Service Logs'
+          displayName={t('components.systemLogs.backendLogs', {
+            defaultValue: 'Backend Service Logs',
+          })}
           isActive={activeTab === 'backend-logs'}
         />
       ),
