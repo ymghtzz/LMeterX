@@ -9,6 +9,7 @@ import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
+import { LanguageProvider } from './contexts/LanguageContext';
 import { NavigationProvider } from './contexts/NavigationContext';
 import BenchmarkJobs from './pages/BenchmarkJobs';
 import NotFound from './pages/NotFound';
@@ -23,32 +24,34 @@ const { Content } = Layout;
 const App: React.FC = () => {
   return (
     <AntApp>
-      <NavigationProvider>
-        <Layout className='app-layout'>
-          <Header />
-          <Layout className='app-layout-content'>
-            <Sidebar />
-            <Content className='page-content'>
-              <Routes>
-                <Route path='/' element={<Navigate to='/jobs' replace />} />
-                <Route path='/jobs' element={<BenchmarkJobs />} />
-                <Route path='/results/:id' element={<TaskResults />} />
-                <Route path='/logs/task/:id' element={<TaskLog />} />
-                <Route
-                  path='/result-comparison'
-                  element={<ResultComparison />}
-                />
-                <Route path='/system-monitor' element={<SystemMonitor />} />
-                <Route
-                  path='/system-config'
-                  element={<SystemConfiguration />}
-                />
-                <Route path='*' element={<NotFound />} />
-              </Routes>
-            </Content>
+      <LanguageProvider>
+        <NavigationProvider>
+          <Layout className='app-layout'>
+            <Header />
+            <Layout className='app-layout-content'>
+              <Sidebar />
+              <Content className='page-content'>
+                <Routes>
+                  <Route path='/' element={<Navigate to='/jobs' replace />} />
+                  <Route path='/jobs' element={<BenchmarkJobs />} />
+                  <Route path='/results/:id' element={<TaskResults />} />
+                  <Route path='/logs/task/:id' element={<TaskLog />} />
+                  <Route
+                    path='/result-comparison'
+                    element={<ResultComparison />}
+                  />
+                  <Route path='/system-monitor' element={<SystemMonitor />} />
+                  <Route
+                    path='/system-config'
+                    element={<SystemConfiguration />}
+                  />
+                  <Route path='*' element={<NotFound />} />
+                </Routes>
+              </Content>
+            </Layout>
           </Layout>
-        </Layout>
-      </NavigationProvider>
+        </NavigationProvider>
+      </LanguageProvider>
     </AntApp>
   );
 };

@@ -27,6 +27,7 @@ import {
   Tooltip,
 } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { benchmarkJobApi, logApi } from '../api/services';
 import { LoadingSpinner } from '../components/ui/LoadingState';
@@ -50,6 +51,7 @@ const isTaskInFinalState = (status: string | null | undefined): boolean => {
 };
 
 const TaskLogs: React.FC = () => {
+  const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -329,7 +331,7 @@ const TaskLogs: React.FC = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } else {
-      message.warning('No log content available for download');
+      message.warning(t('pages.taskLog.logEmpty'));
     }
   };
 
@@ -438,7 +440,7 @@ const TaskLogs: React.FC = () => {
       await fetchTaskStatus();
       await fetchLogs();
       setLoading(false);
-      message.success('Logs refreshed');
+      message.success(t('pages.taskLog.refreshLogs'));
     };
 
     try {
@@ -528,8 +530,8 @@ const TaskLogs: React.FC = () => {
             <Alert
               description={
                 isTaskInFinalState(task.status)
-                  ? 'Task completed, no log data available.'
-                  : 'No log data available, try manual refresh.'
+                  ? t('pages.taskLog.logEmpty')
+                  : t('pages.taskLog.logEmpty')
               }
               type='info'
               showIcon
@@ -537,11 +539,11 @@ const TaskLogs: React.FC = () => {
             />
             <Space className='mt-16'>
               <Button icon={<SyncOutlined />} onClick={handleManualRefresh}>
-                Refresh
+                {t('pages.taskLog.refreshLogs')}
               </Button>
               <Switch
-                checkedChildren='Auto Refresh'
-                unCheckedChildren='Stop Refresh'
+                checkedChildren={t('pages.taskLog.autoRefresh')}
+                unCheckedChildren={t('pages.taskLog.autoRefresh')}
                 checked={autoRefresh}
                 onChange={checked => {
                   setAutoRefresh(checked);
@@ -599,14 +601,22 @@ const TaskLogs: React.FC = () => {
                 onChange={value => setTailLines(value)}
                 className='w-140'
               >
-                <Select.Option value={100}>Last 100 lines</Select.Option>
-                <Select.Option value={500}>Last 500 lines</Select.Option>
-                <Select.Option value={1000}>Last 1000 lines</Select.Option>
-                <Select.Option value={0}>All logs</Select.Option>
+                <Select.Option value={100}>
+                  {t('pages.taskLog.last100Lines')}
+                </Select.Option>
+                <Select.Option value={500}>
+                  {t('pages.taskLog.last500Lines')}
+                </Select.Option>
+                <Select.Option value={1000}>
+                  {t('pages.taskLog.last1000Lines')}
+                </Select.Option>
+                <Select.Option value={0}>
+                  {t('pages.taskLog.allLogs')}
+                </Select.Option>
               </Select>
               <Switch
-                checkedChildren='Auto Refresh'
-                unCheckedChildren='Stop Refresh'
+                checkedChildren={t('pages.taskLog.autoRefresh')}
+                unCheckedChildren={t('pages.taskLog.stopRefresh')}
                 checked={autoRefresh}
                 onChange={checked => {
                   setAutoRefresh(checked);
@@ -617,10 +627,10 @@ const TaskLogs: React.FC = () => {
                 disabled={isTaskInFinalState(task?.status)}
               />
               <Button icon={<SyncOutlined />} onClick={handleManualRefresh}>
-                Refresh
+                {t('pages.taskLog.refreshLogs')}
               </Button>
               <Search
-                placeholder='Search log content'
+                placeholder={t('pages.taskLog.searchLogContent')}
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
@@ -631,7 +641,7 @@ const TaskLogs: React.FC = () => {
                 icon={<DownloadOutlined />}
                 onClick={handleDownload}
               >
-                Download Logs
+                {t('pages.taskLog.downloadLogs')}
               </Button>
               <Button
                 icon={
@@ -643,7 +653,9 @@ const TaskLogs: React.FC = () => {
                 }
                 onClick={toggleFullscreen}
               >
-                {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                {fullscreen
+                  ? t('pages.taskLog.exitFullscreen')
+                  : t('pages.taskLog.fullscreen')}
               </Button>
             </Space>
           </div>
@@ -673,7 +685,7 @@ const TaskLogs: React.FC = () => {
         >
           {searchTerm && (
             <Alert
-              message={`Search results: "${searchTerm}"`}
+              message={t('pages.taskLog.searchResults', { searchTerm })}
               type='info'
               showIcon
               closable
@@ -687,14 +699,11 @@ const TaskLogs: React.FC = () => {
 
           {fetchError && (
             <Alert
-              message='Log auto-refresh error'
+              message={t('pages.taskLog.autoRefreshError')}
               description={
                 <div>
                   <p>{fetchError}</p>
-                  <p>
-                    Auto-refresh has been paused. Please check the service
-                    status and click the "Refresh" button to retry.
-                  </p>
+                  <p>{t('pages.taskLog.autoRefreshPaused')}</p>
                 </div>
               }
               type='warning'
@@ -707,7 +716,7 @@ const TaskLogs: React.FC = () => {
                   type='primary'
                   onClick={handleManualRefresh}
                 >
-                  Refresh Now
+                  {t('pages.taskLog.refreshNow')}
                 </Button>
               }
               onClose={() => setFetchError(null)}

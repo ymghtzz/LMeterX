@@ -42,6 +42,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { api } from '../api/apiClient';
 import { LoadingSpinner } from '../components/ui/LoadingState';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -81,6 +82,7 @@ interface SelectedTask {
 }
 
 const ResultComparison: React.FC = () => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -115,11 +117,12 @@ const ResultComparison: React.FC = () => {
         setAvailableTasks(response.data.data);
       } else {
         messageApi.error(
-          response.data.error || 'Failed to fetch available tasks'
+          response.data.error ||
+            t('pages.resultComparison.fetchAvailableTasksFailed')
         );
       }
     } catch (error) {
-      messageApi.error('Failed to fetch available tasks');
+      messageApi.error(t('pages.resultComparison.fetchAvailableTasksError'));
     } finally {
       setLoading(false);
     }
@@ -128,12 +131,12 @@ const ResultComparison: React.FC = () => {
   // Compare selected tasks
   const compareResult = useCallback(async () => {
     if (tempSelectedTasks.length < 2) {
-      messageApi.warning('Please select at least 2 tasks for comparison');
+      messageApi.warning(t('pages.resultComparison.selectAtLeast2Tasks'));
       return;
     }
 
     if (tempSelectedTasks.length > 10) {
-      messageApi.warning('Maximum 10 tasks can be selected for comparison');
+      messageApi.warning(t('pages.resultComparison.max10TasksAllowed'));
       return;
     }
 
@@ -164,12 +167,14 @@ const ResultComparison: React.FC = () => {
         setSelectedTasks(selectedTasksData);
         setIsModalVisible(false);
         setTempSelectedTasks([]);
-        messageApi.success('Result comparison completed');
+        messageApi.success(t('pages.resultComparison.comparisonCompleted'));
       } else {
-        messageApi.error(response.data.error || 'Failed to compare Result');
+        messageApi.error(
+          response.data.error || t('pages.resultComparison.compareResultFailed')
+        );
       }
     } catch (error) {
-      messageApi.error('Failed to compare Result');
+      messageApi.error(t('pages.resultComparison.compareResultError'));
     } finally {
       setComparing(false);
     }
@@ -179,7 +184,7 @@ const ResultComparison: React.FC = () => {
   const handleTaskSelection = (taskId: string, checked: boolean) => {
     if (checked) {
       if (tempSelectedTasks.length >= 10) {
-        messageApi.warning('Maximum 10 tasks can be selected for comparison');
+        messageApi.warning(t('pages.resultComparison.max10TasksAllowed'));
         return;
       }
       setTempSelectedTasks([...tempSelectedTasks, taskId]);
@@ -213,13 +218,13 @@ const ResultComparison: React.FC = () => {
   // Clear all selected tasks
   const clearAllTasks = () => {
     Modal.confirm({
-      title: 'Clear All Selected Tasks',
+      title: t('pages.resultComparison.clearAllTasks'),
       icon: <ExclamationCircleOutlined />,
-      content: 'Are you sure you want to clear all selected tasks?',
+      content: t('pages.resultComparison.clearAllTasksConfirm'),
       onOk: () => {
         setSelectedTasks([]);
         setComparisonResults([]);
-        messageApi.success('All tasks cleared');
+        messageApi.success(t('pages.resultComparison.allTasksCleared'));
       },
     });
   };
@@ -290,7 +295,7 @@ const ResultComparison: React.FC = () => {
   // Table columns for available tasks in modal
   const availableTasksColumns: ColumnsType<ModelTaskInfo> = [
     {
-      title: 'Select',
+      title: t('pages.resultComparison.select'),
       key: 'select',
       width: 60,
       align: 'center',
@@ -302,19 +307,19 @@ const ResultComparison: React.FC = () => {
       ),
     },
     {
-      title: 'Task ID',
+      title: t('pages.resultComparison.taskId'),
       dataIndex: 'task_id',
       key: 'task_id',
       ellipsis: true,
     },
     {
-      title: 'Task Name',
+      title: t('pages.resultComparison.taskName'),
       dataIndex: 'task_name',
       key: 'task_name',
       ellipsis: true,
     },
     {
-      title: 'Model Name',
+      title: t('pages.resultComparison.modelName'),
       dataIndex: 'model_name',
       key: 'model_name',
       render: (model: string) => (
@@ -322,13 +327,13 @@ const ResultComparison: React.FC = () => {
       ),
     },
     {
-      title: 'Concurrent Users',
+      title: t('pages.resultComparison.concurrentUsers'),
       dataIndex: 'concurrent_users',
       key: 'concurrent_users',
       align: 'center',
     },
     {
-      title: 'Created Time',
+      title: t('pages.resultComparison.createdTime'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (date: string) => formatDate(date),
@@ -338,19 +343,19 @@ const ResultComparison: React.FC = () => {
   // Table columns for selected tasks
   const selectedTasksColumns: ColumnsType<SelectedTask> = [
     {
-      title: 'Task ID',
+      title: t('pages.resultComparison.taskId'),
       dataIndex: 'task_id',
       key: 'task_id',
       ellipsis: true,
     },
     {
-      title: 'Task Name',
+      title: t('pages.resultComparison.taskName'),
       dataIndex: 'task_name',
       key: 'task_name',
       ellipsis: true,
     },
     {
-      title: 'Model Name',
+      title: t('pages.resultComparison.modelName'),
       dataIndex: 'model_name',
       key: 'model_name',
       render: (model: string) => (
@@ -358,13 +363,13 @@ const ResultComparison: React.FC = () => {
       ),
     },
     {
-      title: 'Concurrent Users',
+      title: t('pages.resultComparison.concurrentUsers'),
       dataIndex: 'concurrent_users',
       key: 'concurrent_users',
       align: 'center',
     },
     {
-      title: 'Created Time',
+      title: t('pages.resultComparison.createdTime'),
       dataIndex: 'created_at',
       key: 'created_at',
       render: (date: string) => formatDate(date),
@@ -377,7 +382,7 @@ const ResultComparison: React.FC = () => {
     title: string
   ) => ({
     data: comparisonResults.map((result, index) => ({
-      task: `${result.model_name} - ${result.task_id.substring(0, 5)}(${result.concurrent_users}u) `,
+      task: `${result.model_name} - ${result.task_id.substring(0, 5)}(${result.concurrent_users}${t('pages.resultComparison.concurrentUsersSuffix')}) `,
       value: result[yField] as number,
       model: result.model_name,
       index,
@@ -417,14 +422,20 @@ const ResultComparison: React.FC = () => {
 
   // Metric descriptions for tooltips
   const metricDescriptions = {
-    RPS: 'Number of requests sent per second',
-    'TTFT (s)': 'Time to first token (s)',
-    'Total TPS (tokens/s)': 'Number of input and generated tokens per second',
-    'Completion TPS (tokens/s)': 'Number of generated tokens per second',
-    'Avg. Total TPR (tokens/req)':
-      'Average number of input and generated tokens per request',
-    'Avg. Completion TPR (tokens/req)':
-      'Average number of generated tokens per request',
+    RPS: t('pages.resultComparison.metricDescriptions.rps'),
+    'TTFT (s)': t('pages.resultComparison.metricDescriptions.ttft'),
+    'Total TPS (tokens/s)': t(
+      'pages.resultComparison.metricDescriptions.totalTps'
+    ),
+    'Completion TPS (tokens/s)': t(
+      'pages.resultComparison.metricDescriptions.completionTps'
+    ),
+    'Avg. Total TPR (tokens/req)': t(
+      'pages.resultComparison.metricDescriptions.avgTotalTpr'
+    ),
+    'Avg. Completion TPR (tokens/req)': t(
+      'pages.resultComparison.metricDescriptions.avgCompletionTpr'
+    ),
   };
 
   // Helper function to create card title with tooltip
@@ -441,22 +452,25 @@ const ResultComparison: React.FC = () => {
   const handleDownloadComparison = async () => {
     if (!modelInfoRef.current || !comparisonResultsRef.current) {
       messageApi.error(
-        'Comparison components not fully loaded, please try again later.'
+        t('pages.resultComparison.comparisonComponentsNotLoaded')
       );
       return;
     }
 
     setIsDownloading(true);
     messageApi.loading({
-      content: 'Generating comparison report...',
+      content: t('pages.resultComparison.generatingComparisonReport'),
       key: 'downloadComparison',
       duration: 0,
     });
 
     try {
       const elementsToCapture = [
-        { ref: modelInfoRef, title: 'Model Info' },
-        { ref: comparisonResultsRef, title: 'Comparison Results' },
+        { ref: modelInfoRef, title: t('pages.resultComparison.modelInfo') },
+        {
+          ref: comparisonResultsRef,
+          title: t('pages.resultComparison.comparisonResults'),
+        },
       ];
 
       const canvases = await Promise.all(
@@ -476,7 +490,9 @@ const ResultComparison: React.FC = () => {
         canvas => canvas !== null
       ) as HTMLCanvasElement[];
       if (validCanvases.length === 0) {
-        throw new Error('Unable to capture any comparison content.');
+        throw new Error(
+          t('pages.resultComparison.unableToCaptureComparisonContent')
+        );
       }
 
       // Calculate the total height and maximum width of the merged Canvas
@@ -501,7 +517,9 @@ const ResultComparison: React.FC = () => {
       const ctx = mergedCanvas.getContext('2d');
 
       if (!ctx) {
-        throw new Error('Unable to create Canvas drawing context.');
+        throw new Error(
+          t('pages.resultComparison.unableToCreateCanvasContext')
+        );
       }
 
       // Set the background color of the merged image
@@ -530,13 +548,15 @@ const ResultComparison: React.FC = () => {
       document.body.removeChild(link);
 
       messageApi.success({
-        content: 'Download successful!',
+        content: t('pages.resultComparison.downloadSuccessful'),
         key: 'downloadComparison',
         duration: 3,
       });
     } catch (err: any) {
       messageApi.error({
-        content: `Download failed: ${err.message || 'Unknown error'}`,
+        content: t('pages.resultComparison.downloadFailed', {
+          error: err.message || t('pages.resultComparison.unknownError'),
+        }),
         key: 'downloadComparison',
         duration: 4,
       });
@@ -554,8 +574,8 @@ const ResultComparison: React.FC = () => {
       {contextHolder}
 
       <PageHeader
-        title=' Model Arena'
-        description='Model performance comparison with multi-metric'
+        title={t('pages.resultComparison.title')}
+        description={t('pages.resultComparison.description')}
         icon={<BarChartOutlined />}
         className='mb-24'
       />
@@ -564,7 +584,7 @@ const ResultComparison: React.FC = () => {
       <div ref={modelInfoRef} className='mb-24'>
         <div className='flex justify-between align-center mb-16'>
           <Title level={5} style={{ margin: 0 }}>
-            Model Info
+            {t('pages.resultComparison.modelInfo')}
           </Title>
           <Space>
             <Button
@@ -574,14 +594,14 @@ const ResultComparison: React.FC = () => {
               loading={isDownloading}
               disabled={comparisonResults.length === 0}
             >
-              Download
+              {t('pages.resultComparison.download')}
             </Button>
             <Button
               type='primary'
               icon={<PlusOutlined />}
               onClick={handleModalOpen}
             >
-              Select Model
+              {t('pages.resultComparison.selectModel')}
             </Button>
             {selectedTasks.length > 0 && (
               <Button
@@ -595,7 +615,7 @@ const ResultComparison: React.FC = () => {
                   color: 'white',
                 }}
               >
-                Clear All
+                {t('pages.resultComparison.clearAll')}
               </Button>
             )}
           </Space>
@@ -604,7 +624,7 @@ const ResultComparison: React.FC = () => {
         <Card>
           {selectedTasks.length === 0 ? (
             <Empty
-              description='Please select the model for comparison'
+              description={t('pages.resultComparison.pleaseSelectModel')}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             />
           ) : (
@@ -623,73 +643,94 @@ const ResultComparison: React.FC = () => {
       {comparisonResults.length > 0 && (
         <div ref={comparisonResultsRef}>
           <Title level={5} className='mb-24'>
-            Comparison Results
+            {t('pages.resultComparison.comparisonResults')}
           </Title>
 
           <Row gutter={[16, 16]}>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Time to First Token (TTFT)',
+                  t('pages.resultComparison.timeToFirstToken'),
                   metricDescriptions['TTFT (s)']
                 )}
                 size='small'
               >
-                <Column {...createChartConfig('ttft', 'TTFT (ms)')} />
+                <Column
+                  {...createChartConfig(
+                    'ttft',
+                    t('pages.resultComparison.chartTitles.ttft')
+                  )}
+                />
               </Card>
             </Col>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Requests Per Second (RPS)',
+                  t('pages.resultComparison.requestsPerSecond'),
                   metricDescriptions.RPS
                 )}
                 size='small'
               >
-                <Column {...createChartConfig('rps', 'RPS')} />
+                <Column
+                  {...createChartConfig(
+                    'rps',
+                    t('pages.resultComparison.chartTitles.rps')
+                  )}
+                />
               </Card>
             </Col>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Total Tokens Per Second (TPS)',
+                  t('pages.resultComparison.totalTokensPerSecond'),
                   metricDescriptions['Total TPS (tokens/s)']
                 )}
                 size='small'
               >
-                <Column {...createChartConfig('total_tps', 'Total TPS')} />
+                <Column
+                  {...createChartConfig(
+                    'total_tps',
+                    t('pages.resultComparison.chartTitles.totalTps')
+                  )}
+                />
               </Card>
             </Col>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Completion Tokens Per Second',
+                  t('pages.resultComparison.completionTokensPerSecond'),
                   metricDescriptions['Completion TPS (tokens/s)']
                 )}
                 size='small'
               >
                 <Column
-                  {...createChartConfig('completion_tps', 'Completion TPS')}
+                  {...createChartConfig(
+                    'completion_tps',
+                    t('pages.resultComparison.chartTitles.completionTps')
+                  )}
                 />
               </Card>
             </Col>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Average Total Tokens Per Request',
+                  t('pages.resultComparison.averageTotalTokensPerRequest'),
                   metricDescriptions['Avg. Total TPR (tokens/req)']
                 )}
                 size='small'
               >
                 <Column
-                  {...createChartConfig('avg_total_tpr', 'Avg Total TPR')}
+                  {...createChartConfig(
+                    'avg_total_tpr',
+                    t('pages.resultComparison.chartTitles.avgTotalTpr')
+                  )}
                 />
               </Card>
             </Col>
             <Col span={12}>
               <Card
                 title={createCardTitle(
-                  'Average Completion Tokens Per Request',
+                  t('pages.resultComparison.averageCompletionTokensPerRequest'),
                   metricDescriptions['Avg. Completion TPR (tokens/req)']
                 )}
                 size='small'
@@ -697,7 +738,7 @@ const ResultComparison: React.FC = () => {
                 <Column
                   {...createChartConfig(
                     'avg_completion_tpr',
-                    'Avg Completion TPR'
+                    t('pages.resultComparison.chartTitles.avgCompletionTpr')
                   )}
                 />
               </Card>
@@ -708,7 +749,7 @@ const ResultComparison: React.FC = () => {
 
       {/* Select Model Modal */}
       <Modal
-        title='Select Model for Comparison'
+        title={t('pages.resultComparison.selectModelForComparison')}
         open={isModalVisible}
         onCancel={() => {
           setIsModalVisible(false);
@@ -718,7 +759,9 @@ const ResultComparison: React.FC = () => {
         footer={
           <div className='flex justify-between align-center'>
             <Text type='secondary'>
-              {tempSelectedTasks.length} task(s) selected
+              {t('pages.resultComparison.tasksSelected', {
+                count: tempSelectedTasks.length,
+              })}
             </Text>
             <Space>
               <Button
@@ -727,7 +770,7 @@ const ResultComparison: React.FC = () => {
                   setTempSelectedTasks([]);
                 }}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type='primary'
@@ -736,7 +779,7 @@ const ResultComparison: React.FC = () => {
                 disabled={tempSelectedTasks.length < 2}
                 onClick={compareResult}
               >
-                Compare Result
+                {t('pages.resultComparison.compareResult')}
               </Button>
             </Space>
           </div>
@@ -745,7 +788,7 @@ const ResultComparison: React.FC = () => {
         <div className='mb-16'>
           <Space>
             <Input.Search
-              placeholder='Search task name or model name'
+              placeholder={t('pages.resultComparison.searchTaskOrModel')}
               value={searchText}
               onChange={handleSearchChange}
               onSearch={handleSearch}
@@ -753,7 +796,7 @@ const ResultComparison: React.FC = () => {
               className='w-300'
             />
             <Select
-              placeholder='Filter model'
+              placeholder={t('pages.resultComparison.filterModel')}
               value={selectedModel}
               onChange={handleModelFilterChange}
               className='w-200'
@@ -770,7 +813,7 @@ const ResultComparison: React.FC = () => {
               onClick={fetchAvailableTasks}
               loading={loading}
             >
-              Refresh
+              {t('common.refresh')}
             </Button>
           </Space>
         </div>
@@ -782,11 +825,15 @@ const ResultComparison: React.FC = () => {
         ) : (
           <div>
             {filteredAvailableTasks.length === 0 ? (
-              <Empty description='No available tasks found' />
+              <Empty
+                description={t('pages.resultComparison.noAvailableTasks')}
+              />
             ) : (
               <div>
                 <Alert
-                  description='Select 2-10 completed tasks for comparison.'
+                  description={t(
+                    'pages.resultComparison.selectTasksForComparison'
+                  )}
                   type='info'
                   showIcon
                   className='mb-16'

@@ -146,8 +146,11 @@ export const logApi = {
 // Analysis API methods
 export const analysisApi = {
   // Perform AI analysis on task results
-  analyzeTask: (taskId: string) =>
-    api.post<any>(`/analyze/${taskId}`, { task_id: taskId }),
+  analyzeTask: (taskId: string, language?: string) =>
+    api.post<any>(`/analyze/${taskId}`, {
+      task_id: taskId,
+      language: language || 'en',
+    }),
 
   // Get analysis result for a task
   getAnalysis: (taskId: string) => api.get<any>(`/analyze/${taskId}`),

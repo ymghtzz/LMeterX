@@ -7,6 +7,7 @@
 import { Layout } from 'antd';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import LanguageSwitcher from './LanguageSwitcher';
 
 const { Header: AntdHeader } = Layout;
 
@@ -42,6 +43,9 @@ const Header: React.FC = () => {
           style={logoStyle}
           onClick={() => navigate('/jobs')}
         />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <LanguageSwitcher />
       </div>
     </AntdHeader>
   );

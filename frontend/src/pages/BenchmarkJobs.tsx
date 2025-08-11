@@ -27,6 +27,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import CreateJobForm from '../components/CreateJobForm';
 import CopyButton from '../components/ui/CopyButton';
@@ -36,12 +37,13 @@ import { useBenchmarkJobs } from '../hooks/useBenchmarkJobs';
 import { BenchmarkJob } from '../types/benchmark';
 import { TASK_STATUS_MAP, UI_CONFIG } from '../utils/constants';
 import { deepClone, safeJsonParse, safeJsonStringify } from '../utils/data';
-import { formatDate, getRelativeTime, getTimestamp } from '../utils/date';
+import { formatDate, getTimestamp } from '../utils/date';
 
 const { Search } = Input;
 const { Text } = Typography;
 
 const BenchmarkJobs: React.FC = () => {
+  const { t } = useTranslation();
   // State managed by the component
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [taskToCopy, setTaskToCopy] = useState<Partial<BenchmarkJob> | null>(
@@ -142,12 +144,11 @@ const BenchmarkJobs: React.FC = () => {
 
       // Show toast notification about re-entering sensitive information
       messageApi.warning({
-        content:
-          'Please note: Authentication credentials and uploaded files need to be re-entered.',
+        content: t('pages.benchmarkJobs.copyWarning'),
         duration: 5,
       });
     },
-    [messageApi]
+    [messageApi, t]
   );
 
   /**
@@ -156,21 +157,21 @@ const BenchmarkJobs: React.FC = () => {
   const showStopConfirm = useCallback(
     (jobId: string, jobName?: string) => {
       modal.confirm({
-        title: 'Are you sure you want to stop this task?',
+        title: t('pages.benchmarkJobs.stopConfirmTitle'),
         icon: <ExclamationCircleOutlined />,
         content: (
           <span>
-            After stopping task <Text code>{jobName || jobId}</Text>, the task
-            cannot be resumed.
+            {t('pages.benchmarkJobs.stopConfirmContent')}{' '}
+            <Text code>{jobName || jobId}</Text>
           </span>
         ),
-        okText: 'Confirm Stop',
+        okText: t('pages.benchmarkJobs.confirmStop'),
         okType: 'danger',
-        cancelText: 'Cancel',
+        cancelText: t('common.cancel'),
         onOk: () => stopJob(jobId),
       });
     },
-    [modal, stopJob]
+    [modal, stopJob, t]
   );
 
   /**
@@ -179,7 +180,7 @@ const BenchmarkJobs: React.FC = () => {
   const columns: ColumnsType<BenchmarkJob> = useMemo(
     () => [
       {
-        title: 'Task ID',
+        title: t('pages.benchmarkJobs.taskId'),
         dataIndex: 'id',
         key: 'id',
         width: 180,
@@ -195,14 +196,14 @@ const BenchmarkJobs: React.FC = () => {
         ),
       },
       {
-        title: 'Task Name',
+        title: t('pages.benchmarkJobs.taskName'),
         dataIndex: 'name',
         key: 'name',
         ellipsis: true,
         width: 150,
       },
       {
-        title: 'Target URL',
+        title: t('pages.benchmarkJobs.targetUrl'),
         dataIndex: 'target_host',
         key: 'target_host',
         width: 280,
@@ -224,38 +225,38 @@ const BenchmarkJobs: React.FC = () => {
         },
       },
       {
-        title: 'Model',
+        title: t('pages.benchmarkJobs.model'),
         dataIndex: 'model',
         key: 'model',
         ellipsis: true,
         width: 150,
       },
       {
-        title: 'Concurrent Users',
+        title: t('pages.benchmarkJobs.concurrentUsers'),
         dataIndex: 'concurrent_users',
         key: 'concurrent_users',
         width: 120,
       },
       {
-        title: 'Duration (s)',
+        title: t('pages.benchmarkJobs.duration'),
         dataIndex: 'duration',
         key: 'duration',
         width: 120,
       },
       {
-        title: 'Status',
+        title: t('pages.benchmarkJobs.status'),
         dataIndex: 'status',
         key: 'status',
         width: 120,
         filters: Object.entries(TASK_STATUS_MAP).map(([key, value]) => ({
-          text: value.text,
+          text: t(`status.${key}`),
           value: key,
         })),
         onFilter: (value, record) => record.status?.toLowerCase() === value,
         render: (status: string) => <StatusTag status={status} />,
       },
       {
-        title: 'Created Time',
+        title: t('pages.benchmarkJobs.createdTime'),
         dataIndex: 'created_at',
         key: 'created_at',
         width: 120,
@@ -264,7 +265,7 @@ const BenchmarkJobs: React.FC = () => {
         render: (time: string) => formatDate(time),
       },
       {
-        title: 'Actions',
+        title: t('pages.benchmarkJobs.actions'),
         key: 'action',
         width: 150,
         fixed: 'right',
@@ -282,7 +283,7 @@ const BenchmarkJobs: React.FC = () => {
                     handleCopyJob(record);
                   }}
                 >
-                  Copy Template
+                  {t('pages.benchmarkJobs.copyTemplate')}
                 </Button>
               ),
             },
@@ -302,7 +303,7 @@ const BenchmarkJobs: React.FC = () => {
                     showStopConfirm(record.id, record.name);
                   }}
                 >
-                  Stop
+                  {t('pages.benchmarkJobs.stop')}
                 </Button>
               ),
             });
@@ -318,7 +319,7 @@ const BenchmarkJobs: React.FC = () => {
                   window.open(`/results/${record.id}`, '_blank');
                 }}
               >
-                Results
+                {t('pages.benchmarkJobs.results')}
               </Button>
               <Button
                 size='small'
@@ -328,7 +329,7 @@ const BenchmarkJobs: React.FC = () => {
                   window.open(`/logs/task/${record.id}`, '_blank');
                 }}
               >
-                Logs
+                {t('pages.benchmarkJobs.logs')}
               </Button>
               {menuItems.length > 0 && (
                 <Dropdown menu={{ items: menuItems }} trigger={['click']}>
@@ -344,7 +345,7 @@ const BenchmarkJobs: React.FC = () => {
         },
       },
     ],
-    [handleCopyJob, showStopConfirm]
+    [handleCopyJob, showStopConfirm, t]
   );
 
   /**
@@ -393,14 +394,16 @@ const BenchmarkJobs: React.FC = () => {
     if (!lastRefreshTime) return null;
 
     return (
-      <Tooltip title={`Last refresh: ${formatDate(lastRefreshTime)}`}>
+      <Tooltip
+        title={`${t('pages.benchmarkJobs.lastRefresh')}: ${formatDate(lastRefreshTime)}`}
+      >
         <span className='status-refresh'>
           <ClockCircleOutlined className='mr-4' />
-          Refreshed {getRelativeTime(lastRefreshTime)}
+          {t('pages.benchmarkJobs.refreshedAgo')}
         </span>
       </Tooltip>
     );
-  }, [lastRefreshTime]);
+  }, [lastRefreshTime, t]);
 
   /**
    * Handle modal cancel
@@ -413,9 +416,9 @@ const BenchmarkJobs: React.FC = () => {
   return (
     <div className='page-container'>
       <PageHeader
-        title=' Test Tasks'
+        title={t('sidebar.testTasks')}
         icon={<ExperimentOutlined />}
-        description='Test task management and monitoring'
+        description={t('pages.benchmarkJobs.description')}
       />
 
       <div className='flex justify-between align-center mb-24'>
@@ -426,14 +429,14 @@ const BenchmarkJobs: React.FC = () => {
             onClick={() => setIsModalVisible(true)}
             disabled={loading}
           >
-            Create Task
+            {t('pages.benchmarkJobs.createNew')}
           </Button>
           {refreshing && <Badge status='processing' />}
         </Space>
         <Space wrap>
           {renderLastRefreshTime()}
           <Search
-            placeholder='Search task name, model or ID'
+            placeholder={t('pages.benchmarkJobs.searchPlaceholder')}
             onSearch={setSearchText}
             onChange={e => {
               if (!e.target.value) {
@@ -449,7 +452,7 @@ const BenchmarkJobs: React.FC = () => {
             onClick={manualRefresh}
             disabled={loading || refreshing}
           >
-            Refresh
+            {t('pages.benchmarkJobs.refresh')}
           </Button>
         </Space>
       </div>
@@ -479,18 +482,22 @@ const BenchmarkJobs: React.FC = () => {
               description={<Text type='danger'>{error}</Text>}
             />
           ) : (
-            <Empty description='No data' />
+            <Empty description={t('common.noData')} />
           ),
         }}
       />
 
       <Modal
-        title={taskToCopy ? 'Edit Task' : 'Create Task'}
+        title={
+          taskToCopy
+            ? t('pages.benchmarkJobs.edit')
+            : t('pages.benchmarkJobs.createNew')
+        }
         open={isModalVisible}
         onCancel={handleModalCancel}
         footer={null}
         width={800}
-        destroyOnHidden
+        destroyOnClose
       >
         <CreateJobForm
           onSubmit={handleCreateJob}

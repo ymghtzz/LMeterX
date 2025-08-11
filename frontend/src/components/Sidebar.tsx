@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import { ConfigProvider, Layout, Menu } from 'antd';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 const { Sider } = Layout;
@@ -20,27 +21,36 @@ const { Sider } = Layout;
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t } = useTranslation();
 
   const menuItems = [
     {
       key: '/jobs',
       icon: <ExperimentOutlined style={{ color: '#1890ff' }} />,
-      label: <span className='text-bold text-xl'>Test Tasks</span>,
+      label: (
+        <span className='text-bold text-xl'>{t('sidebar.testTasks')}</span>
+      ),
     },
     {
       key: '/result-comparison',
       icon: <BarChartOutlined style={{ color: '#52c41a' }} />,
-      label: <span className='text-bold text-xl'>Model Arena</span>,
+      label: (
+        <span className='text-bold text-xl'>{t('sidebar.modelArena')}</span>
+      ),
     },
     {
       key: '/system-monitor',
       icon: <MonitorOutlined style={{ color: '#fa8c16' }} />,
-      label: <span className='text-bold text-xl'>Monitor Hub</span>,
+      label: (
+        <span className='text-bold text-xl'>{t('sidebar.monitorHub')}</span>
+      ),
     },
     {
       key: '/system-config',
       icon: <SettingOutlined style={{ color: '#722ed1' }} />,
-      label: <span className='text-bold text-xl'>System Config</span>,
+      label: (
+        <span className='text-bold text-xl'>{t('sidebar.systemConfig')}</span>
+      ),
     },
   ];
 

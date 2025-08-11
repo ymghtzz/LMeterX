@@ -45,6 +45,7 @@ import {
   uploadCertificateFiles,
   uploadDatasetFile,
 } from '@/api/services';
+import { useI18n } from '@/hooks/useI18n';
 import { BenchmarkJob } from '@/types/benchmark';
 
 const { TextArea } = Input;
@@ -64,6 +65,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   initialData,
 }) => {
   const { message } = App.useApp();
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [submitting, setSubmitting] = useState(loading || false);
   const [testing, setTesting] = useState(false);
@@ -174,7 +176,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     if (isValid) {
       goToNextTab();
     } else {
-      message.error('Please fill in all required fields before proceeding');
+      message.error(t('components.createJobForm.pleaseFillRequiredFields'));
     }
   };
 
@@ -362,10 +364,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       const hasCertConfig = !!(initialData as any).cert_config;
 
       if (hasCustomHeaders || hasCookies || hasCertConfig) {
-        message.warning(
-          'Task template copied. Please note: Advanced settings need to be re-filled or uploaded.',
-          5
-        );
+        message.warning(t('components.createJobForm.taskTemplateCopied'), 5);
       }
     } else if (!isCopyMode) {
       setIsCopyMode(false);
@@ -391,7 +390,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       // Validate file size (10MB limit)
       const maxSize = 10 * 1024 * 1024; // 10MB
       if (file.size > maxSize) {
-        message.error(`File size exceeds 10MB limit.`);
+        message.error(t('components.createJobForm.fileSizeExceedsLimit'));
         onError();
         return;
       }
@@ -400,10 +399,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         temp_task_id: tempTaskId,
         cert_file: file,
       });
-      message.success(`${file.name} file selected`);
+      message.success(
+        t('components.createJobForm.fileSelected', { fileName: file.name })
+      );
       onSuccess();
     } catch (error) {
-      message.error(`${file.name} upload failed`);
+      message.error(
+        t('components.createJobForm.fileUploadFailed', { fileName: file.name })
+      );
       onError();
     }
   };
@@ -416,7 +419,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       const maxSize = 10 * 1024 * 1024; // 10MB
       if (file.size > maxSize) {
         message.error(
-          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+          t('components.createJobForm.fileSizeExceedsLimitWithSize', {
+            size: (file.size / (1024 * 1024)).toFixed(2),
+          })
         );
         onError();
         return;
@@ -426,10 +431,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         temp_task_id: tempTaskId,
         key_file: file,
       });
-      message.success(`${file.name} file selected`);
+      message.success(
+        t('components.createJobForm.fileSelected', { fileName: file.name })
+      );
       onSuccess();
     } catch (error) {
-      message.error(`${file.name} upload failed`);
+      message.error(
+        t('components.createJobForm.fileUploadFailed', { fileName: file.name })
+      );
       onError();
     }
   };
@@ -442,7 +451,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       const maxSize = 10 * 1024 * 1024; // 10MB
       if (file.size > maxSize) {
         message.error(
-          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+          t('components.createJobForm.fileSizeExceedsLimitWithSize', {
+            size: (file.size / (1024 * 1024)).toFixed(2),
+          })
         );
         onError();
         return;
@@ -453,10 +464,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         cert_file: file,
         key_file: null,
       });
-      message.success(`${file.name} file selected`);
+      message.success(
+        t('components.createJobForm.fileSelected', { fileName: file.name })
+      );
       onSuccess();
     } catch (error) {
-      message.error(`${file.name} upload failed`);
+      message.error(
+        t('components.createJobForm.fileUploadFailed', { fileName: file.name })
+      );
       onError();
     }
   };
@@ -469,7 +484,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       const maxSize = 10 * 1024 * 1024; // 10MB
       if (file.size > maxSize) {
         message.error(
-          `File size exceeds 10MB limit. Current size: ${(file.size / (1024 * 1024)).toFixed(2)}MB`
+          t('components.createJobForm.fileSizeExceedsLimitWithSize', {
+            size: (file.size / (1024 * 1024)).toFixed(2),
+          })
         );
         onError();
         return;
@@ -479,10 +496,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         temp_task_id: tempTaskId,
         test_data_file: file,
       });
-      message.success(`${file.name} file selected`);
+      message.success(
+        t('components.createJobForm.fileSelected', { fileName: file.name })
+      );
       onSuccess();
     } catch (error) {
-      message.error(`${file.name} upload failed`);
+      message.error(
+        t('components.createJobForm.fileUploadFailed', { fileName: file.name })
+      );
       onError();
     }
   };
@@ -509,7 +530,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       // Additional validation for request payload JSON format
       if (!values.request_payload) {
-        message.error('Request payload is required for all API endpoints');
+        message.error(t('components.createJobForm.requestPayloadRequired'));
         return;
       }
 
@@ -535,7 +556,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           delete values.key_file;
         } catch (error) {
           console.error('Certificate upload error:', error);
-          let errorMessage = 'Certificate upload failed, please try again';
+          let errorMessage = t(
+            'components.createJobForm.certificateUploadFailed'
+          );
 
           if (error?.message) {
             errorMessage = error.message;
@@ -573,7 +596,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       setTestModalVisible(true);
     } catch (error: any) {
       // Try to extract error message from backend response with priority order
-      let errorMessage = 'Test failed, please check your configuration';
+      let errorMessage = t('components.createJobForm.testFailedCheckConfig');
 
       // Priority 1: Backend API error field (most specific)
       if (error?.response?.data?.error) {
@@ -588,8 +611,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         error?.code === 'ECONNABORTED' &&
         error?.message?.includes('timeout')
       ) {
-        errorMessage =
-          'Network timeout, please check your connection and try again';
+        errorMessage = t(
+          'components.createJobForm.networkTimeoutCheckConnection'
+        );
       }
       // Priority 4: Other axios errors
       else if (error?.message) {
@@ -629,7 +653,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           // keep temp_task_id for backend association
           values.temp_task_id = tempTaskId;
         } catch (error: any) {
-          let errorMessage = 'Certificate upload failed, please try again';
+          let errorMessage = t(
+            'components.createJobForm.certificateUploadFailed'
+          );
 
           if (error?.message) {
             errorMessage = error.message;
@@ -655,7 +681,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           delete values.test_data_file;
           values.temp_task_id = tempTaskId;
         } catch (error: any) {
-          let errorMessage = 'Test data upload failed, please try again';
+          let errorMessage = t('components.createJobForm.testDataUploadFailed');
 
           if (error?.message) {
             errorMessage = error.message;
@@ -756,8 +782,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
           <Space>
-            <span>HTTP Headers</span>
-            <Tooltip title='Configure custom HTTP headers. API Key should include the "Bearer " prefix if required by your API.'>
+            <span>{t('components.createJobForm.httpHeaders')}</span>
+            <Tooltip title={t('components.createJobForm.httpHeadersTooltip')}>
               <InfoCircleOutlined />
             </Tooltip>
           </Space>
@@ -781,7 +807,13 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       style={{ flex: 1, minWidth: '140px' }}
                     >
                       <Input
-                        placeholder={isFixed ? 'System Header' : 'Header Name'}
+                        placeholder={
+                          isFixed
+                            ? t('components.createJobForm.systemHeader')
+                            : t(
+                                'components.createJobForm.headerNamePlaceholder'
+                              )
+                        }
                         disabled={isFixed}
                         style={
                           isFixed
@@ -810,7 +842,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     >
                       <Input
                         placeholder={
-                          isAuth ? 'Bearer your-api-key-here' : 'Header Value'
+                          isAuth
+                            ? t('components.createJobForm.pleaseEnterApiKey')
+                            : t(
+                                'components.createJobForm.headerValuePlaceholder'
+                              )
                         }
                         disabled={isFixed}
                         style={
@@ -838,7 +874,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 icon={<PlusOutlined />}
                 style={{ marginTop: 8 }}
               >
-                Add Header
+                {t('components.createJobForm.addHeaderButton')}
               </Button>
             </>
           )}
@@ -856,8 +892,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
           <Space>
-            <span>Request Cookies</span>
-            <Tooltip title='HTTP cookies for session-based authentication'>
+            <span>{t('components.createJobForm.requestCookies')}</span>
+            <Tooltip
+              title={t('components.createJobForm.requestCookiesTooltip')}
+            >
               <InfoCircleOutlined />
             </Tooltip>
           </Space>
@@ -876,14 +914,22 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       name={[name, 'key']}
                       style={{ flex: 1, minWidth: '140px' }}
                     >
-                      <Input placeholder='Cookie Name (e.g. session_token)' />
+                      <Input
+                        placeholder={t(
+                          'components.createJobForm.cookieNamePlaceholder'
+                        )}
+                      />
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'value']}
                       style={{ flex: 2 }}
                     >
-                      <Input placeholder='Cookie Value' />
+                      <Input
+                        placeholder={t(
+                          'components.createJobForm.cookieValuePlaceholder'
+                        )}
+                      />
                     </Form.Item>
                     <MinusCircleOutlined
                       onClick={() => remove(name)}
@@ -899,7 +945,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 icon={<PlusOutlined />}
                 style={{ marginTop: 8 }}
               >
-                Add Cookie
+                {t('components.createJobForm.addCookieButton')}
               </Button>
             </>
           )}
@@ -917,8 +963,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
           <Space>
-            <span>SSL Client Certificate</span>
-            <Tooltip title='Client certificates for mTLS (mutual TLS) authentication'>
+            <span>{t('components.createJobForm.sslClientCertificate')}</span>
+            <Tooltip
+              title={t('components.createJobForm.sslClientCertificateTooltip')}
+            >
               <InfoCircleOutlined />
             </Tooltip>
           </Space>
@@ -929,8 +977,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             onChange={e => form.setFieldsValue({ cert_type: e.target.value })}
             style={{ marginBottom: 16 }}
           >
-            <Radio value='combined'>Combined Certificate & Key File</Radio>
-            <Radio value='separate'>Separate Certificate & Key Files</Radio>
+            <Radio value='combined'>
+              {t('components.createJobForm.combinedCertificateKeyFile')}
+            </Radio>
+            <Radio value='separate'>
+              {t('components.createJobForm.separateCertificateKeyFiles')}
+            </Radio>
           </Radio.Group>
 
           <Form.Item noStyle shouldUpdate>
@@ -950,7 +1002,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       size='middle'
                       style={{ width: '200px', height: '40px' }}
                     >
-                      Select Combined PEM File
+                      {t('components.createJobForm.selectCombinedPemFile')}
                     </Button>
                   </Upload>
                   <div
@@ -960,8 +1012,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       fontSize: '12px',
                     }}
                   >
-                    Upload a single .pem file containing both the client
-                    certificate and private key
+                    {t('components.createJobForm.combinedPemDescription')}
                   </div>
                 </div>
               ) : (
@@ -987,7 +1038,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           size='middle'
                           style={{ width: '180px', height: '40px' }}
                         >
-                          Select Certificate
+                          {t('components.createJobForm.selectCertificate')}
                         </Button>
                       </Upload>
                       <div
@@ -997,7 +1048,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           fontSize: '12px',
                         }}
                       >
-                        Client certificate (.crt, .pem)
+                        {t('components.createJobForm.clientCertificate')} (.crt,
+                        .pem)
                       </div>
                     </div>
 
@@ -1013,7 +1065,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           size='middle'
                           style={{ width: '180px', height: '40px' }}
                         >
-                          Select Private Key
+                          {t('components.createJobForm.selectPrivateKey')}
                         </Button>
                       </Upload>
                       <div
@@ -1023,7 +1075,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           fontSize: '12px',
                         }}
                       >
-                        Private key file (.key, .pem)
+                        {t('components.createJobForm.privateKeyFile')} (.key,
+                        .pem)
                       </div>
                     </div>
                   </Space>
@@ -1050,7 +1103,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <Space>
           <SettingOutlined />
-          <span>Basic Configuration</span>
+          <span>{t('components.createJobForm.basicConfiguration')}</span>
         </Space>
       </div>
 
@@ -1058,10 +1111,17 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         <Col span={24}>
           <Form.Item
             name='name'
-            label='Task Name'
-            rules={[{ required: true, message: 'Please enter task name' }]}
+            label={t('components.createJobForm.taskName')}
+            rules={[
+              {
+                required: true,
+                message: t('components.createJobForm.pleaseEnterTaskName'),
+              },
+            ]}
           >
-            <Input placeholder='Enter a descriptive name for your benchmark task' />
+            <Input
+              placeholder={t('components.createJobForm.taskNamePlaceholder')}
+            />
           </Form.Item>
         </Col>
       </Row>
@@ -1072,8 +1132,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='api_url'
             label={
               <span>
-                API Endpoint
-                <Tooltip title='The complete API endpoint URL for testing'>
+                {t('components.createJobForm.apiEndpoint')}
+                <Tooltip
+                  title={t('components.createJobForm.apiEndpointTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
@@ -1084,7 +1146,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               <Form.Item
                 name='target_host'
                 noStyle
-                rules={[{ required: true, message: 'Please enter API URL' }]}
+                rules={[
+                  {
+                    required: true,
+                    message: t('components.createJobForm.pleaseEnterApiUrl'),
+                  },
+                ]}
               >
                 <Input
                   style={{ width: '70%' }}
@@ -1097,7 +1164,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 rules={[
                   {
                     required: true,
-                    message: 'Please enter API path',
+                    message: t('components.createJobForm.pleaseEnterApiPath'),
                   },
                 ]}
               >
@@ -1117,13 +1184,18 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='model'
             label={
               <span>
-                Model Name
-                <Tooltip title='The model identifier available on your API endpoint'>
+                {t('components.createJobForm.modelName')}
+                <Tooltip title={t('components.createJobForm.modelNameTooltip')}>
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
             }
-            rules={[{ required: true, message: 'Please enter model name' }]}
+            rules={[
+              {
+                required: true,
+                message: t('components.createJobForm.pleaseEnterModelName'),
+              },
+            ]}
           >
             <Input placeholder='e.g. gpt-4, claude-3, internlm3-latest' />
           </Form.Item>
@@ -1141,7 +1213,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <Space>
           <CloudOutlined />
-          <span>Request Configuration</span>
+          <span>{t('components.createJobForm.requestConfiguration')}</span>
         </Space>
       </div>
 
@@ -1151,8 +1223,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           <Form.Item
             label={
               <span>
-                Request Method
-                <Tooltip title='HTTP request method for API calls'>
+                {t('components.createJobForm.requestMethod')}
+                <Tooltip
+                  title={t('components.createJobForm.requestMethodTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
@@ -1171,17 +1245,28 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='stream_mode'
             label={
               <span>
-                Response Mode
-                <Tooltip title='Choose between streaming and non-streaming response mode'>
+                {t('components.createJobForm.responseMode')}
+                <Tooltip
+                  title={t('components.createJobForm.responseModeTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
             }
-            rules={[{ required: true, message: 'Please select response mode' }]}
+            rules={[
+              {
+                required: true,
+                message: t('components.createJobForm.pleaseSelectResponseMode'),
+              },
+            ]}
           >
-            <Select placeholder='Select response mode'>
-              <Select.Option value>Streaming</Select.Option>
-              <Select.Option value={false}>Non-streaming</Select.Option>
+            <Select placeholder={t('components.createJobForm.responseMode')}>
+              <Select.Option value>
+                {t('components.createJobForm.stream')}
+              </Select.Option>
+              <Select.Option value={false}>
+                {t('components.createJobForm.nonStreaming')}
+              </Select.Option>
             </Select>
           </Form.Item>
         </Col>
@@ -1194,8 +1279,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='request_payload'
             label={
               <span>
-                Request Payload
-                <Tooltip title='Request payload for your API. Please use simple test data here for testing, the dataset as follows will be applied during load testing.'>
+                {t('components.createJobForm.requestPayload')}
+                <Tooltip
+                  title={t('components.createJobForm.requestPayloadTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
@@ -1203,7 +1290,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             rules={[
               {
                 required: true,
-                message: 'Please enter request payload',
+                message: t(
+                  'components.createJobForm.pleaseEnterRequestPayload'
+                ),
               },
               {
                 validator: (_, value) => {
@@ -1213,7 +1302,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     return Promise.resolve();
                   } catch (e) {
                     return Promise.reject(
-                      new Error('Please enter valid JSON format')
+                      new Error(
+                        t('components.createJobForm.pleaseEnterValidJson')
+                      )
                     );
                   }
                 },
@@ -1239,8 +1330,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name='system_prompt'
                   label={
                     <span>
-                      System Prompt
-                      <Tooltip title='System-level instructions that will be sent with every request'>
+                      {t('components.createJobForm.systemPrompt')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.systemPromptTooltip'
+                        )}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1270,7 +1365,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               key: 'advanced',
               label: (
                 <span style={{ fontSize: '14px', lineHeight: '22px' }}>
-                  Advanced Settings
+                  {t('components.createJobForm.advancedSettings')}
                 </span>
               ),
               children: advancedPanelContent,
@@ -1295,7 +1390,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <Space>
           <DatabaseOutlined />
-          <span>Test Data</span>
+          <span>{t('components.createJobForm.testData')}</span>
         </Space>
       </div>
 
@@ -1315,8 +1410,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     name='test_data_input_type'
                     label={
                       <span>
-                        Dataset Source
-                        <Tooltip title='Choose how to provide test prompts: use built-in datasets, input custom data, upload your own file, or use original request payload'>
+                        {t('components.createJobForm.datasetSource')}
+                        <Tooltip
+                          title={t(
+                            'components.createJobForm.datasetSourceTooltip'
+                          )}
+                        >
                           <InfoCircleOutlined style={{ marginLeft: 5 }} />
                         </Tooltip>
                       </span>
@@ -1324,21 +1423,27 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     rules={[
                       {
                         required: true,
-                        message: 'Please select dataset source',
+                        message: t(
+                          'components.createJobForm.pleaseSelectDatasetSource'
+                        ),
                       },
                     ]}
                   >
-                    <Select placeholder='Select dataset source'>
+                    <Select
+                      placeholder={t('components.createJobForm.datasetSource')}
+                    >
                       <Select.Option value='default'>
-                        Built-in Dataset
+                        {t('components.createJobForm.builtInDataset')}
                       </Select.Option>
                       <Select.Option value='input'>
-                        Custom JSONL Data
+                        {t('components.createJobForm.customJsonlData')}
                       </Select.Option>
                       <Select.Option value='upload'>
-                        Upload JSONL File
+                        {t('components.createJobForm.uploadJsonlFile')}
                       </Select.Option>
-                      <Select.Option value='none'>No Dataset</Select.Option>
+                      <Select.Option value='none'>
+                        {t('components.createJobForm.noDataset')}
+                      </Select.Option>
                     </Select>
                   </Form.Item>
                 </Col>
@@ -1350,8 +1455,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       name='chat_type'
                       label={
                         <span>
-                          Dataset Type
-                          <Tooltip title='Choose between text-only conversations or multimodal conversations with images'>
+                          {t('components.createJobForm.datasetType')}
+                          <Tooltip
+                            title={t(
+                              'components.createJobForm.datasetTypeTooltip'
+                            )}
+                          >
                             <InfoCircleOutlined style={{ marginLeft: 5 }} />
                           </Tooltip>
                         </span>
@@ -1360,19 +1469,23 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                         {
                           required:
                             inputType === 'default' && isChatCompletionsApi,
-                          message: 'Please select dataset type',
+                          message: t(
+                            'components.createJobForm.pleaseSelectDatasetType'
+                          ),
                         },
                       ]}
                       style={{
                         display: isChatCompletionsApi ? 'block' : 'none',
                       }}
                     >
-                      <Select placeholder='Select dataset type'>
+                      <Select
+                        placeholder={t('components.createJobForm.datasetType')}
+                      >
                         <Select.Option value={0}>
-                          Text-Only Conversations
+                          {t('components.createJobForm.textOnlyConversations')}
                         </Select.Option>
                         <Select.Option value={1}>
-                          Multimodal (Text + Image)
+                          {t('components.createJobForm.multimodalTextImage')}
                         </Select.Option>
                       </Select>
                     </Form.Item>
@@ -1386,8 +1499,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       name='test_data_file'
                       label={
                         <span>
-                          Dataset File
-                          <Tooltip title='Upload a .jsonl file where each line contains a JSON object with "id" and "prompt" fields'>
+                          {t('components.createJobForm.datasetFile')}
+                          <Tooltip
+                            title={t(
+                              'components.createJobForm.datasetFileTooltip'
+                            )}
+                          >
                             <InfoCircleOutlined style={{ marginLeft: 5 }} />
                           </Tooltip>
                         </span>
@@ -1395,7 +1512,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       rules={[
                         {
                           required: inputType === 'upload',
-                          message: 'Please upload dataset file',
+                          message: t(
+                            'components.createJobForm.pleaseUploadDatasetFile'
+                          ),
                         },
                       ]}
                     >
@@ -1411,7 +1530,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           size='middle'
                           style={{ width: '200px', height: '40px' }}
                         >
-                          Select JSONL File
+                          {t('components.createJobForm.selectJsonlFile')}
                         </Button>
                       </Upload>
                       <div
@@ -1421,8 +1540,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           fontSize: '12px',
                         }}
                       >
-                        Required format: .jsonl file with each line containing{' '}
-                        {'{"id": "...", "prompt": "..."}'}
+                        {t('components.createJobForm.jsonlFormatDescription')}
                       </div>
                     </Form.Item>
                   </Col>
@@ -1437,8 +1555,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       name='test_data'
                       label={
                         <span>
-                          JSONL Data
-                          <Tooltip title='Each line must be a valid JSON object with "id" and "prompt" fields.'>
+                          {t('components.createJobForm.jsonlData')}
+                          <Tooltip
+                            title={t(
+                              'components.createJobForm.jsonlDataTooltip'
+                            )}
+                          >
                             <InfoCircleOutlined style={{ marginLeft: 5 }} />
                           </Tooltip>
                         </span>
@@ -1446,7 +1568,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       rules={[
                         {
                           required: inputType === 'input',
-                          message: 'Please enter JSONL data',
+                          message: t(
+                            'components.createJobForm.pleaseEnterJsonlData'
+                          ),
                         },
                         {
                           validator: (_, value) => {
@@ -1461,7 +1585,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                                 const jsonObj = JSON.parse(line);
                                 if (!jsonObj.id || !jsonObj.prompt) {
                                   throw new Error(
-                                    'Each line must contain "id" and "prompt" fields'
+                                    t(
+                                      'components.createJobForm.eachLineMustContainFields'
+                                    )
                                   );
                                 }
                               });
@@ -1469,7 +1595,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                             } catch (e) {
                               return Promise.reject(
                                 new Error(
-                                  'Invalid JSONL format. Each line must be valid JSON with required fields.'
+                                  t(
+                                    'components.createJobForm.invalidJsonlFormat'
+                                  )
                                 )
                               );
                             }
@@ -1507,7 +1635,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <Space>
           <RocketOutlined />
-          <span>Load Configuration</span>
+          <span>{t('components.createJobForm.loadConfiguration')}</span>
         </Space>
       </div>
 
@@ -1517,13 +1645,20 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='duration'
             label={
               <span>
-                Test Duration (seconds)
-                <Tooltip title='How long the load test should run'>
+                {t('components.createJobForm.testDuration')}
+                <Tooltip
+                  title={t('components.createJobForm.testDurationTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
             }
-            rules={[{ required: true, message: 'Please enter test duration' }]}
+            rules={[
+              {
+                required: true,
+                message: t('components.createJobForm.pleaseEnterTestDuration'),
+              },
+            ]}
           >
             <InputNumber
               min={1}
@@ -1539,8 +1674,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='concurrent_users'
             label={
               <span>
-                Concurrent Users
-                <Tooltip title='Maximum number of virtual users sending requests simultaneously'>
+                {t('components.createJobForm.concurrentUsers')}
+                <Tooltip
+                  title={t('components.createJobForm.concurrentUsersTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
@@ -1548,7 +1685,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             rules={[
               {
                 required: true,
-                message: 'Please enter number of concurrent users',
+                message: t(
+                  'components.createJobForm.pleaseEnterConcurrentUsers'
+                ),
               },
             ]}
           >
@@ -1567,13 +1706,20 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             name='spawn_rate'
             label={
               <span>
-                User Spawn Rate
-                <Tooltip title='Number of new virtual users started per second during ramp-up'>
+                {t('components.createJobForm.userSpawnRate')}
+                <Tooltip
+                  title={t('components.createJobForm.userSpawnRateTooltip')}
+                >
                   <InfoCircleOutlined style={{ marginLeft: 5 }} />
                 </Tooltip>
               </span>
             }
-            rules={[{ required: true, message: 'Please enter spawn rate' }]}
+            rules={[
+              {
+                required: true,
+                message: t('components.createJobForm.pleaseEnterSpawnRate'),
+              },
+            ]}
           >
             <InputNumber
               min={1}
@@ -1599,10 +1745,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           lineHeight: '1.5',
         }}
       >
-        Configure field mappings for both prompt field and response data
-        extraction. This mapping is essential for updating request payloads with
-        test data and parsing {streamMode ? 'streaming' : 'non-streaming'}{' '}
-        responses correctly.
+        {t('components.createJobForm.fieldMappingDescription')}
       </div>
 
       {/* Prompt Field Path - always show for all APIs */}
@@ -1615,7 +1758,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         }}
       >
         <div style={{ marginBottom: 12, fontWeight: 'bold', fontSize: '14px' }}>
-          Request Field Mapping
+          {t('components.createJobForm.requestFieldMapping')}
         </div>
         <Row gutter={24}>
           <Col span={24}>
@@ -1623,8 +1766,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               name={['field_mapping', 'prompt']}
               label={
                 <span>
-                  Prompt Field Path
-                  <Tooltip title='The key in your request payload that contains the user prompt (needed for performance metrics calculation)'>
+                  {t('components.createJobForm.promptFieldPath')}
+                  <Tooltip
+                    title={t('components.createJobForm.promptFieldPathTooltip')}
+                  >
                     <InfoCircleOutlined style={{ marginLeft: 5 }} />
                   </Tooltip>
                 </span>
@@ -1632,7 +1777,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               rules={[
                 {
                   required: true,
-                  message: 'Please specify the prompt field path',
+                  message: t(
+                    'components.createJobForm.pleaseSpecifyPromptFieldPath'
+                  ),
                 },
               ]}
             >
@@ -1662,7 +1809,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 color: token.colorText,
               }}
             >
-              Streaming Response Configuration
+              {t('components.createJobForm.streamingResponseConfiguration')}
             </div>
 
             <Row gutter={16} style={{ marginBottom: 16 }}>
@@ -1671,8 +1818,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'stream_prefix']}
                   label={
                     <span>
-                      Stream Line Prefix
-                      <Tooltip title='Text that appears at the beginning of each streaming data line (e.g., "data:", "event:")'>
+                      {t('components.createJobForm.streamLinePrefix')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.streamLinePrefixTooltip'
+                        )}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1687,8 +1838,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'data_format']}
                   label={
                     <span>
-                      Data Format
-                      <Tooltip title='Format of the streaming data after removing the prefix'>
+                      {t('components.createJobForm.dataFormat')}
+                      <Tooltip
+                        title={t('components.createJobForm.dataFormatTooltip')}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1696,13 +1849,21 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   rules={[
                     {
                       required: true,
-                      message: 'Please select data format',
+                      message: t(
+                        'components.createJobForm.pleaseSelectDataFormat'
+                      ),
                     },
                   ]}
                 >
-                  <Select placeholder='Select format'>
-                    <Select.Option value='json'>JSON Format</Select.Option>
-                    <Select.Option value='non-json'>Plain Text</Select.Option>
+                  <Select
+                    placeholder={t('components.createJobForm.dataFormat')}
+                  >
+                    <Select.Option value='json'>
+                      {t('components.createJobForm.jsonFormat')}
+                    </Select.Option>
+                    <Select.Option value='non-json'>
+                      {t('components.createJobForm.plainText')}
+                    </Select.Option>
                   </Select>
                 </Form.Item>
               </Col>
@@ -1721,8 +1882,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           name={['field_mapping', 'content']}
                           label={
                             <span>
-                              Content Field Path
-                              <Tooltip title='Dot-notation path to the main content in each JSON chunk (e.g., choices.0.delta.content)'>
+                              {t('components.createJobForm.contentFieldPath')}
+                              <Tooltip
+                                title={t(
+                                  'components.createJobForm.contentFieldPathTooltip'
+                                )}
+                              >
                                 <InfoCircleOutlined style={{ marginLeft: 5 }} />
                               </Tooltip>
                             </span>
@@ -1730,7 +1895,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           rules={[
                             {
                               required: dataFormat === 'json',
-                              message: 'Please specify content field path',
+                              message: t(
+                                'components.createJobForm.pleaseSpecifyContentFieldPath'
+                              ),
                             },
                           ]}
                         >
@@ -1743,8 +1910,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                           name={['field_mapping', 'reasoning_content']}
                           label={
                             <span>
-                              Reasoning Field Path
-                              <Tooltip title='Dot-notation path to reasoning content in JSON (optional, for models that support reasoning)'>
+                              {t('components.createJobForm.reasoningFieldPath')}
+                              <Tooltip
+                                title={t(
+                                  'components.createJobForm.reasoningFieldPathTooltip'
+                                )}
+                              >
                                 <InfoCircleOutlined style={{ marginLeft: 5 }} />
                               </Tooltip>
                             </span>
@@ -1777,7 +1948,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 color: token.colorText,
               }}
             >
-              Stream Termination Configuration
+              {t('components.createJobForm.streamTerminationConfiguration')}
             </div>
 
             <Row gutter={16}>
@@ -1786,8 +1957,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'end_prefix']}
                   label={
                     <span>
-                      End Line Prefix
-                      <Tooltip title='Prefix for lines that contain stream termination signals (usually same as stream prefix)'>
+                      {t('components.createJobForm.endLinePrefix')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.endLinePrefixTooltip'
+                        )}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1802,8 +1977,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'stop_flag']}
                   label={
                     <span>
-                      Stop Signal
-                      <Tooltip title='Text content that indicates the stream has ended (e.g., [DONE], STOP, finished)'>
+                      {t('components.createJobForm.stopSignal')}
+                      <Tooltip
+                        title={t('components.createJobForm.stopSignalTooltip')}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1811,7 +1988,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   rules={[
                     {
                       required: true,
-                      message: 'Please specify stop signal',
+                      message: t(
+                        'components.createJobForm.pleaseSpecifyStopSignal'
+                      ),
                     },
                   ]}
                 >
@@ -1824,8 +2003,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   name={['field_mapping', 'end_condition']}
                   label={
                     <span>
-                      End Field Path
-                      <Tooltip title='JSON path to a field that indicates completion (optional, e.g., choices.0.finish_reason)'>
+                      {t('components.createJobForm.endFieldPath')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.endFieldPathTooltip'
+                        )}
+                      >
                         <InfoCircleOutlined style={{ marginLeft: 5 }} />
                       </Tooltip>
                     </span>
@@ -1854,7 +2037,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               color: token.colorText,
             }}
           >
-            Non-Streaming Response Configuration
+            {t('components.createJobForm.nonStreamingResponseConfiguration')}
           </div>
           <Row gutter={24}>
             <Col span={12}>
@@ -1862,8 +2045,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 name={['field_mapping', 'content']}
                 label={
                   <span>
-                    Content Field Path
-                    <Tooltip title='Dot-notation path to the main content in the response JSON (e.g., choices.0.message.content)'>
+                    {t('components.createJobForm.contentFieldPath')}
+                    <Tooltip
+                      title={t(
+                        'components.createJobForm.nonStreamingContentFieldPathTooltip'
+                      )}
+                    >
                       <InfoCircleOutlined style={{ marginLeft: 5 }} />
                     </Tooltip>
                   </span>
@@ -1871,7 +2058,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 rules={[
                   {
                     required: true,
-                    message: 'Please specify content field path',
+                    message: t(
+                      'components.createJobForm.pleaseSpecifyContentFieldPath'
+                    ),
                   },
                 ]}
               >
@@ -1884,8 +2073,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 name={['field_mapping', 'reasoning_content']}
                 label={
                   <span>
-                    Reasoning Field Path
-                    <Tooltip title='Dot-notation path to reasoning content (optional, for models with reasoning capabilities)'>
+                    {t('components.createJobForm.reasoningFieldPath')}
+                    <Tooltip
+                      title={t(
+                        'components.createJobForm.nonStreamingReasoningFieldPathTooltip'
+                      )}
+                    >
                       <InfoCircleOutlined style={{ marginLeft: 5 }} />
                     </Tooltip>
                   </span>
@@ -1913,7 +2106,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       >
         <Space>
           <ApiOutlined />
-          <span>API Field Mapping</span>
+          <span>{t('components.createJobForm.apiFieldMapping')}</span>
         </Space>
       </div>
 
@@ -1933,16 +2126,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             disabled={!isFormValidForTest()}
             className={isFormValidForTest() ? 'test-button-active' : ''}
           >
-            Test It
+            {t('components.createJobForm.testIt')}
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t('common.cancel')}</Button>
           <Button
             type='primary'
             htmlType='button'
             icon={<RightOutlined />}
             onClick={handleNextTab}
           >
-            Next Step
+            {t('components.createJobForm.nextStep')}
           </Button>
         </Space>
       );
@@ -1951,16 +2144,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       return (
         <Space>
           <Button icon={<LeftOutlined />} onClick={goToPreviousTab}>
-            Previous
+            {t('components.createJobForm.previousStep')}
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t('common.cancel')}</Button>
           <Button
             type='primary'
             htmlType='button'
             icon={<RightOutlined />}
             onClick={handleNextTab}
           >
-            Next Step
+            {t('components.createJobForm.nextStep')}
           </Button>
         </Space>
       );
@@ -1969,11 +2162,13 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       return (
         <Space>
           <Button icon={<LeftOutlined />} onClick={goToPreviousTab}>
-            Previous
+            {t('components.createJobForm.previousStep')}
           </Button>
-          <Button onClick={onCancel}>Cancel</Button>
+          <Button onClick={onCancel}>{t('common.cancel')}</Button>
           <Button type='primary' loading={submitting} onClick={handleSubmit}>
-            {submitting ? 'Submitting...' : 'Create'}
+            {submitting
+              ? t('components.createJobForm.submitting')
+              : t('components.createJobForm.create')}
           </Button>
         </Space>
       );
@@ -2083,7 +2278,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               label: (
                 <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
                   <SettingOutlined style={{ marginRight: 8 }} />
-                  Basic & Request
+                  {t('components.createJobForm.basicRequest')}
                 </span>
               ),
               children: renderTab1Content(),
@@ -2093,7 +2288,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               label: (
                 <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
                   <DatabaseOutlined style={{ marginRight: 8 }} />
-                  Data & Load
+                  {t('components.createJobForm.dataLoad')}
                 </span>
               ),
               children: renderTab2Content(),
@@ -2103,7 +2298,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               label: (
                 <span style={{ fontSize: '16px', fontWeight: 'bold' }}>
                   <ApiOutlined style={{ marginRight: 8 }} />
-                  Field Mapping
+                  {t('components.createJobForm.fieldMapping')}
                 </span>
               ),
               children: renderTab3Content(),
@@ -2128,7 +2323,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         title={
           <Space>
             <BugOutlined />
-            <span>API Test</span>
+            <span>{t('components.createJobForm.apiTest')}</span>
           </Space>
         }
         open={testModalVisible}
@@ -2139,7 +2334,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             size='large'
             onClick={() => setTestModalVisible(false)}
           >
-            Close
+            {t('components.createJobForm.close')}
           </Button>,
         ]}
         width={800}
@@ -2206,7 +2401,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   <Col>
                     <Space>
                       <Text strong style={{ fontSize: '16px' }}>
-                        Status Code:
+                        {t('components.createJobForm.statusCode')}:
                       </Text>
                       <div
                         style={{
@@ -2243,7 +2438,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     }}
                   >
                     <Text strong style={{ color: token.colorError }}>
-                      Error:
+                      {t('common.error')}:
                     </Text>
                     <Text style={{ color: token.colorError, marginLeft: 8 }}>
                       {testResult.error}
@@ -2280,7 +2475,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 >
                   <Space>
                     <Text strong style={{ fontSize: '16px' }}>
-                      Response Data
+                      {t('components.createJobForm.responseData')}
                     </Text>
                     {testResult.response.is_stream &&
                       Array.isArray(testResult.response.data) && (
@@ -2294,7 +2489,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                             fontWeight: 'bold',
                           }}
                         >
-                          Stream ({testResult.response.data.length} chunks)
+                          {t('components.createJobForm.stream')} (
+                          {testResult.response.data.length}{' '}
+                          {t('components.createJobForm.chunks')})
                         </div>
                       )}
                   </Space>

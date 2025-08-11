@@ -7,6 +7,7 @@
 
 import { Tag } from 'antd';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { TASK_STATUS_MAP } from '@/utils/constants';
 
@@ -30,6 +31,7 @@ export const StatusTag: React.FC<StatusTagProps> = ({
   showUnknown = true,
   className,
 }) => {
+  const { t } = useTranslation();
   const statusKey = status?.toLowerCase();
   const statusInfo = statusMap[statusKey as keyof typeof statusMap];
 
@@ -37,14 +39,17 @@ export const StatusTag: React.FC<StatusTagProps> = ({
     return null;
   }
 
+  // Use translation for status text
+  const translatedText = t(`status.${statusKey}`, status || 'Unknown');
+
   const finalStatusInfo = statusInfo || {
     color: 'default',
-    text: status || 'Unknown',
+    text: translatedText,
   };
 
   return (
     <Tag color={finalStatusInfo.color as any} className={className}>
-      {finalStatusInfo.text}
+      {translatedText}
     </Tag>
   );
 };
