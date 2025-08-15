@@ -11,8 +11,8 @@ import tempfile
 import threading
 
 from model.task import Task
+from utils.common import mask_sensitive_command
 from utils.logger import logger
-from utils.tools import mask_sensitive_command
 
 
 class LocustRunner:

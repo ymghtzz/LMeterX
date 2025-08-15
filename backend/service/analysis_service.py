@@ -235,7 +235,7 @@ async def get_analysis_svc(request: Request, task_id: str) -> GetAnalysisRespons
         analysis = analysis_result.scalar_one_or_none()
 
         if not analysis:
-            logger.warning(f"Analysis not found for task: {task_id}")
+            # logger.warning(f"Analysis not found for task: {task_id}")
             return GetAnalysisResponse(
                 data=None,
                 status="not_found",
