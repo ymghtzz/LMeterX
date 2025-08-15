@@ -30,6 +30,7 @@ from model.task import (
     TaskStatusRsp,
 )
 from utils.be_config import UPLOAD_FOLDER
+from utils.error_handler import ErrorMessages, ErrorResponse
 from utils.logger import logger
 
 
@@ -372,10 +373,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         await db.rollback()
         error_msg = f"Failed to create task in database: {str(e)}"
         logger.error(error_msg, exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"task_id": task_id, "status": "failed", "error": error_msg},
-        )
+        return ErrorResponse.internal_server_error(error_msg)
 
 
 async def get_task_result_svc(request: Request, task_id: str):
@@ -390,9 +388,7 @@ async def get_task_result_svc(request: Request, task_id: str):
         A `TaskResultRsp` object containing the results or an error message.
     """
     if not task_id:
-        return JSONResponse(
-            status_code=400, content={"status": "error", "error": "Task ID is missing"}
-        )
+        return ErrorResponse.bad_request(ErrorMessages.TASK_ID_MISSING)
     if not await is_task_exist(request, task_id):
         logger.warning(f"Attempted to get results for non-existent task: {task_id}")
         return TaskResultRsp(error="Task not found", status="not_found", results=[])
@@ -810,7 +806,7 @@ def _prepare_cookies_from_headers(body: TaskCreateReq) -> Dict[str, str]:
 
 def _prepare_request_payload(body: TaskCreateReq) -> Dict:
     """Prepare request payload based on API path and configuration."""
-    if body.api_path == "/v1/chat/completions":
+    if body.api_path == "/chat/completions":
         # Use the traditional chat completions format
         messages = [
             {
@@ -898,8 +894,6 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
     import asyncio
 
     import httpx
-
-    logger.info(f"Testing API endpoint: {body.target_host}{body.api_path}")
 
     try:
         # Prepare headers

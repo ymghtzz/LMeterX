@@ -5,7 +5,7 @@
 
 // API Configuration
 export const API_PATHS = {
-  CHAT_COMPLETIONS: '/v1/chat/completions',
+  CHAT_COMPLETIONS: '/chat/completions',
   EMBEDDINGS: '/v1/embeddings',
   COMPLETIONS: '/v1/completions',
   MODELS: '/v1/models',
@@ -52,16 +52,16 @@ export const DEFAULT_HEADERS = [
   { key: 'Authorization', value: '', fixed: false },
 ] as const;
 
-// Task status mapping
+// Task status mapping - text will be handled by i18n
 export const TASK_STATUS_MAP = {
-  created: { color: 'default', text: 'Created' },
-  running: { color: 'processing', text: 'Running' },
-  completed: { color: 'success', text: 'Completed' },
-  stopping: { color: 'gold', text: 'Stopping' },
-  stopped: { color: 'orange', text: 'Stopped' },
-  locked: { color: 'warning', text: 'Pending' },
-  failed: { color: 'error', text: 'Failed' },
-  failed_requests: { color: 'magenta', text: 'Request Failed' },
+  created: { color: 'default', text: 'status.created' },
+  running: { color: 'processing', text: 'status.running' },
+  completed: { color: 'success', text: 'status.completed' },
+  stopping: { color: 'gold', text: 'status.stopping' },
+  stopped: { color: 'orange', text: 'status.stopped' },
+  locked: { color: 'warning', text: 'status.locked' },
+  failed: { color: 'error', text: 'status.failed' },
+  failed_requests: { color: 'magenta', text: 'status.failed_requests' },
 } as const;
 
 // File upload configuration

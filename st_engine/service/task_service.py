@@ -54,7 +54,17 @@ class TaskService:
         try:
             task.status = status  # type: ignore
             if error_message:
-                task.error_message = error_message  # type: ignore
+                # Limit error message length to avoid database field overflow
+                # MySQL TEXT field can store up to 65,535 characters
+                max_length = 65000  # Leave some buffer
+                if len(error_message) > max_length:
+                    truncated_message = (
+                        error_message[: max_length - 100]
+                        + f"\n... (truncated, original length: {len(error_message)})"
+                    )
+                    task.error_message = truncated_message  # type: ignore
+                else:
+                    task.error_message = error_message  # type: ignore
             session.commit()
         except Exception as e:
             if hasattr(task, "id") and task.id:
@@ -106,7 +116,7 @@ class TaskService:
             if task:
                 task_logger = logger.bind(task_id=task.id)
                 task_logger.info(f"Claimed and locked new task {task.id}.")
-                task.status = "locked"  # Update status immediately
+                task.status = "locked"  # type: ignore # Update status immediately
                 session.commit()
                 return task
             return None

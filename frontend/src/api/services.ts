@@ -143,8 +143,57 @@ export const logApi = {
     api.get<any>(`/logs/task/${taskId}`, { params: { offset, tail } }),
 };
 
-// System API methods
-export const systemApi = {};
+// Analysis API methods
+export const analysisApi = {
+  // Perform AI analysis on task results
+  analyzeTask: (taskId: string, language?: string) =>
+    api.post<any>(`/analyze/${taskId}`, {
+      task_id: taskId,
+      language: language || 'en',
+    }),
+
+  // Get analysis result for a task
+  getAnalysis: (taskId: string) => api.get<any>(`/analyze/${taskId}`),
+};
+
+// System Configuration API methods
+export const systemApi = {
+  // Get all system configurations
+  getSystemConfigs: () => api.get<any>('/system'),
+
+  // Create a new system configuration
+  createSystemConfig: (config: {
+    config_key: string;
+    config_value: string;
+    description?: string;
+  }) => api.post<any>('/system', config),
+
+  // Update a system configuration
+  updateSystemConfig: (
+    configKey: string,
+    config: {
+      config_key: string;
+      config_value: string;
+      description?: string;
+    }
+  ) => api.put<any>(`/system/${configKey}`, config),
+
+  // Batch create or update system configurations
+  batchUpsertSystemConfigs: (
+    configs: Array<{
+      config_key: string;
+      config_value: string;
+      description?: string;
+    }>
+  ) => api.post<any>('/system/batch', { configs }),
+
+  // Delete a system configuration
+  deleteSystemConfig: (configKey: string) =>
+    api.delete<any>(`/system/${configKey}`),
+
+  // Get AI service configuration
+  getAIServiceConfig: () => api.get<any>('/system/ai-service'),
+} as const;
 
 // Define the upload service
 export const uploadCertificateFiles = async (

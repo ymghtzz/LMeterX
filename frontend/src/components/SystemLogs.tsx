@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { Alert, Button, Card, Input, Select, Space, Switch, theme } from 'antd';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { logApi } from '../api/services';
 import { LoadingSpinner } from './ui/LoadingState';
 import { PageHeader } from './ui/PageHeader';
@@ -33,6 +34,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
   displayName,
   isActive,
 }) => {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [logs, setLogs] = useState<string>('');
@@ -363,7 +365,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
     return (
       <div style={{ height: '80vh' }}>
         <LoadingSpinner
-          text={`Loading ${displayName} data...`}
+          text={t('components.systemLogs.loadingData', { displayName })}
           size='large'
           className='flex justify-center align-center'
         />
@@ -394,7 +396,9 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
         style={{ height: '80vh' }}
       >
         <Alert
-          description={`No ${displayName} available`}
+          description={t('components.systemLogs.noLogsAvailable', {
+            displayName,
+          })}
           type='info'
           showIcon
           style={{ background: 'transparent', border: 'none' }}
@@ -432,22 +436,30 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 onChange={value => setTailLines(value)}
                 className='w-140'
               >
-                <Select.Option value={100}>Last 100 lines</Select.Option>
-                <Select.Option value={500}>Last 500 lines</Select.Option>
-                <Select.Option value={1000}>Last 1000 lines</Select.Option>
-                <Select.Option value={0}>All logs</Select.Option>
+                <Select.Option value={100}>
+                  {t('components.systemLogs.last100Lines')}
+                </Select.Option>
+                <Select.Option value={500}>
+                  {t('components.systemLogs.last500Lines')}
+                </Select.Option>
+                <Select.Option value={1000}>
+                  {t('components.systemLogs.last1000Lines')}
+                </Select.Option>
+                <Select.Option value={0}>
+                  {t('components.systemLogs.allLogs')}
+                </Select.Option>
               </Select>
               <Switch
-                checkedChildren='Auto Refresh'
-                unCheckedChildren='Stop Refresh'
+                checkedChildren={t('components.systemLogs.autoRefresh')}
+                unCheckedChildren={t('components.systemLogs.stopRefresh')}
                 checked={autoRefresh}
                 onChange={setAutoRefresh}
               />
               <Button icon={<SyncOutlined />} onClick={handleManualRefresh}>
-                Refresh
+                {t('components.systemLogs.refreshLogs')}
               </Button>
               <Search
-                placeholder='Search log content'
+                placeholder={t('components.systemLogs.searchLogContent')}
                 allowClear
                 enterButton={<SearchOutlined />}
                 onSearch={handleSearch}
@@ -458,7 +470,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 icon={<DownloadOutlined />}
                 onClick={handleDownload}
               >
-                Download
+                {t('components.systemLogs.downloadLogs')}
               </Button>
               <Button
                 icon={
@@ -470,7 +482,9 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                 }
                 onClick={toggleFullscreen}
               >
-                {fullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                {fullscreen
+                  ? t('components.systemLogs.exitFullscreen')
+                  : t('components.systemLogs.fullscreen')}
               </Button>
             </Space>
           </div>
@@ -501,7 +515,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
         >
           {searchTerm && (
             <Alert
-              message={`Search results: "${searchTerm}"`}
+              message={t('components.systemLogs.searchResults', { searchTerm })}
               type='info'
               showIcon
               closable
@@ -516,14 +530,11 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
           {/* Display incremental fetch error */}
           {fetchError && (
             <Alert
-              message='Log auto-refresh error'
+              message={t('components.systemLogs.autoRefreshError')}
               description={
                 <div>
                   <p>{fetchError}</p>
-                  <p>
-                    Auto-refresh has been paused. Please check the service
-                    status and click the "Refresh" button to retry.
-                  </p>
+                  <p>{t('components.systemLogs.autoRefreshPaused')}</p>
                 </div>
               }
               type='warning'
@@ -536,7 +547,7 @@ const SystemLogs: React.FC<SystemLogsProps> = ({
                   type='primary'
                   onClick={handleManualRefresh}
                 >
-                  Refresh Now
+                  {t('components.systemLogs.refreshNow')}
                 </Button>
               }
               onClose={() => setFetchError(null)}

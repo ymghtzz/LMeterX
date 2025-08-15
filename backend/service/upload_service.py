@@ -21,6 +21,7 @@ from utils.be_config import (
     MAX_TASK_ID_LENGTH,
     UPLOAD_FOLDER,
 )
+from utils.error_handler import ErrorMessages, ErrorResponse
 from utils.logger import logger
 from utils.security import (
     safe_join,
@@ -270,13 +271,7 @@ async def upload_file_svc(
         logger.info(f"Uploading file: {files[0].filename}")
 
     if not files or not files[0].filename:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "error": "No files were included in the request",
-            },
-        )
+        return ErrorResponse.bad_request(ErrorMessages.NO_FILES_PROVIDED)
 
     # Generate a new task_id if one is not provided.
     effective_task_id = str(uuid.uuid4())
@@ -288,10 +283,7 @@ async def upload_file_svc(
             # logger.info(f"Validated task_id: {effective_task_id}")
         except ValueError as e:
             logger.error(f"Task ID validation failed: {e}")
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "error": str(e)},
-            )
+            return ErrorResponse.bad_request(str(e))
 
     if not file_type:
         file_type = "dataset"
@@ -323,7 +315,6 @@ async def upload_file_svc(
     # In the future, it could handle other file types here.
     # e.g., if file_type == "dataset": ...
 
-    return JSONResponse(
-        status_code=400,
-        content={"status": "error", "error": f"Unsupported file type: {file_type}"},
+    return ErrorResponse.bad_request(
+        f"{ErrorMessages.UNSupported_FILE_TYPE}: {file_type}"
     )

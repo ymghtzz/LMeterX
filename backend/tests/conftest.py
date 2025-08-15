@@ -53,7 +53,7 @@ def sample_task_data():
         "temp_task_id": "temp_123",
         "name": "Test Task",
         "target_host": "https://api.example.com",
-        "api_path": "/v1/chat/completions",
+        "api_path": "/chat/completions",
         "model": "gpt-3.5-turbo",
         "duration": 300,
         "concurrent_users": 10,

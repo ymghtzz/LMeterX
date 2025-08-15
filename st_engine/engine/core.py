@@ -9,6 +9,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, Union
 
+from gevent import queue
+
 from utils.config import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
 
 
@@ -40,6 +42,7 @@ class GlobalConfig:
     request_payload: Optional[str] = None
     model_name: Optional[str] = None
     system_prompt: Optional[str] = None
+    user_prompt: Optional[str] = None
     stream_mode: bool = True
     chat_type: int = 0
     cert_file: Optional[str] = None
@@ -61,6 +64,49 @@ class FieldMapping:
     content: str = ""
     reasoning_content: str = ""
     prompt: str = ""
+
+
+# === GLOBAL STATE MANAGEMENT ===
+class GlobalStateManager:
+    """Manages global state for Locust testing."""
+
+    _global_config: Optional[GlobalConfig] = None
+    _global_task_queue: Optional[Dict[str, queue.Queue]] = None
+    _start_time: Optional[float] = None
+
+    @classmethod
+    def initialize_global_state(cls) -> None:
+        """Initialize global state."""
+        cls._global_config = GlobalConfig()
+        cls._global_task_queue = {
+            "completion_tokens_queue": queue.Queue(),
+            "all_tokens_queue": queue.Queue(),
+        }
+        cls._start_time = None
+
+    @classmethod
+    def get_global_config(cls) -> GlobalConfig:
+        """Thread-safe access to global configuration."""
+        if cls._global_config is None:
+            cls.initialize_global_state()
+        return cls._global_config  # type: ignore
+
+    @classmethod
+    def get_global_task_queue(cls) -> Dict[str, queue.Queue]:
+        """Thread-safe access to global task queue."""
+        if cls._global_task_queue is None:
+            cls.initialize_global_state()
+        return cls._global_task_queue  # type: ignore
+
+    @classmethod
+    def set_start_time(cls, start_time: float) -> None:
+        """Set the test start time."""
+        cls._start_time = start_time
+
+    @classmethod
+    def get_start_time(cls) -> Optional[float]:
+        """Get the test start time."""
+        return cls._start_time
 
 
 # === CONFIGURATION MANAGEMENT ===
@@ -177,8 +223,8 @@ class CertificateManager:
             return (cert_file, key_file)
 
         if not cert_file and key_file:
-            # Key file without certificate file is invalid
-            raise ValueError("Key file provided without certificate file")
+            # Key file without certificate file is invalid, but don't fail
+            return None
 
         return None
 

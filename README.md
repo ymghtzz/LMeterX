@@ -22,7 +22,7 @@ LMeterX is a professional large language model performance testing platform that
 - **Smart load testing**: Precise concurrency control & Real user simulation
 - **Professional metrics**: TTFT, TPS, RPS, success/error rate, etc
 - **Multi-scenario support**: Text conversations & Multimodal (image+text) & Custom dataset
-- **Visualize the results**: Performance reports & Model arena
+- **Visualize the results**: Performance reports & AI Summary & Model arena
 - **Real-time monitoring**: Hierarchical monitoring of tasks and services
 - **Enterprise ready**: Docker deployment & Web management console & Scalable architecture
 
@@ -66,7 +66,8 @@ curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.s
    - Set concurrent user count and test duration
    - Configure other advanced parameters (optional)
 3. **Monitor Test Process**: Real-time view of test logs and performance metrics
-4. **Analyze Test Results**: View detailed performance analysis reports and export data
+4. **View and Export Test Results**: View detailed performance results and export reports.
+5. **AI Summary**: After configuring the AI service on the System Configuration page, you can perform AI-powered evaluation and summary of performance results on the Task Results page.
 
 ## 🔧 Configuration
 
@@ -134,7 +135,6 @@ LMeterX/
 - [ ] Support for client resource monitoring
 
 ### Planned
-- [ ] User system support
 - [ ] CLI command-line tool
 
 ## 📚 Related Documentation

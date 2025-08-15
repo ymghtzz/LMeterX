@@ -7,485 +7,55 @@ Optimized and refactored Locust test file for LLM performance testing.
 
 import json
 import os
+import ssl
+import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 import urllib3
 from gevent import queue
-from locust import HttpUser, between, events, task
+from locust import FastHttpUser, between, events, task
 from urllib3.exceptions import InsecureRequestWarning
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.core import (
     CertificateManager,
     ConfigManager,
     GlobalConfig,
-    StreamMetrics,
+    GlobalStateManager,
     ValidationManager,
 )
-from engine.processing import ErrorHandler, EventManager, StreamProcessor
+from engine.processing import ErrorHandler, EventManager, RequestHandler, StreamHandler
+from utils.common import count_tokens, mask_sensitive_data
 from utils.config import (
     DEFAULT_API_PATH,
     DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     DEFAULT_WAIT_TIME_MAX,
     DEFAULT_WAIT_TIME_MIN,
-    HTTP_OK,
-    METRIC_TTOC,
     METRIC_TTT,
 )
 from utils.logger import logger
-from utils.tools import count_tokens, mask_sensitive_data
 
 # Disable the specific InsecureRequestWarning from urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
 
 # === GLOBAL STATE ===
-GLOBAL_CONFIG = GlobalConfig()
-GLOBAL_TASK_QUEUE: Dict[str, queue.Queue] = {
-    "completion_tokens_queue": queue.Queue(),
-    "all_tokens_queue": queue.Queue(),
-}
-_start_time: Optional[float] = None
+# Initialize global state using the state manager
+GlobalStateManager.initialize_global_state()
 
 
-# === REQUEST HANDLERS ===
-class RequestHandler:
-    """Handles different types of API requests."""
-
-    def __init__(self, config: GlobalConfig, task_logger):
-        """Initialize the RequestHandler with configuration and logger.
-
-        Args:
-            config: Global configuration object
-            task_logger: Task-specific logger instance
-        """
-        self.config = config
-        self.task_logger = task_logger
-
-    def prepare_request_kwargs(
-        self, prompt_data: Dict[str, Any]
-    ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        """Handle API requests with user-provided payload."""
-        try:
-            if not self.config.request_payload:
-                self.task_logger.error("No request payload provided for API endpoint")
-                return None, None
-
-            try:
-                payload = json.loads(str(self.config.request_payload))
-            except json.JSONDecodeError as e:
-                self.task_logger.error(f"Invalid JSON in request payload: {e}")
-                return None, None
-
-            user_prompt = ""
-
-            # Check if test_data is empty (no dataset mode)
-            if not self.config.test_data or self.config.test_data.strip() == "":
-                user_prompt = self._extract_prompt_from_payload(payload)
-            else:
-                # Dataset mode - update payload with prompt data
-                user_prompt = prompt_data.get("prompt", DEFAULT_PROMPT)
-
-                # Special handling for chat/completions API
-                if self.config.api_path == DEFAULT_API_PATH:
-                    self._handle_chat_completions_payload(
-                        payload, prompt_data, user_prompt
-                    )
-                else:
-                    # For other APIs, use field mapping to update prompt
-                    self._handle_custom_api_payload(payload, user_prompt)
-
-            # Set request name based on API path
-            request_name = (
-                "chat_completions"
-                if self.config.api_path == DEFAULT_API_PATH
-                else "api_request"
-            )
-
-            base_request_kwargs = {
-                "json": payload,
-                "headers": self.config.headers,
-                "catch_response": True,
-                "name": request_name,
-                "verify": False,
-                "timeout": DEFAULT_TIMEOUT,
-            }
-
-            if self.config.cookies:
-                base_request_kwargs["cookies"] = self.config.cookies
-
-            return base_request_kwargs, user_prompt
-
-        except Exception as e:
-            self.task_logger.error(
-                f"Failed to prepare custom API request: {e}", exc_info=True
-            )
-            return None, None
-
-    def _handle_chat_completions_payload(
-        self, payload: Dict[str, Any], prompt_data: Dict[str, Any], user_prompt: str
-    ) -> None:
-        """Handle chat/completions API payload with image support."""
-        try:
-            # Build system message if configured
-            messages: List[Dict[str, Any]] = []
-            if self.config.system_prompt:
-                messages.append(
-                    {"role": "system", "content": self.config.system_prompt}
-                )
-
-            # Check for image data in prompt_data
-            image_base64 = prompt_data.get("image_base64", "")
-            image_url = prompt_data.get("image_url", "")
-
-            if image_base64:
-                # Use base64 encoded image
-                content_list = [
-                    {"type": "text", "text": user_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"},
-                    },
-                ]
-                messages.append({"role": "user", "content": content_list})
-            elif image_url:
-                # Use image URL
-                content_list = [
-                    {"type": "text", "text": user_prompt},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": image_url},
-                    },
-                ]
-                messages.append({"role": "user", "content": content_list})
-            else:
-                # Text-only message
-                messages.append({"role": "user", "content": user_prompt})
-
-            # Update the messages field in payload
-            payload["messages"] = messages
-
-            # Auto-supplement stream field if missing or empty
-            if (
-                "stream" not in payload
-                or payload.get("stream") is None
-                or payload.get("stream") == ""
-            ):
-                payload["stream"] = self.config.stream_mode
-                self.task_logger.debug(
-                    f"Auto-set stream field to: {self.config.stream_mode}"
-                )
-
-            # Auto-supplement model field if missing or empty
-            if (
-                "model" not in payload
-                or payload.get("model") is None
-                or payload.get("model") == ""
-            ):
-                if self.config.model_name:
-                    payload["model"] = self.config.model_name
-                    self.task_logger.debug(
-                        f"Auto-set model field to: {self.config.model_name}"
-                    )
-
-        except Exception as e:
-            self.task_logger.warning(f"Failed to update chat/completions payload: {e}")
-            # Fallback to simple field mapping
-            self._handle_custom_api_payload(payload, user_prompt)
-
-    def _handle_custom_api_payload(
-        self, payload: Dict[str, Any], user_prompt: str
-    ) -> None:
-        """Handle custom API payload using field mapping."""
-        try:
-            # Parse field mapping to get prompt field path
-            field_mapping = ConfigManager.parse_field_mapping(
-                self.config.field_mapping or ""
-            )
-
-            # Update payload with current prompt data if field mapping is configured
-            if field_mapping.prompt:
-                try:
-                    self._set_field_value(payload, field_mapping.prompt, user_prompt)
-                except Exception as e:
-                    self.task_logger.warning(f"Failed to update prompt in payload: {e}")
-            else:
-                self.task_logger.warning(
-                    "No prompt field mapping configured, using original payload"
-                )
-        except Exception as e:
-            self.task_logger.warning(f"Failed to handle custom API payload: {e}")
-
-    def _extract_prompt_from_payload(self, payload: Dict[str, Any]) -> str:
-        """Extract prompt content from custom payload using field mapping."""
-        try:
-            field_mapping = ConfigManager.parse_field_mapping(
-                self.config.field_mapping or ""
-            )
-            if field_mapping.prompt:
-                return StreamProcessor.get_field_value(payload, field_mapping.prompt)
-            return ""
-        except Exception:
-            return ""
-
-    def _set_field_value(self, data: Dict[str, Any], path: str, value: str) -> None:
-        """Set value in nested dictionary using dot-separated path."""
-        if not path or not isinstance(data, dict):
-            return
-
-        try:
-            keys = path.split(".")
-            current = data
-
-            # Navigate to the parent of the target field
-            for key in keys[:-1]:
-                # Check if key is a valid integer (including negative numbers)
-                try:
-                    index = int(key)
-                    if isinstance(current, list):
-                        current = current[index]
-                    else:
-                        return
-                except ValueError:
-                    # Key is not an integer, treat as dict key
-                    if isinstance(current, list) and current:
-                        if isinstance(current[0], dict):
-                            current = current[0].setdefault(key, {})
-                        else:
-                            return
-                    elif isinstance(current, dict):
-                        current = current.setdefault(key, {})
-                    else:
-                        return
-
-            # Set the final field value
-            final_key = keys[-1]
-            try:
-                final_index = int(final_key)
-                if isinstance(current, list):
-                    # For negative indices, ensure we're within bounds
-                    if -len(current) <= final_index < len(current):
-                        current[final_index] = value
-            except ValueError:
-                # Final key is not an integer, treat as dict key
-                if isinstance(current, dict):
-                    current[final_key] = value
-                elif (
-                    isinstance(current, list)
-                    and current
-                    and isinstance(current[0], dict)
-                ):
-                    current[0][final_key] = value
-
-        except (KeyError, IndexError, TypeError, ValueError):
-            # If we can't set the nested field, log a warning but don't fail
-            pass
+def get_global_config() -> GlobalConfig:
+    """Thread-safe access to global configuration."""
+    return GlobalStateManager.get_global_config()
 
 
-# === STREAM HANDLERS ===
-class StreamHandler:
-    """Handles streaming and non-streaming request processing."""
-
-    def __init__(self, config: GlobalConfig, task_logger):
-        """Initialize the StreamHandler with configuration and logger.
-
-        Args:
-            config: Global configuration object
-            task_logger: Task-specific logger instance
-        """
-        self.config = config
-        self.task_logger = task_logger
-
-    def handle_stream_request(
-        self, client, base_request_kwargs: Dict[str, Any], start_time: float
-    ) -> Tuple[str, str]:
-        """Handle streaming API request with comprehensive metrics collection."""
-        metrics = StreamMetrics()
-        request_kwargs = {**base_request_kwargs, "stream": True}
-        field_mapping = ConfigManager.parse_field_mapping(
-            self.config.field_mapping or ""
-        )
-        response = None
-        has_failed = False
-        actual_request_start_time = 0.0
-        request_name = base_request_kwargs.get("name", "failure")
-
-        try:
-            actual_request_start_time = time.time()
-            with client.post(self.config.api_path, **request_kwargs) as response:
-                if self._handle_response_error(response, start_time, request_name):
-                    has_failed = True
-                    return "", ""
-
-                try:
-                    # Process as streaming response
-                    for chunk in response.iter_lines():
-                        error_msg = StreamProcessor.check_chunk_error(
-                            chunk, field_mapping, self.task_logger
-                        )
-                        if error_msg:
-                            response_time = (time.time() - start_time) * 1000
-                            ErrorHandler.handle_general_exception(
-                                error_msg,
-                                self.task_logger,
-                                response,
-                                response_time,
-                                request_name,
-                            )
-                            has_failed = True
-                            return "", ""
-
-                        metrics = StreamProcessor.process_chunk(
-                            chunk,
-                            field_mapping,
-                            actual_request_start_time,
-                            metrics,
-                            self.task_logger,
-                        )
-
-                    # Only mark as success if no failures occurred
-                    if not has_failed:
-                        # Fire completion events for streaming
-                        total_time = (time.time() - start_time) * 1000
-                        completion_time = (
-                            (time.time() - metrics.first_output_token_time) * 1000
-                            if metrics.first_token_received
-                            else 0
-                        )
-
-                        EventManager.fire_metric_event(
-                            METRIC_TTOC, completion_time, len(metrics.model_output)
-                        )
-                        EventManager.fire_metric_event(
-                            METRIC_TTT,
-                            total_time,
-                            len(metrics.model_output) + len(metrics.reasoning_content),
-                        )
-                        response.success()
-                        # self.task_logger.info(
-                        #     f"Recv model output: {metrics.model_output}"
-                        # )
-                        # self.task_logger.info(
-                        #     f"Recv reasoning content: {metrics.reasoning_content}"
-                        # )
-
-                except OSError as e:
-                    error_details = str(e)
-                    if "Read timed out" in error_details:
-                        self.task_logger.error(
-                            f"Stream request timeout (current timeout: {DEFAULT_TIMEOUT} seconds): {error_details}. "
-                        )
-                    elif "Connection" in error_details:
-                        self.task_logger.error(
-                            f"Network connection error: {error_details}."
-                        )
-                    else:
-                        self.task_logger.error(
-                            f"Stream processing network error: {error_details}"
-                        )
-                    response_time = (time.time() - start_time) * 1000
-                    ErrorHandler.handle_general_exception(
-                        str(e), self.task_logger, response, response_time, request_name
-                    )
-                    has_failed = True
-
-        except Exception as e:
-            response_time = (time.time() - start_time) * 1000
-            ErrorHandler.handle_general_exception(
-                str(e), self.task_logger, response, response_time, request_name
-            )
-            has_failed = True
-
-        return metrics.reasoning_content, metrics.model_output
-
-    def handle_non_stream_request(
-        self, client, base_request_kwargs: Dict[str, Any], start_time: float
-    ) -> Tuple[str, str]:
-        """Handle non-streaming API request."""
-        request_kwargs = {**base_request_kwargs, "stream": False}
-        model_output, reasoning_content = "", ""
-        field_mapping = ConfigManager.parse_field_mapping(
-            self.config.field_mapping or ""
-        )
-        request_name = base_request_kwargs.get("name", "failure")
-
-        has_failed = False
-        try:
-            with client.post(self.config.api_path, **request_kwargs) as response:
-                total_time = (time.time() - start_time) * 1000
-
-                if self._handle_response_error(response, start_time, request_name):
-                    has_failed = True
-                    return "", ""
-
-                try:
-                    resp_json = response.json()
-
-                    error_msg = ErrorHandler.check_json_error(resp_json)
-                    if error_msg:
-                        ErrorHandler.handle_general_exception(
-                            error_msg,
-                            self.task_logger,
-                            response,
-                            total_time,
-                            request_name,
-                        )
-                        has_failed = True
-                        return "", ""
-
-                    model_output = (
-                        StreamProcessor.get_field_value(
-                            resp_json, field_mapping.content
-                        )
-                        if field_mapping.content
-                        else ""
-                    )
-                    reasoning_content = (
-                        StreamProcessor.get_field_value(
-                            resp_json, field_mapping.reasoning_content
-                        )
-                        if field_mapping.reasoning_content
-                        else ""
-                    )
-
-                    # Only mark as success if no failures occurred
-                    if not has_failed:
-                        EventManager.fire_metric_event(
-                            METRIC_TTT,
-                            total_time,
-                            len(model_output) + len(reasoning_content),
-                        )
-                        response.success()
-
-                except (json.JSONDecodeError, KeyError) as e:
-                    self.task_logger.error(f"Failed to parse response JSON: {e}")
-                    ErrorHandler.handle_general_exception(
-                        str(e), self.task_logger, response, total_time, request_name
-                    )
-                    has_failed = True
-
-        except Exception as e:
-            response_time = (time.time() - start_time) * 1000
-            ErrorHandler.handle_general_exception(
-                str(e), self.task_logger, response, response_time, request_name
-            )
-            has_failed = True
-
-        return reasoning_content, model_output
-
-    def _handle_response_error(
-        self, response, start_time: float = 0, request_name: str = "failure"
-    ) -> bool:
-        """Handle HTTP status code errors."""
-        if response.status_code != HTTP_OK:
-            error_msg = f"Request failed with status {response.status_code}. Response: {response.text}"
-            response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
-            ErrorHandler.handle_general_exception(
-                error_msg, self.task_logger, response, response_time, request_name
-            )
-            return True
-        return False
+def get_global_task_queue() -> Dict[str, queue.Queue]:
+    """Thread-safe access to global task queue."""
+    return GlobalStateManager.get_global_task_queue()
 
 
 # === LOCUST EVENT HOOKS ===
@@ -557,7 +127,7 @@ def init_parser(parser):
 @events.init.add_listener
 def on_locust_init(environment, **kwargs):
     """Initialize Locust configuration and setup environment."""
-    global _start_time, GLOBAL_CONFIG
+    global_config = get_global_config()
 
     if not environment.parsed_options:
         logger.warning(
@@ -571,37 +141,38 @@ def on_locust_init(environment, **kwargs):
 
     try:
         # Update global config
-        GLOBAL_CONFIG.task_id = task_id
-        GLOBAL_CONFIG.api_path = options.api_path
-        GLOBAL_CONFIG.request_payload = options.request_payload
-        GLOBAL_CONFIG.model_name = options.model_name
-        GLOBAL_CONFIG.system_prompt = options.system_prompt
-        GLOBAL_CONFIG.user_prompt = options.user_prompt
-        GLOBAL_CONFIG.stream_mode = str(options.stream_mode).lower() in ("true", "1")
-        GLOBAL_CONFIG.chat_type = int(options.chat_type)
-        GLOBAL_CONFIG.cert_file = options.cert_file
-        GLOBAL_CONFIG.key_file = options.key_file
-        GLOBAL_CONFIG.field_mapping = options.field_mapping
-        GLOBAL_CONFIG.test_data = options.test_data
+        global_config.task_id = task_id
+        global_config.api_path = options.api_path
+        global_config.request_payload = options.request_payload
+        global_config.model_name = options.model_name
+        global_config.system_prompt = options.system_prompt
+        global_config.user_prompt = options.user_prompt
+        global_config.stream_mode = str(options.stream_mode).lower() in ("true", "1")
+        global_config.chat_type = int(options.chat_type)
+        global_config.cert_file = options.cert_file
+        global_config.key_file = options.key_file
+        global_config.field_mapping = options.field_mapping
+        global_config.test_data = options.test_data
+
         # Parse and validate configuration
-        GLOBAL_CONFIG.headers = ConfigManager.parse_headers(
+        global_config.headers = ConfigManager.parse_headers(
             options.headers, task_logger
         )
-        GLOBAL_CONFIG.cookies = ConfigManager.parse_cookies(
+        global_config.cookies = ConfigManager.parse_cookies(
             options.cookies, task_logger
         )
-        GLOBAL_CONFIG.cert_config = CertificateManager.configure_certificates(
-            GLOBAL_CONFIG.cert_file, GLOBAL_CONFIG.key_file, task_logger
+        global_config.cert_config = CertificateManager.configure_certificates(
+            global_config.cert_file, global_config.key_file, task_logger
         )
 
         # Validate configuration before proceeding
-        if not ValidationManager.validate_config(GLOBAL_CONFIG, task_logger):
+        if not ValidationManager.validate_config(global_config, task_logger):
             raise ValueError("Invalid configuration provided")
 
         # Initialize prompt queue
         if not hasattr(environment, "prompt_queue"):
             try:
-                from utils.tools import init_prompt_queue
+                from utils.common import init_prompt_queue
 
                 environment.prompt_queue = init_prompt_queue(
                     chat_type=options.chat_type,
@@ -612,10 +183,10 @@ def on_locust_init(environment, **kwargs):
                 task_logger.error(f"Failed to initialize prompt queue: {e}")
                 environment.prompt_queue = queue.Queue()
 
-        environment.global_config = GLOBAL_CONFIG
-        masked_config = mask_sensitive_data(GLOBAL_CONFIG.__dict__)
+        environment.global_config = global_config
+        masked_config = mask_sensitive_data(global_config.__dict__)
         # task_logger.info(f"Locust initialization complete. Config: {masked_config}")
-        _start_time = time.time()
+        GlobalStateManager.set_start_time(time.time())
 
     except Exception as e:
         task_logger.error(f"Error during Locust initialization: {e}", exc_info=True)
@@ -625,21 +196,25 @@ def on_locust_init(environment, **kwargs):
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     """Calculate final metrics and save results."""
-    task_id = GLOBAL_CONFIG.task_id
+    global_config = get_global_config()
+    global_task_queue = get_global_task_queue()
+    start_time = GlobalStateManager.get_start_time()
+
+    task_id = global_config.task_id
     task_logger = logger.bind(task_id=task_id)
     end_time = time.time()
 
-    execution_time = (end_time - _start_time) if _start_time else 0
+    execution_time = (end_time - start_time) if start_time else 0
     if execution_time <= 0:
         task_logger.warning(
             "Start time was not recorded; cannot calculate execution time."
         )
 
     try:
-        from utils.tools import calculate_custom_metrics, get_locust_stats
+        from utils.common import calculate_custom_metrics, get_locust_stats
 
         custom_metrics = calculate_custom_metrics(
-            task_id, GLOBAL_TASK_QUEUE, execution_time
+            task_id, global_task_queue, execution_time
         )
         locust_stats = get_locust_stats(task_id, environment.stats)
 
@@ -663,10 +238,17 @@ def on_test_stop(environment, **kwargs):
 
 
 # === MAIN USER CLASS ===
-class LLMTestUser(HttpUser):
+class LLMTestUser(FastHttpUser):
     """A user class that simulates a client making requests to an LLM service."""
 
     wait_time = between(DEFAULT_WAIT_TIME_MIN, DEFAULT_WAIT_TIME_MAX)
+    # Align FastHttp timeouts with previous requests timeout
+    connection_timeout = DEFAULT_TIMEOUT
+    network_timeout = DEFAULT_TIMEOUT
+
+    # Class-level shared instances to reduce memory usage
+    _shared_request_handler = None
+    _shared_stream_handler = None
 
     def __init__(self, environment):
         """Initialize the LLMTestUser with environment and handlers.
@@ -675,42 +257,193 @@ class LLMTestUser(HttpUser):
             environment: Locust environment object
         """
         super().__init__(environment)
-        self.task_logger = logger.bind(task_id=GLOBAL_CONFIG.task_id)
-        self.request_handler = RequestHandler(GLOBAL_CONFIG, self.task_logger)
-        self.stream_handler = StreamHandler(GLOBAL_CONFIG, self.task_logger)
+        global_config = get_global_config()
+        self.task_logger = logger.bind(task_id=global_config.task_id)
+
+        # Use shared handlers to reduce memory footprint
+        self.request_handler = self._get_request_handler()
+        self.stream_handler = self._get_stream_handler()
+
+        self._configure_ssl_settings()
+
+    @classmethod
+    def _get_request_handler(cls):
+        """Get or create shared request handler."""
+        if cls._shared_request_handler is None:
+            global_config = get_global_config()
+            cls._shared_request_handler = RequestHandler(
+                global_config, logger.bind(task_id=global_config.task_id)
+            )
+        return cls._shared_request_handler
+
+    @classmethod
+    def _get_stream_handler(cls):
+        """Get or create shared stream handler."""
+        if cls._shared_stream_handler is None:
+            global_config = get_global_config()
+            cls._shared_stream_handler = StreamHandler(
+                global_config, logger.bind(task_id=global_config.task_id)
+            )
+        return cls._shared_stream_handler
+
+    def _configure_ssl_settings(self):
+        """Configure SSL settings for FastHttpUser."""
+        global_config = get_global_config()
+
+        try:
+            # Set skip SSL certificate verification (equivalent to requests verify=False)
+            if hasattr(self.client, "verify"):
+                self.client.verify = False
+
+            # For newer FastHttp versions, use ssl_context or insecure options
+            if hasattr(self.client, "insecure"):
+                self.client.insecure = True
+            elif hasattr(self.client, "ssl_options"):
+                # Create SSL context with certificate verification disabled
+                ssl_context = self._get_ssl_context()
+                if ssl_context:
+                    self.client.ssl_options = {"ssl_context": ssl_context}
+            else:
+                # For older FastHttp versions, try to set properties directly
+                self._configure_legacy_ssl()
+
+            self.task_logger.debug("SSL settings configured for FastHttpUser")
+
+        except Exception as e:
+            self.task_logger.warning(f"Failed to configure SSL settings: {e}")
+            # Continue execution, do not interrupt because of SSL configuration failure
+
+    def _get_ssl_context(self) -> Optional[ssl.SSLContext]:
+        """Create and configure SSL context."""
+        global_config = get_global_config()
+
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # If client certificate configuration is provided, add to SSL context
+        if global_config.cert_config:
+            try:
+                if isinstance(global_config.cert_config, tuple):
+                    # Separate certificate and key files
+                    cert_file, key_file = global_config.cert_config
+                    ssl_context.load_cert_chain(cert_file, key_file)
+                    self.task_logger.info(f"Loaded client certificate: {cert_file}")
+                elif isinstance(global_config.cert_config, str):
+                    # Combined certificate+key file
+                    ssl_context.load_cert_chain(global_config.cert_config)
+                    self.task_logger.info(
+                        f"Loaded client certificate: {global_config.cert_config}"
+                    )
+            except Exception as e:
+                self.task_logger.warning(f"Failed to load client certificate: {e}")
+                return None
+
+        return ssl_context
+
+    def _configure_legacy_ssl(self):
+        """Configure SSL for older FastHttp versions."""
+        global_config = get_global_config()
+
+        if hasattr(self.client, "_client"):
+            # Some FastHttp versions wrap the underlying client
+            if hasattr(self.client._client, "verify"):
+                self.client._client.verify = False
+
+        # If client certificate configuration is provided, try to set (although it may not work)
+        if global_config.cert_config:
+            self.task_logger.warning(
+                "Client certificate configuration may not be supported in this FastHttp version. "
+                "Consider upgrading Locust or using HttpUser if mTLS is required."
+            )
 
     def get_next_prompt(self) -> Dict[str, Any]:
         """Fetch the next prompt from the shared queue."""
         try:
-            prompt_data = self.environment.prompt_queue.get_nowait()
-            self.environment.prompt_queue.put_nowait(prompt_data)
-            return prompt_data
+            # Use a more robust queue implementation
+            if (
+                hasattr(self.environment, "prompt_queue")
+                and not self.environment.prompt_queue.empty()
+            ):
+                prompt_data = self.environment.prompt_queue.get_nowait()
+                # Put back into queue for other users
+                self.environment.prompt_queue.put_nowait(prompt_data)
+                return prompt_data
+            else:
+                self.task_logger.warning(
+                    "Prompt queue is empty or not initialized. Using default prompt."
+                )
+                return {"id": "default", "prompt": DEFAULT_PROMPT}
         except queue.Empty:
             self.task_logger.warning("Prompt queue is empty. Using default prompt.")
             return {"id": "default", "prompt": DEFAULT_PROMPT}
+        except Exception as e:
+            self.task_logger.error(
+                f"Error accessing prompt queue: {e}. Using default prompt."
+            )
+            return {"id": "default", "prompt": DEFAULT_PROMPT}
 
     def _log_token_counts(
-        self, user_prompt: str, reasoning_content: str, model_output: str
+        self,
+        user_prompt: str,
+        reasoning_content: str,
+        model_output: str,
+        usage_tokens: Optional[Dict[str, Optional[int]]] = None,
     ) -> None:
         """Calculate and log token counts for the completed request."""
+        global_config = get_global_config()
+        global_task_queue = get_global_task_queue()
+
         try:
-            model_name = GLOBAL_CONFIG.model_name or ""
-            system_tokens = count_tokens(GLOBAL_CONFIG.system_prompt or "", model_name)
-            user_tokens = count_tokens(user_prompt, model_name)
-            reasoning_tokens = count_tokens(reasoning_content, model_name)
-            completion_tokens = count_tokens(model_output, model_name)
+            model_name = global_config.model_name or ""
+            system_prompt = global_config.system_prompt or ""
 
-            total_output_tokens = reasoning_tokens + completion_tokens
-            total_tokens = total_output_tokens + user_tokens + system_tokens
+            # Validate inputs
+            user_prompt = user_prompt or ""
+            reasoning_content = reasoning_content or ""
+            model_output = model_output or ""
 
-            GLOBAL_TASK_QUEUE["completion_tokens_queue"].put(int(total_output_tokens))
-            GLOBAL_TASK_QUEUE["all_tokens_queue"].put(int(total_tokens))
+            # Prefer usage_tokens if available and valid
+            completion_tokens = None
+            total_tokens = None
+
+            if usage_tokens:
+                completion_tokens = usage_tokens.get("completion_tokens")
+                total_tokens = usage_tokens.get("total_tokens")
+
+            # Fallback: manual counting if completion_tokens and total_tokens are missing
+            if completion_tokens is None or total_tokens is None:
+                system_tokens = (
+                    count_tokens(system_prompt, model_name) if system_prompt else 0
+                )
+                user_tokens = (
+                    count_tokens(user_prompt, model_name) if user_prompt else 0
+                )
+                reasoning_tokens = (
+                    count_tokens(reasoning_content, model_name)
+                    if reasoning_content
+                    else 0
+                )
+                output_tokens = (
+                    count_tokens(model_output, model_name) if model_output else 0
+                )
+
+                completion_tokens = reasoning_tokens + output_tokens
+                total_tokens = system_tokens + user_tokens + completion_tokens
+
+            # Ensure integer and log - only if tokens are not None and positive
+            if completion_tokens is not None and completion_tokens > 0:
+                global_task_queue["completion_tokens_queue"].put(int(completion_tokens))
+            if total_tokens is not None and total_tokens > 0:
+                global_task_queue["all_tokens_queue"].put(int(total_tokens))
+
         except Exception as e:
             self.task_logger.error(f"Failed to count tokens: {e}", exc_info=True)
 
     @task
     def chat_request(self):
         """Main Locust task that executes a single chat request."""
+        global_config = get_global_config()
 
         prompt_data = self.get_next_prompt()
 
@@ -725,11 +458,12 @@ class LLMTestUser(HttpUser):
             )
             return
 
-        if GLOBAL_CONFIG.cert_config:
-            base_request_kwargs["cert"] = GLOBAL_CONFIG.cert_config
+        # fix: remove request-level cert config, because it's already configured at session level
+        # original code: if global_config.cert_config: base_request_kwargs["cert"] = global_config.cert_config
 
         start_time = time.time()
         reasoning_content, model_output = "", ""
+        usage_tokens = None
         request_name = (
             base_request_kwargs.get("name", "failure")
             if base_request_kwargs
@@ -737,14 +471,14 @@ class LLMTestUser(HttpUser):
         )
 
         try:
-            if GLOBAL_CONFIG.stream_mode:
+            if global_config.stream_mode:
                 reasoning_content, model_output = (
                     self.stream_handler.handle_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
                 )
             else:
-                reasoning_content, model_output = (
+                reasoning_content, model_output, usage_tokens = (
                     self.stream_handler.handle_non_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
@@ -763,5 +497,7 @@ class LLMTestUser(HttpUser):
                 request_name=request_name,
             )
 
-        if reasoning_content or model_output:
-            self._log_token_counts(user_prompt or "", reasoning_content, model_output)
+        if reasoning_content or model_output or usage_tokens:
+            self._log_token_counts(
+                user_prompt or "", reasoning_content, model_output, usage_tokens
+            )

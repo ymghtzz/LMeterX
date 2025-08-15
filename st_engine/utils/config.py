@@ -52,7 +52,7 @@ DEFAULT_WAIT_TIME_MAX = 3
 
 # === DEFAULT VALUES ===
 DEFAULT_PROMPT = "Tell me about the history of Artificial Intelligence."
-DEFAULT_API_PATH = "/v1/chat/completions"
+DEFAULT_API_PATH = "/chat/completions"
 
 # === STREAMING CONSTANTS ===
 STREAM_END_MARKERS = ["[DONE]", "[END]", "DONE", "END"]
@@ -65,7 +65,7 @@ METRIC_TTFOT = "Time_to_first_output_token"
 METRIC_TTFRT = "Time_to_first_reasoning_token"
 METRIC_TTRC = "Time_to_reasoning_completion"
 METRIC_TTOC = "Time_to_output_completion"
-METRIC_TTT = "Total_turnaround_time"
+METRIC_TTT = "Total_time"
 
 # === LOCUST CONFIGURATION ===
 LOCUST_STOP_TIMEOUT = 99

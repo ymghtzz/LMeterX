@@ -11,8 +11,8 @@ import tempfile
 import threading
 
 from model.task import Task
+from utils.common import mask_sensitive_command
 from utils.logger import logger
-from utils.tools import mask_sensitive_command
 
 
 class LocustRunner:
@@ -145,7 +145,7 @@ class LocustRunner:
             "--stop-timeout",
             "99",
             "--api_path",
-            task.api_path or "/v1/chat/completions",
+            task.api_path or "/chat/completions",
             "--headers",
             task.headers,
             "--cookies",

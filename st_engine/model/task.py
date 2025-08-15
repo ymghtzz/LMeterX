@@ -133,9 +133,7 @@ class TaskCreateReq(BaseModel):
     temp_task_id: str
     name: str = Field(..., description="Name of the task")
     target_host: str = Field(..., description="Target model API host")
-    api_path: str = Field(
-        default="/v1/chat/completions", description="API path to test"
-    )
+    api_path: str = Field(default="/chat/completions", description="API path to test")
     model: str = Field(..., description="Name of the model to test")
     duration: int = Field(
         default=300, ge=1, description="Duration of the test in seconds"

@@ -1,4 +1,4 @@
-locust==2.33.2
+locust==2.37.4
 sqlalchemy>=2.0.0
 aiomysql
 pymysql==1.1.0

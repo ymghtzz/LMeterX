@@ -6,8 +6,11 @@
  * */
 import {
   DownloadOutlined,
+  DownOutlined,
   FileTextOutlined,
   InfoCircleOutlined,
+  RobotOutlined,
+  UpOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
@@ -16,31 +19,64 @@ import {
   Col,
   Descriptions,
   message,
+  Modal,
   Row,
+  Space,
   Statistic,
   Table,
   Tooltip,
 } from 'antd';
 import html2canvas from 'html2canvas';
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
-import { benchmarkJobApi, resultApi } from '../api/services';
+import { analysisApi, benchmarkJobApi, resultApi } from '../api/services';
 import { CopyButton } from '../components/ui/CopyButton';
 import { IconTooltip } from '../components/ui/IconTooltip';
 import { LoadingSpinner } from '../components/ui/LoadingState';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer';
 import { PageHeader } from '../components/ui/PageHeader';
+import { useLanguage } from '../contexts/LanguageContext';
 
 const TaskResults: React.FC = () => {
+  const { t } = useTranslation();
+  const { currentLanguage } = useLanguage();
   const { id } = useParams<{ id: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<any[]>([]);
   const [taskInfo, setTaskInfo] = useState<any>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisModalVisible, setAnalysisModalVisible] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [showAnalysisReport, setShowAnalysisReport] = useState(false);
+  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(true);
   const configCardRef = useRef<HTMLDivElement | null>(null);
   const overviewCardRef = useRef<HTMLDivElement | null>(null);
   const detailsCardRef = useRef<HTMLDivElement | null>(null);
   const responseTimeCardRef = useRef<HTMLDivElement | null>(null);
+
+  // Function to fetch analysis result
+  const fetchAnalysisResult = async () => {
+    if (!id) return;
+
+    try {
+      const response = await analysisApi.getAnalysis(id);
+      if (response.data?.status === 'success' && response.data?.data) {
+        setAnalysisResult(response.data.data);
+        // if there is analysis result, show the report and expand it
+        setShowAnalysisReport(true);
+        setIsAnalysisExpanded(true);
+      } else if (response.data?.status === 'error') {
+        // Log the error but don't show to user as this is just fetching existing analysis
+        console.warn('Failed to fetch analysis result:', response.data?.error);
+      }
+    } catch (err: any) {
+      // Analysis not found or other error - ignore for fetching
+      console.warn('Error fetching analysis result:', err);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -64,7 +100,7 @@ const TaskResults: React.FC = () => {
 
           if (resultsResponse.data?.status === 'error') {
             throw new Error(
-              resultsResponse.data.error || 'Failed to get results'
+              resultsResponse.data.error || t('common.fetchTasksFailed')
             );
           }
 
@@ -82,10 +118,10 @@ const TaskResults: React.FC = () => {
             setResults(resultsResponse.data.data);
           } else {
             setResults([]);
-            setError('No data');
+            setError(t('pages.results.noData'));
           }
         } catch (err: any) {
-          setError(err.message || 'Failed to get results');
+          setError(err.message || t('common.fetchTasksFailed'));
         }
       } finally {
         setLoading(false);
@@ -93,16 +129,24 @@ const TaskResults: React.FC = () => {
     };
 
     fetchData();
+
+    // Fetch analysis result if available
+    fetchAnalysisResult();
   }, [id]);
 
   // Define metric results
   const TpsResult = results.find(item => item.metric_type === 'token_metrics');
   const CompletionResult = results.find(
-    item => item.metric_type === 'Total_turnaround_time'
+    item => item.metric_type === 'Total_time'
   );
-  const firstTokenResult = results.find(
+  const firstReasoningToken = results.find(
+    item => item.metric_type === 'Time_to_first_reasoning_token'
+  );
+  const firstOutputToken = results.find(
     item => item.metric_type === 'Time_to_first_output_token'
   );
+  // Use Time_to_first_reasoning_token if available, otherwise use Time_to_first_output_token
+  const firstTokenResult = firstReasoningToken || firstOutputToken;
   const outputCompletionResult = results.find(
     item => item.metric_type === 'Time_to_output_completion'
   );
@@ -132,30 +176,18 @@ const TaskResults: React.FC = () => {
     CompletionResult || firstTokenResult || outputCompletionResult || TpsResult;
 
   // Prepare table column definitions
-  const metricExplanations: Record<string, string> = {
-    Time_to_first_output_token:
-      'Time to output the first token in the final answer (content field)',
-    Time_to_output_completion: 'Total time for final answer generation',
-    Total_turnaround_time: 'Total time to complete the entire request',
-    Time_to_first_reasoning_token:
-      'Time to output the first token in the reasoning part (reasoning_content field)',
-    Time_to_reasoning_completion: 'Total time for reasoning part generation',
-  };
-
-  const statisticExplanations: Record<string, string> = {
-    RPS: 'Number of requests sent per second',
-    'TTFT (s)': 'Time to first token (s)',
-    'Total TPS (tokens/s)': 'Number of input and generated tokens per second',
-    'Completion TPS (tokens/s)': 'Number of generated tokens per second',
-    'Avg. Total TPR (tokens/req)':
-      'Average number of input and generated tokens per request',
-    'Avg. Completion TPR (tokens/req)':
-      'Average number of generated tokens per request',
-  };
+  const metricExplanations: Record<string, string> = t(
+    'pages.results.metricExplanations',
+    { returnObjects: true }
+  ) as Record<string, string>;
+  const statisticExplanations: Record<string, string> = t(
+    'pages.results.statisticExplanations',
+    { returnObjects: true }
+  ) as Record<string, string>;
 
   const columns = [
     {
-      title: 'Metric Type',
+      title: t('pages.results.metricType'),
       dataIndex: 'metric_type',
       key: 'metric_type',
       render: (text: string) => {
@@ -174,7 +206,7 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: 'Total Requests',
+      title: t('pages.results.totalRequestsCol'),
       dataIndex: 'request_count',
       key: 'request_count',
       render: (text: number) => text || 0,
@@ -186,7 +218,7 @@ const TaskResults: React.FC = () => {
     //     render: (text: number) => text || 0,
     // },
     {
-      title: 'Avg Response Time (s)',
+      title: t('pages.results.avgResponseTimeCol'),
       dataIndex: 'avg_response_time',
       key: 'avg_response_time',
       render: (text: number, record: any) => {
@@ -198,7 +230,7 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: 'Max Response Time (s)',
+      title: t('pages.results.maxResponseTimeCol'),
       dataIndex: 'max_response_time',
       key: 'max_response_time',
       render: (text: number, record: any) => {
@@ -211,7 +243,7 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: 'Min Response Time (s)',
+      title: t('pages.results.minResponseTimeCol'),
       dataIndex: 'min_response_time',
       key: 'min_response_time',
       render: (text: number, record: any) => {
@@ -224,7 +256,7 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: '90% Response Time (s)',
+      title: t('pages.results.p90ResponseTimeCol'),
       dataIndex: 'percentile_90_response_time',
       key: 'percentile_90_response_time',
       render: (text: number, record: any) => {
@@ -236,7 +268,7 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: 'Median Response Time (s)',
+      title: t('pages.results.medianResponseTimeCol'),
       dataIndex: 'median_response_time',
       key: 'median_response_time',
       render: (text: number, record: any) => {
@@ -249,12 +281,86 @@ const TaskResults: React.FC = () => {
       },
     },
     {
-      title: 'RPS (req/s)',
+      title: t('pages.results.rpsCol'),
       dataIndex: 'rps',
       key: 'rps',
       render: (text: number) => (text ? text.toFixed(2) : '0.00'),
     },
   ];
+
+  // Function to handle AI Summary
+  const handleAnalysis = async () => {
+    if (!id) return;
+
+    setIsAnalyzing(true);
+    try {
+      const response = await analysisApi.analyzeTask(id, currentLanguage);
+
+      // Check if the response indicates an error
+      if (
+        response.data?.status === 'error' ||
+        response.data?.status === 'failed'
+      ) {
+        // Extract the most specific error message
+        const errorMessage =
+          response.data?.error_message ||
+          response.data?.error ||
+          t('pages.results.analysisFailed');
+
+        // If backend returns error_message, show it directly without prefix
+        if (response.data?.error_message) {
+          message.error(errorMessage);
+        } else {
+          // Only add prefix for generic errors
+          message.error(
+            t('pages.results.analysisFailedWithError', { error: errorMessage })
+          );
+        }
+        return;
+      }
+
+      setAnalysisResult(response.data);
+      setAnalysisModalVisible(false);
+      setShowAnalysisReport(true);
+      setIsAnalysisExpanded(true);
+      message.success(t('pages.results.analysisCompleted'));
+
+      // Fetch the analysis result to display
+      await fetchAnalysisResult();
+    } catch (err: any) {
+      // Handle different types of errors
+      let errorMessage = t('pages.results.analysisFailed');
+
+      if (err.data) {
+        // API error response - prioritize error_message over error
+        if (err.data.error_message) {
+          errorMessage = err.data.error_message;
+        } else if (err.data.error) {
+          errorMessage = err.data.error;
+        } else if (err.data.detail) {
+          errorMessage = err.data.detail;
+        }
+      } else if (err.message) {
+        // Network or other error
+        errorMessage = err.message;
+      }
+
+      // If backend returns error_message, show it directly without prefix
+      if (err.data?.error_message) {
+        message.error(errorMessage);
+      } else {
+        // Only add prefix for generic errors
+        message.error(
+          t('pages.results.analysisFailedWithError', { error: errorMessage })
+        );
+      }
+
+      // Log the error for debugging
+      console.error('AI analysis error:', err);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
 
   // Function to handle report download
   const handleDownloadReport = async () => {
@@ -263,9 +369,7 @@ const TaskResults: React.FC = () => {
       !overviewCardRef.current ||
       !responseTimeCardRef.current
     ) {
-      message.error(
-        'Report components not fully loaded, please try again later.'
-      );
+      message.error(t('pages.results.reportComponentsNotLoaded'));
       return;
     }
 
@@ -278,9 +382,9 @@ const TaskResults: React.FC = () => {
 
     try {
       const elementsToCapture = [
-        { ref: configCardRef, title: 'Test Configuration' },
-        { ref: overviewCardRef, title: 'Results Overview' },
-        { ref: responseTimeCardRef, title: 'Response Time' },
+        { ref: configCardRef, title: t('pages.results.testConfiguration') },
+        { ref: overviewCardRef, title: t('pages.results.resultsOverview') },
+        { ref: responseTimeCardRef, title: t('pages.results.responseTime') },
       ];
 
       const canvases = await Promise.all(
@@ -327,7 +431,7 @@ const TaskResults: React.FC = () => {
       const ctx = mergedCanvas.getContext('2d');
 
       if (!ctx) {
-        throw new Error('Unable to create Canvas drawing context.');
+        throw new Error(t('pages.results.unableToCreateCanvas'));
       }
 
       // Set the background color of the merged image
@@ -360,13 +464,15 @@ const TaskResults: React.FC = () => {
       document.body.removeChild(link);
 
       message.success({
-        content: 'Download successful!',
+        content: t('pages.results.downloadSuccessful'),
         key: 'downloadReport',
         duration: 3,
       });
     } catch (err: any) {
       message.error({
-        content: `Download failed: ${err.message || 'Unknown error'}`,
+        content: t('pages.results.downloadFailedWithError', {
+          error: err.message || t('common.unknown'),
+        }),
         key: 'downloadReport',
         duration: 4,
       });
@@ -379,28 +485,51 @@ const TaskResults: React.FC = () => {
     <div className='page-container'>
       <div className='flex justify-between align-center mb-24'>
         <PageHeader
-          title='Results report'
+          title={t('pages.results.title')}
           icon={<FileTextOutlined />}
           level={3}
           className='text-center w-full'
         />
       </div>
 
-      <Button
-        type='primary'
-        icon={<DownloadOutlined />}
-        onClick={handleDownloadReport}
-        loading={isDownloading}
-        disabled={loading || !!error || !results || results.length === 0}
-        className='mb-24'
-      >
-        Download Report
-      </Button>
+      <Space className='mb-24'>
+        <Button
+          type='default'
+          icon={<RobotOutlined />}
+          onClick={() => setAnalysisModalVisible(true)}
+          loading={isAnalyzing}
+          disabled={loading || !!error || !results || results.length === 0}
+          style={{
+            backgroundColor: '#52c41a',
+            borderColor: '#52c41a',
+            color: '#ffffff',
+          }}
+          onMouseEnter={e => {
+            e.currentTarget.style.backgroundColor = '#73d13d';
+            e.currentTarget.style.borderColor = '#73d13d';
+          }}
+          onMouseLeave={e => {
+            e.currentTarget.style.backgroundColor = '#52c41a';
+            e.currentTarget.style.borderColor = '#52c41a';
+          }}
+        >
+          {t('pages.results.aiSummary')}
+        </Button>
+        <Button
+          type='primary'
+          icon={<DownloadOutlined />}
+          onClick={handleDownloadReport}
+          loading={isDownloading}
+          disabled={loading || !!error || !results || results.length === 0}
+        >
+          {t('pages.results.downloadReport')}
+        </Button>
+      </Space>
 
       {loading ? (
         <div className='loading-container'>
           <LoadingSpinner
-            text='Loading result data...'
+            text={t('pages.results.loadingResultData')}
             size='large'
             className='text-center'
           />
@@ -417,7 +546,7 @@ const TaskResults: React.FC = () => {
       ) : !results || results.length === 0 ? (
         <div className='flex justify-center p-24'>
           <Alert
-            description='No test results available'
+            description={t('pages.results.noTestResultsAvailable')}
             type='info'
             showIcon
             className='btn-transparent'
@@ -425,32 +554,189 @@ const TaskResults: React.FC = () => {
         </div>
       ) : (
         <>
+          {/* AI Summary Report */}
+          {showAnalysisReport && analysisResult && (
+            <Card
+              title={
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    width: '100%',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    {t('pages.results.aiSummary')}
+                  </span>
+                  <Space>
+                    <CopyButton
+                      text={analysisResult.analysis_report}
+                      successMessage={t('pages.results.analysisCopied')}
+                      tooltip={t('pages.results.copyAnalysis')}
+                    />
+                    <Button
+                      type='text'
+                      size='small'
+                      icon={
+                        isAnalysisExpanded ? <UpOutlined /> : <DownOutlined />
+                      }
+                      onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                      style={{ padding: '4px 8px' }}
+                    >
+                      {isAnalysisExpanded
+                        ? t('pages.results.collapse')
+                        : t('pages.results.expand')}
+                    </Button>
+                  </Space>
+                </div>
+              }
+              variant='borderless'
+              className='mb-24 form-card'
+              style={{
+                border: '1px solid #f0f0f0',
+                borderRadius: '8px',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              }}
+            >
+              {isAnalysisExpanded && (
+                <div style={{ padding: '16px 0' }}>
+                  <MarkdownRenderer
+                    content={analysisResult.analysis_report}
+                    className='analysis-content'
+                  />
+                </div>
+              )}
+            </Card>
+          )}
+
           {/* Test Configuration */}
           <Card
             ref={configCardRef}
-            title='Test Configuration'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {t('pages.results.testConfiguration')}
+              </div>
+            }
             variant='borderless'
             className='mb-24 form-card'
           >
             <Descriptions bordered>
-              <Descriptions.Item label='Task ID'>
+              <Descriptions.Item label={t('pages.results.taskId')}>
                 {taskInfo?.id || id}
               </Descriptions.Item>
-              <Descriptions.Item label='Task Name'>
-                {taskInfo?.name || 'Unnamed Task'}
+              <Descriptions.Item label={t('pages.results.taskName')}>
+                {taskInfo?.name || t('pages.results.taskName')}
               </Descriptions.Item>
-              <Descriptions.Item label='Target URL'>
+              <Descriptions.Item label={t('pages.results.targetUrl')}>
                 {taskInfo?.target_host && taskInfo?.api_path
                   ? `${taskInfo.target_host}${taskInfo.api_path}`
                   : taskInfo?.target_host || 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label='Model Name'>
+              <Descriptions.Item label={t('pages.results.requestPayload')}>
+                {taskInfo?.request_payload ? (
+                  <div style={{ maxWidth: '400px', wordBreak: 'break-all' }}>
+                    {taskInfo.request_payload.length > 200 ? (
+                      <Tooltip
+                        title={
+                          <div style={{ position: 'relative' }}>
+                            <div
+                              style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '8px',
+                                zIndex: 1,
+                              }}
+                            >
+                              <CopyButton
+                                text={taskInfo.request_payload}
+                                successMessage={t(
+                                  'pages.results.requestPayloadCopied'
+                                )}
+                                tooltip={t('common.copy')}
+                                size='small'
+                              />
+                            </div>
+                            <pre
+                              style={{
+                                maxWidth: '600px',
+                                maxHeight: '300px',
+                                overflow: 'auto',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                fontSize: '12px',
+                                backgroundColor: '#ffffff',
+                                color: '#333333',
+                                padding: '12px',
+                                borderRadius: '6px',
+                                margin: 0,
+                                fontFamily:
+                                  'Monaco, Menlo, "Ubuntu Mono", monospace',
+                                lineHeight: '1.4',
+                              }}
+                            >
+                              {taskInfo.request_payload}
+                            </pre>
+                          </div>
+                        }
+                        placement='top'
+                        styles={{
+                          body: {
+                            maxWidth: '600px',
+                            backgroundColor: '#ffffff',
+                            color: '#ffffff',
+                          },
+                        }}
+                      >
+                        <div style={{ cursor: 'pointer' }}>
+                          {`${taskInfo.request_payload.substring(0, 200)}...`}
+                        </div>
+                      </Tooltip>
+                    ) : (
+                      <div>{taskInfo.request_payload}</div>
+                    )}
+                  </div>
+                ) : (
+                  'N/A'
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('pages.results.datasetSource')}>
+                {(() => {
+                  if (taskInfo?.test_data === 'default') {
+                    return t('pages.results.builtInDataset');
+                  }
+                  if (taskInfo?.test_data && taskInfo.test_data !== 'default') {
+                    return t('pages.results.customDataset');
+                  }
+                  return '-';
+                })()}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('pages.results.datasetType')}>
+                {(() => {
+                  if (taskInfo?.test_data === 'default') {
+                    if (taskInfo?.chat_type === 1) {
+                      return t('pages.results.multimodalTextImage');
+                    }
+                    return t('pages.results.textOnlyConversations');
+                  }
+                  return '-';
+                })()}
+              </Descriptions.Item>
+              <Descriptions.Item label={t('pages.results.modelName')}>
                 {taskInfo?.model || 'N/A'}
               </Descriptions.Item>
-              <Descriptions.Item label='Concurrent Users'>
+              <Descriptions.Item label={t('pages.results.concurrentUsers')}>
                 {taskInfo?.user_count || taskInfo?.concurrent_users || 0}
               </Descriptions.Item>
-              <Descriptions.Item label='Test Duration'>
+              <Descriptions.Item label={t('pages.results.testDuration')}>
                 {taskInfo?.duration || 0} s
               </Descriptions.Item>
             </Descriptions>
@@ -459,15 +745,27 @@ const TaskResults: React.FC = () => {
           {/* Results Overview */}
           <Card
             ref={overviewCardRef}
-            title='Results Overview'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {t('pages.results.resultsOverview')}
+              </div>
+            }
             variant='borderless'
             className='mb-24 form-card'
+            style={{
+              border: '2px solid #1890ff',
+              borderRadius: '12px',
+              boxShadow: '0 4px 16px rgba(24, 144, 255, 0.15)',
+              backgroundColor: '#f8fbff',
+            }}
           >
             {(() => {
               if (!hasValidResults) {
                 return (
                   <Alert
-                    message='No valid test results found'
+                    message={t('pages.results.noValidResults')}
                     type='warning'
                     showIcon
                     className='btn-transparent'
@@ -492,13 +790,13 @@ const TaskResults: React.FC = () => {
                   <Row gutter={16} className='mb-16'>
                     <Col span={6}>
                       <Statistic
-                        title='Total Requests'
+                        title={t('pages.results.totalRequests')}
                         value={actualTotalRequests}
                       />
                     </Col>
                     <Col span={6}>
                       <Statistic
-                        title='Success Rate'
+                        title={t('pages.results.successRate')}
                         value={actualSuccessRate}
                         precision={2}
                         suffix='%'
@@ -508,7 +806,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            RPS
+                            {t('pages.results.rps')}
                             <IconTooltip
                               title={statisticExplanations.RPS}
                               className='ml-4'
@@ -526,7 +824,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            TTFT (s)
+                            {t('pages.results.ttft')}
                             <IconTooltip
                               title={statisticExplanations['TTFT (s)']}
                               className='ml-4'
@@ -551,7 +849,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            Total TPS (tokens/s)
+                            {t('pages.results.totalTps')}
                             <IconTooltip
                               title={
                                 statisticExplanations['Total TPS (tokens/s)']
@@ -569,7 +867,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            Completion TPS (tokens/s)
+                            {t('pages.results.completionTps')}
                             <IconTooltip
                               title={
                                 statisticExplanations[
@@ -589,7 +887,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            Avg. Total TPR (tokens/req)
+                            {t('pages.results.avgTotalTpr')}
                             <IconTooltip
                               title={
                                 statisticExplanations[
@@ -609,7 +907,7 @@ const TaskResults: React.FC = () => {
                       <Statistic
                         title={
                           <span>
-                            Avg. Completion TPR (tokens/req)
+                            {t('pages.results.avgCompletionTpr')}
                             <IconTooltip
                               title={
                                 statisticExplanations[
@@ -634,7 +932,13 @@ const TaskResults: React.FC = () => {
           {/* Response Time */}
           <Card
             ref={responseTimeCardRef}
-            title='Response Time'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {t('pages.results.responseTime')}
+              </div>
+            }
             variant='borderless'
             className='mb-24'
             style={{
@@ -646,7 +950,9 @@ const TaskResults: React.FC = () => {
                 item =>
                   item.metric_type !== 'total_tokens_per_second' &&
                   item.metric_type !== 'completion_tokens_per_second' &&
-                  item.metric_type !== 'token_metrics'
+                  item.metric_type !== 'token_metrics' &&
+                  (results.length <= 1 ||
+                    item.metric_type !== 'chat_completions')
               )}
               columns={columns}
               rowKey='metric_type'
@@ -657,7 +963,13 @@ const TaskResults: React.FC = () => {
           {/* Test Result Details */}
           <Card
             ref={detailsCardRef}
-            title='Result Details'
+            title={
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              >
+                {t('pages.results.resultDetails')}
+              </div>
+            }
             variant='borderless'
             className='mb-24'
             style={{
@@ -686,14 +998,52 @@ const TaskResults: React.FC = () => {
               >
                 <CopyButton
                   text={JSON.stringify(results, null, 2)}
-                  successMessage='Results copied to clipboard'
-                  tooltip='Copy results'
+                  successMessage={t('pages.results.resultsCopied')}
+                  tooltip={t('pages.results.copyResults')}
                 />
               </div>
             </div>
           </Card>
         </>
       )}
+
+      {/* AI Summary Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <RobotOutlined style={{ color: '#52c41a' }} />
+            {t('pages.results.aiSummary')}
+          </div>
+        }
+        open={analysisModalVisible}
+        onCancel={() => setAnalysisModalVisible(false)}
+        footer={null}
+        width={500}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <Alert
+            description={t('pages.results.pleaseEnsureCompleteResults')}
+            type='info'
+            showIcon
+            style={{ marginBottom: '16px' }}
+          />
+        </div>
+        <div style={{ textAlign: 'center', marginTop: '20px' }}>
+          <Space>
+            <Button
+              type='primary'
+              onClick={handleAnalysis}
+              loading={isAnalyzing}
+              icon={<RobotOutlined />}
+            >
+              {t('pages.results.startAnalysis')}
+            </Button>
+            <Button onClick={() => setAnalysisModalVisible(false)}>
+              {t('common.cancel')}
+            </Button>
+          </Space>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -133,9 +133,7 @@ class TaskCreateReq(BaseModel):
     temp_task_id: str
     name: str = Field(..., description="Name of the task")
     target_host: str = Field(..., description="Target model API host")
-    api_path: str = Field(
-        default="/v1/chat/completions", description="API path to test"
-    )
+    api_path: str = Field(default="/chat/completions", description="API path to test")
     model: Optional[str] = Field(default="", description="Name of the model to test")
     duration: int = Field(
         default=300, ge=1, description="Duration of the test in seconds"
@@ -363,30 +361,48 @@ class TaskResult(Base):
     def to_task_result_item(self) -> TaskResultItem:
         """Converts the SQLAlchemy model instance to a Pydantic TaskResultItem."""
         return TaskResultItem(
-            id=self.id,
-            task_id=self.task_id,
-            metric_type=self.metric_type,
-            request_count=self.num_requests,
-            failure_count=self.num_failures,
-            avg_response_time=self.avg_latency,
-            min_response_time=self.min_latency,
-            max_response_time=self.max_latency,
-            median_response_time=self.median_latency,
-            percentile_90_response_time=self.p90_latency,
-            rps=self.rps,
-            avg_content_length=self.avg_content_length,
+            id=int(self.id) if self.id is not None else 0,
+            task_id=str(self.task_id) if self.task_id is not None else "",
+            metric_type=str(self.metric_type) if self.metric_type is not None else "",
+            request_count=(
+                int(self.num_requests) if self.num_requests is not None else 0
+            ),
+            failure_count=(
+                int(self.num_failures) if self.num_failures is not None else 0
+            ),
+            avg_response_time=(
+                float(self.avg_latency) if self.avg_latency is not None else 0.0
+            ),
+            min_response_time=(
+                float(self.min_latency) if self.min_latency is not None else 0.0
+            ),
+            max_response_time=(
+                float(self.max_latency) if self.max_latency is not None else 0.0
+            ),
+            median_response_time=(
+                float(self.median_latency) if self.median_latency is not None else 0.0
+            ),
+            percentile_90_response_time=(
+                float(self.p90_latency) if self.p90_latency is not None else 0.0
+            ),
+            rps=float(self.rps) if self.rps is not None else 0.0,
+            avg_content_length=(
+                float(self.avg_content_length)
+                if self.avg_content_length is not None
+                else 0.0
+            ),
             created_at=self.created_at.isoformat() if self.created_at else "",
-            total_tps=self.total_tps if self.total_tps is not None else 0.0,
+            total_tps=float(self.total_tps) if self.total_tps is not None else 0.0,
             completion_tps=(
-                self.completion_tps if self.completion_tps is not None else 0.0
+                float(self.completion_tps) if self.completion_tps is not None else 0.0
             ),
             avg_total_tokens_per_req=(
-                self.avg_total_tokens_per_req
+                float(self.avg_total_tokens_per_req)
                 if self.avg_total_tokens_per_req is not None
                 else 0.0
             ),
             avg_completion_tokens_per_req=(
-                self.avg_completion_tokens_per_req
+                float(self.avg_completion_tokens_per_req)
                 if self.avg_completion_tokens_per_req is not None
                 else 0.0
             ),
