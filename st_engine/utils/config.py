@@ -81,6 +81,7 @@ SENSITIVE_KEYS = ["authorization"]
 # Token estimation
 DEFAULT_TOKEN_RATIO = 4  # chars per token estimation
 TOKENIZER_CACHE_SIZE = 128
+TOKEN_COUNT_CACHE_SIZE = 8192
 
 # === DATA VALIDATION ===
 MAX_QUEUE_SIZE = 10000

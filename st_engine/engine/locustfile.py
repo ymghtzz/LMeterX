@@ -7,6 +7,7 @@ Optimized and refactored Locust test file for LLM performance testing.
 
 import json
 import os
+import signal
 import ssl
 import sys
 import tempfile
@@ -42,6 +43,36 @@ from utils.logger import logger
 
 # Disable the specific InsecureRequestWarning from urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
+
+# === SIGNAL HANDLING ===
+# Flag to track if we're already in shutdown process
+_shutdown_in_progress = False
+
+
+def graceful_signal_handler(signum, frame):
+    """
+    Custom signal handler to gracefully handle SIGTERM when Locust is already shutting down.
+    This prevents the "stopping state" exception from being raised.
+    """
+    global _shutdown_in_progress
+
+    task_id = os.environ.get("TASK_ID", "unknown")
+    task_logger = GlobalStateManager.get_task_logger(task_id)
+
+    if _shutdown_in_progress:
+        task_logger.debug(
+            f"Received signal {signum} during shutdown process. Ignoring to prevent duplicate shutdown."
+        )
+        return
+
+    task_logger.info(f"Received signal {signum}. Initiating graceful shutdown.")
+    _shutdown_in_progress = True
+
+    # Let the default signal handler proceed, but our flag will prevent duplicate User.stop() calls
+    # Restore the default signal handler and re-raise the signal
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
 
 # === GLOBAL STATE ===
 # Initialize global state using the state manager
@@ -137,7 +168,15 @@ def on_locust_init(environment, **kwargs):
 
     options = environment.parsed_options
     task_id = options.task_id or os.environ.get("TASK_ID", "unknown")
-    task_logger = logger.bind(task_id=task_id)
+    task_logger = GlobalStateManager.get_task_logger(task_id)
+
+    # Register custom signal handler to handle graceful shutdown
+    try:
+        signal.signal(signal.SIGTERM, graceful_signal_handler)
+        signal.signal(signal.SIGINT, graceful_signal_handler)
+        task_logger.debug("Custom signal handlers registered successfully.")
+    except Exception as e:
+        task_logger.warning(f"Failed to register custom signal handlers: {e}")
 
     try:
         # Update global config
@@ -188,6 +227,12 @@ def on_locust_init(environment, **kwargs):
         # task_logger.info(f"Locust initialization complete. Config: {masked_config}")
         GlobalStateManager.set_start_time(time.time())
 
+        # Build SSL context once per process if needed
+        try:
+            GlobalStateManager.build_ssl_context_if_needed(global_config.cert_config)
+        except Exception:
+            pass
+
     except Exception as e:
         task_logger.error(f"Error during Locust initialization: {e}", exc_info=True)
         raise
@@ -196,12 +241,15 @@ def on_locust_init(environment, **kwargs):
 @events.test_stop.add_listener
 def on_test_stop(environment, **kwargs):
     """Calculate final metrics and save results."""
+    global _shutdown_in_progress
+    _shutdown_in_progress = True  # Mark that we're in shutdown process
+
     global_config = get_global_config()
     global_task_queue = get_global_task_queue()
     start_time = GlobalStateManager.get_start_time()
 
     task_id = global_config.task_id
-    task_logger = logger.bind(task_id=task_id)
+    task_logger = GlobalStateManager.get_task_logger(task_id)
     end_time = time.time()
 
     execution_time = (end_time - start_time) if start_time else 0
@@ -258,7 +306,7 @@ class LLMTestUser(FastHttpUser):
         """
         super().__init__(environment)
         global_config = get_global_config()
-        self.task_logger = logger.bind(task_id=global_config.task_id)
+        self.task_logger = GlobalStateManager.get_task_logger(global_config.task_id)
 
         # Use shared handlers to reduce memory footprint
         self.request_handler = self._get_request_handler()
@@ -272,7 +320,7 @@ class LLMTestUser(FastHttpUser):
         if cls._shared_request_handler is None:
             global_config = get_global_config()
             cls._shared_request_handler = RequestHandler(
-                global_config, logger.bind(task_id=global_config.task_id)
+                global_config, GlobalStateManager.get_task_logger(global_config.task_id)
             )
         return cls._shared_request_handler
 
@@ -282,7 +330,7 @@ class LLMTestUser(FastHttpUser):
         if cls._shared_stream_handler is None:
             global_config = get_global_config()
             cls._shared_stream_handler = StreamHandler(
-                global_config, logger.bind(task_id=global_config.task_id)
+                global_config, GlobalStateManager.get_task_logger(global_config.task_id)
             )
         return cls._shared_stream_handler
 
@@ -295,17 +343,19 @@ class LLMTestUser(FastHttpUser):
             if hasattr(self.client, "verify"):
                 self.client.verify = False
 
-            # For newer FastHttp versions, use ssl_context or insecure options
+            ssl_context = self._get_ssl_context()
+            if ssl_context:
+                if hasattr(self.client, "ssl_options"):
+                    self.client.ssl_options = {"ssl_context": ssl_context}
+                elif hasattr(self.client, "_client"):
+                    # legacy version fallback
+                    try:
+                        self.client._client.ssl_options = {"ssl_context": ssl_context}
+                    except Exception:
+                        pass
+            # only set insecure when you want to skip server certificate verification
             if hasattr(self.client, "insecure"):
                 self.client.insecure = True
-            elif hasattr(self.client, "ssl_options"):
-                # Create SSL context with certificate verification disabled
-                ssl_context = self._get_ssl_context()
-                if ssl_context:
-                    self.client.ssl_options = {"ssl_context": ssl_context}
-            else:
-                # For older FastHttp versions, try to set properties directly
-                self._configure_legacy_ssl()
 
             self.task_logger.debug("SSL settings configured for FastHttpUser")
 
@@ -315,30 +365,8 @@ class LLMTestUser(FastHttpUser):
 
     def _get_ssl_context(self) -> Optional[ssl.SSLContext]:
         """Create and configure SSL context."""
-        global_config = get_global_config()
-
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-
-        # If client certificate configuration is provided, add to SSL context
-        if global_config.cert_config:
-            try:
-                if isinstance(global_config.cert_config, tuple):
-                    # Separate certificate and key files
-                    cert_file, key_file = global_config.cert_config
-                    ssl_context.load_cert_chain(cert_file, key_file)
-                    self.task_logger.info(f"Loaded client certificate: {cert_file}")
-                elif isinstance(global_config.cert_config, str):
-                    # Combined certificate+key file
-                    ssl_context.load_cert_chain(global_config.cert_config)
-                    self.task_logger.info(
-                        f"Loaded client certificate: {global_config.cert_config}"
-                    )
-            except Exception as e:
-                self.task_logger.warning(f"Failed to load client certificate: {e}")
-                return None
-
+        # Reuse globally built SSL context to avoid per-user overhead
+        ssl_context = GlobalStateManager.get_ssl_context()
         return ssl_context
 
     def _configure_legacy_ssl(self):
@@ -349,13 +377,6 @@ class LLMTestUser(FastHttpUser):
             # Some FastHttp versions wrap the underlying client
             if hasattr(self.client._client, "verify"):
                 self.client._client.verify = False
-
-        # If client certificate configuration is provided, try to set (although it may not work)
-        if global_config.cert_config:
-            self.task_logger.warning(
-                "Client certificate configuration may not be supported in this FastHttp version. "
-                "Consider upgrading Locust or using HttpUser if mTLS is required."
-            )
 
     def get_next_prompt(self) -> Dict[str, Any]:
         """Fetch the next prompt from the shared queue."""
@@ -501,3 +522,43 @@ class LLMTestUser(FastHttpUser):
             self._log_token_counts(
                 user_prompt or "", reasoning_content, model_output, usage_tokens
             )
+
+    def stop(self, force=False):
+        """
+        Override the default stop method to handle duplicate stop attempts gracefully.
+        This prevents the "stopping state" exception when Locust receives multiple stop signals.
+        """
+        global _shutdown_in_progress
+
+        # If we're already in shutdown process, return gracefully
+        if _shutdown_in_progress:
+            self.task_logger.debug(
+                "User stop called during shutdown process. Skipping to prevent duplicate stop."
+            )
+            return
+
+        # Check if user is already in stopping state
+        if hasattr(self, "_state") and self._state == "stopping":
+            self.task_logger.debug(
+                "User is already in stopping state. Skipping duplicate stop attempt."
+            )
+            return
+
+        try:
+            # Call the parent stop method with error handling
+            super().stop(force=force)
+        except Exception as e:
+            # Handle the specific "stopping state" exception
+            error_msg = str(e).lower()
+            if "stopping" in error_msg or "unexpected state" in error_msg:
+                self.task_logger.debug(
+                    f"Caught expected 'stopping state' exception during User.stop(): {e}. "
+                    "This is normal when process receives multiple stop signals."
+                )
+                # Mark as stopped to prevent further attempts
+                if hasattr(self, "_state"):
+                    self._state = "stopped"
+            else:
+                # Re-raise unexpected exceptions
+                self.task_logger.error(f"Unexpected error during User.stop(): {e}")
+                raise

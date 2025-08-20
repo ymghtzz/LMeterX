@@ -18,19 +18,19 @@ LMeterX is a professional large language model performance testing platform that
 
 ## ✨ Core Features
 
-- **Universal compatibility**: Supports any language/multimodal/CoT model (GPT/Claude/Llama, etc.) service API stress testing
-- **Smart load testing**: Precise concurrency control & Real user simulation
-- **Professional metrics**: TTFT, TPS, RPS, success/error rate, etc
-- **Multi-scenario support**: Text conversations & Multimodal (image+text) & Custom dataset
-- **Visualize the results**: Performance reports & AI Summary & Model arena
-- **Real-time monitoring**: Hierarchical monitoring of tasks and services
-- **Enterprise ready**: Docker deployment & Web management console & Scalable architecture
+- **Full Model Compatibility** - Supports mainstream LLMs like GPT, Claude, and Llama with one-click stress testing
+- **High-Load Stress Testing** - Simulates high-concurrency requests to accurately detect model performance limits
+- **Multi-Scenario Coverage** - Supports streaming/non-streaming, supports text/multimodal/custom datasets<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>
+- **Professional Metrics** - Core performance metrics including first token latency, throughput(RPS、TPS), and success rate
+- **AI Smart Reports** - AI-powered performance analysis<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>margin-left: 8px;">NEW</sup>, multi-dimensional model comparison and visualization
+- **Web Console** - One-stop management for task creation, stopping, status tracking, and full-chain log monitoring
+- **Enterprise-level Deployment** - Docker containerization with elastic scaling and distributed deployment support
 
 ## 🏗️ System Architecture
 
 LMeterX adopts a microservices architecture design, consisting of four core components:
 
-1. **Backend API Service**: FastAPI-based REST API service responsible for task management and result storage
+1. **Backend Service**: FastAPI-based REST API service responsible for task management and result storage
 2. **Load Testing Engine**: Locust-based load testing engine that executes actual performance testing tasks
 3. **Frontend Interface**: Modern Web interface based on React + TypeScript + Ant Design
 4. **MySQL Database**: Stores test tasks, result data, and configuration information
@@ -117,7 +117,6 @@ LMeterX/
 ├── docker-compose.yml        # Docker Compose configuration
 ├── Makefile                  # Run complete code checks
 ├── README.md                 # English README
-└── README_CN.md              # Chinese README
 ```
 
 ### Development Environment Setup
@@ -142,7 +141,7 @@ LMeterX/
 - [Deployment Guide](docs/DEPLOYMENT_GUIDE.md) - Detailed deployment instructions and configuration guide
 - [Contributing Guide](docs/CONTRIBUTING.md) - How to participate in project development and contribute code
 
-## 🤝 Contributors
+## 👥 Contributors
 
 Thanks to all developers who have contributed to the LMeterX project:
 
@@ -154,5 +153,6 @@ Thanks to all developers who have contributed to the LMeterX project:
 This project is licensed under the [Apache 2.0 License](LICENSE).
 
 ---
-
+<div align="center">
 **⭐ If this project helps you, please give us a Star! Your support is our motivation for continuous improvement.**
+</div>

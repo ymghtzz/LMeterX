@@ -4,7 +4,8 @@
  * @author Charm
  * @copyright 2025
  * */
-import { Layout } from 'antd';
+import { GithubOutlined } from '@ant-design/icons';
+import { Button, Layout } from 'antd';
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -34,6 +35,13 @@ const Header: React.FC = () => {
     marginBottom: '10px',
   };
 
+  const githubButtonStyle: React.CSSProperties = {
+    marginRight: '12px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
+  };
+
   return (
     <AntdHeader style={headerStyle}>
       <div className='logo'>
@@ -45,6 +53,16 @@ const Header: React.FC = () => {
         />
       </div>
       <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Button
+          type='text'
+          icon={<GithubOutlined />}
+          style={githubButtonStyle}
+          href='https://github.com/MigoXLab/LMeterX'
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          GitHub
+        </Button>
         <LanguageSwitcher />
       </div>
     </AntdHeader>

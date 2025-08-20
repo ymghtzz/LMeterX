@@ -507,7 +507,7 @@
 {"id": "msRcT19", "prompt": ["感觉运行起来好慢 有没有其他的优化方法"], "language": "zh"}
 {"id": "EBgqnDq", "prompt": ["Use a data cable to transfer files between a computer and a mobile phone, and unplug both ends at the same time. Can the files be saved in the data cable?"], "language": "en"}
 {"id":"O9kH3vWp","prompt":["Develop a comprehensive personal finance strategy for millennials, covering debt management, investment planning, retirement savings, and financial goal setting."],"category":"Finance---Personal Planning","language":"en"}
-{"id":"Z6hT2wKz","prompt":["Fix this memory leak in JavaScript: function createButton() { const button = document.createElement('button'); button.addEventListener('click', function() { console.log('Clicked'); }); document.body.appendChild(button); }"],"category":"Code Debugging---Memory Leak","language":"en"}
+{"id":"Z6hT2wKz","prompt":["请问面积世界排名前三的平原是哪些？并列举面积"],"category":"common sense","language":"en"}
 {"id": "bE1zZiF", "prompt": ["请简述论文FacTool: Factuality Detection in Generative AI -- A Tool Augmented Framework for Multi-Task and Multi-Domain Scenarios的内容以及它适用于哪些场景"], "language": "zh"}
 {"id": "M48gPmU", "prompt": ["cuda如何进行同步"], "language": "zh"}
 {"id": "djUXrUF", "prompt": ["This image shows the AI Tower in Shanghai, it's very beautiful。把这句话翻译成中文并检索相关的新闻并用中文回答"], "language": "zh"}
@@ -4931,8 +4931,13 @@
 {"id": "ePFdr0h", "prompt": ["请将以下一段文字概括为一百字以内的片段：“苔丝立即走到庄园里，沿着一条蜿蜒的小路向上攀登。她穿过了那些她熟悉的又陡又窄的小路，把她的目光投向前方的山脊。她知道如果爬上山顶，就可以看到德伯家。她一直都习惯把家看作是那个地方，是她曾经居住过的地方。她边走边想，回忆着过去的日子。她回想起自己童年时在这片土地上奔跑嬉戏的场景，回想起充满欢声笑语的时光。但现在，她感受到了一种无法言喻的痛苦和悲伤。她继续攀登，直到终于到达了山顶。她停下来，望着远处的德伯家。那是一座古老的庄园，它的历史可以追溯到很久以前的时代。庄园周围是广阔的田野和郁郁葱葱的树林，一片宁静而美丽的景色。苔丝沉浸在回忆中，回想起自己曾经在这里度过的快乐时光。她记得小时候在这片土地上奔跑玩耍，她的父母和兄弟姐妹们都在身边。那时候，她觉得自己是幸福的，她觉得这个世界是美好的。但现在，她感到孤独和失落。她的家庭已经破碎，她的父母去世了，她的兄弟姐妹们也都离开了。她被迫离开了这个地方，去寻找生活的出路。她感到自己像是一个流浪者，没有一个真正的家。她叹了口气，泪水涌上了眼眶。她知道她无法回到过去，她的命运已经改变了。她不再是那个无忧无虑的小女孩，她成长了，她经历了太多的苦难和挫折。苔丝目送着太阳逐渐西沉，她感到内心的痛苦变得更加深刻。她知道她必须面对自己的现实，继续前行。她转身离开了山顶，踏上了下坡的小路，朝着未来迈进。”"], "language": "zh"}
 {"id": "WH74j4b", "prompt": ["请联系古代丝绸之路和当今人工智能发展，作一首七言律诗"], "language": "zh"}
 {"id":"T8kL1nTl","prompt":["Create a guide to building emotional resilience and mental toughness, covering stress adaptation strategies, cognitive restructuring techniques, mindfulness practices, and developing psychological flexibility."],"category":"Mental Health---Emotional Resilience","language":"en"}
+{"id": "7Y3C6kT", "prompt": ["请作为一名营销人员，为#颈椎按摩仪#写一篇软文，要求主题明确、结构合理。注意软文写作要点突出产品特性"], "language": "zh"}
 {"id":"S3jM4nWl","prompt":["Create a digital marketing strategy for small businesses, covering social media management, content marketing, search engine optimization, and analytics measurement."],"category":"Marketing---Digital Strategy","language":"en"}
 {"id": "qS8ky3S", "prompt": ["张三、李四、王五三人参加了一个数学竞赛。裁判告诉他们三人分别获得了金、银、铜三个奖项，同时告诉他们满足以下条件:1、李四拿到的奖项不比王五拿到的次。2、金奖和铜奖都不会给张三，请根据条件推断出三人分别获得了什么奖项?"], "language": "zh"}
 {"id": "uCOsRBw", "prompt": ["我在以宋朝为背景写武侠小说，给我的小说设计一些主角和配角的人名，要求是不要出现金庸等的小说中已有的人名"], "language": "zh"}
 {"id": "AdAKqMO", "prompt": ["民主歌声献中华演唱会都有哪些明星参与了？"], "language": "zh"}
-{"id": "8DWDVkT", "prompt": ["写一篇回忆童年的散文"], "language": "zh"}
+{"id": "7DWDVkT", "prompt": ["写一篇回忆童年的散文"], "language": "zh"}
+{"id": "8DWDVkT", "prompt": ["请为医疗行业的销售经理写一个#季度计划#，目标为业绩增长"], "language": "zh"}
+{"id": "8DWCCkT", "prompt": ["请列举唐代四大诗人及其代表作品"], "language": "zh"}
+{"id": "99RDVkT", "prompt": ["洛杉矶火灾，现在情况怎么样？"], "language": "zh"}
+{"id": "7YCDVkT", "prompt": ["能不能用猫咪的语气来安慰一下我，今天有点累。"], "language": "zh"}

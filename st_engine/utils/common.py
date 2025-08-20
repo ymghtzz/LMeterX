@@ -4,12 +4,14 @@ Copyright (c) 2025, All Rights Reserved.
 """
 
 import base64
+import hashlib
 import json
 import os
 import queue
 import re
+import threading
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import tiktoken
 
@@ -19,9 +21,15 @@ from utils.config import (
     MAX_QUEUE_SIZE,
     PROMPTS_DIR,
     SENSITIVE_KEYS,
+    TOKEN_COUNT_CACHE_SIZE,
     TOKENIZER_CACHE_SIZE,
 )
 from utils.logger import logger
+
+# Lightweight LRU cache for token counts to avoid repeated tokenization cost
+_token_count_cache: Dict[Tuple[str, str], int] = {}
+_token_count_cache_order: List[Tuple[str, str]] = []
+_token_count_cache_lock = threading.Lock()
 
 
 # === DATA CLASSES ===
@@ -461,18 +469,30 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     Returns:
         int: The number of tokens in the text.
     """
-    if not text:
-        return 0
-
     try:
-        # Try to use the standard tokenizer
+        text_key = hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest()
+        cache_key = (text_key, model_name)
+        with _token_count_cache_lock:
+            cached = _token_count_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
         tokenizer = get_tokenizer(model_name)
         if tokenizer:
-            return len(tokenizer.encode(text))
+            tokens_len = len(tokenizer.encode(text))
         else:
-            return max(1, len(text) // DEFAULT_TOKEN_RATIO)
+            tokens_len = max(1, len(text) // DEFAULT_TOKEN_RATIO)
+
+        with _token_count_cache_lock:
+            if cache_key not in _token_count_cache:
+                _token_count_cache[cache_key] = tokens_len
+                _token_count_cache_order.append(cache_key)
+                if len(_token_count_cache_order) > TOKEN_COUNT_CACHE_SIZE:
+                    old_key = _token_count_cache_order.pop(0)
+                    _token_count_cache.pop(old_key, None)
+
+        return tokens_len
     except Exception as e:
-        # Use simple estimation on error
         logger.warning(
             f"Token counting failed for {model_name}: {e}, using simple estimation"
         )

@@ -181,7 +181,7 @@
       "enterApiKeyWithoutBearer": "输入API密钥（不包含Bearer前缀）"
     },
     "resultComparison": {
-      "title": "结果对比",
+      "title": "模型擂台",
       "selectModels": "选择模型",
       "compare": "对比",
       "addModel": "添加模型",
@@ -226,7 +226,7 @@
       "comparisonComponentsNotLoaded": "对比组件未完全加载，请稍后重试。",
       "unableToCaptureComparisonContent": "无法捕获对比内容。",
       "unableToCreateCanvasContext": "无法创建Canvas绘图上下文。",
-      "selectModelForComparison": "选择模型进行对比",
+      "selectModelForComparison": "选择模型",
       "unknownError": "未知错误",
       "timeToFirstToken": "首Token时延 (秒)",
       "requestsPerSecond": "RPS (请求/秒)",
@@ -473,7 +473,7 @@
       "clearLogs": "清空日志",
       "refreshLogs": "刷新日志",
       "exportLogs": "导出日志",
-      "engineLogs": "引擎日志",
+      "engineLogs": "压测引擎日志",
       "backendLogs": "后端服务日志",
       "loadingData": "正在加载{{displayName}}数据...",
       "noLogsAvailable": "暂无{{displayName}}",

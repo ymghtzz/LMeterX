@@ -17,8 +17,8 @@ ANALYSIS_PROMPT_EN = """
     | Metric | Description |Value(avg/max)| Verdict |
     |---|---|---|---|
     | Concurrent_users |Number of simultaneous users accessing the system	| N | — |
-    | First_token_latency(s) |Time taken to receive the first token in response| X.XX | Good/Moderate/Poor |
-    | Total_time(s) |Total time taken to complete all requests| X.XX | Good/Moderate/Poor |
+    | First_token_latency(s) |Time taken to receive the first token| X.XX | Good/Moderate/Poor |
+    | Total_time(s) |Total time taken to complete request| X.XX | Good/Moderate/Poor |
     | RPS |Requests processed per second | X.XX | — |
     | Completion_tps |Tokens generated per second for completion only| X.XX | — |
     | Total_tps|Total tokens processed per second (including prompt and completion)| X.XX | — |
@@ -50,8 +50,8 @@ ANALYSIS_PROMPT_CN = """
     | 指标 |描述| 值（平均值/最大值）| 结论 |
     |---|---|---|---|
     | Concurrent_users | 同时访问系统的用户数 | N | — |
-    | First_token_latency(s) | 接收第一个token所需的时间| X.XX | 好/中等/差 |
-    | Total_time(s) | 完成所有请求所需的总时间| X.XX | 好/中等/差 |
+    | First_token_latency(s) | 接收到第一个token所需的时间| X.XX | 好/中等/差 |
+    | Total_time(s) | 平均每个请求完成所需的总时间| X.XX | 好/中等/差 |
     | RPS | 每秒处理的请求数| X.XX | — |
     | Completion_tps | 每秒输出生成的token数| X.XX | — |
     | Total_tps| 每秒输入和输出总token总数| X.XX | — |
@@ -67,13 +67,13 @@ ANALYSIS_PROMPT_CN = """
 
 def get_analysis_prompt(language: str = "en") -> str:
     """
-    根据语言获取相应的分析提示词
+    Analysis prompt for different languages
 
     Args:
-        language: 语言代码，支持 'en'（英文）和 'zh'（中文）
+        language: language code, support 'en' (English) and 'zh' (Chinese)
 
     Returns:
-        str: 相应语言的分析提示词
+        str: analysis prompt for corresponding language
     """
     if language == "zh":
         return ANALYSIS_PROMPT_CN

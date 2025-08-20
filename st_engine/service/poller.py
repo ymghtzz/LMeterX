@@ -77,22 +77,43 @@ def task_stop_poller():
                     logger.info(
                         f"Poller found task to stop: {task_id}. Attempting to stop."
                     )
-                    if task_service.stop_task(task_id):
-                        task_service.update_task_status_by_id(
-                            session, task_id, TASK_STATUS_STOPPED
-                        )
-                        logger.info(
-                            f"Poller successfully stopped task {task_id} and updated status to '{TASK_STATUS_STOPPED}'."
-                        )
-                    else:
+
+                    # Add a small delay to avoid conflicting with natural shutdown processes
+                    # that might be happening around the same time
+                    time.sleep(1)
+
+                    try:
+                        if task_service.stop_task(task_id):
+                            task_service.update_task_status_by_id(
+                                session, task_id, TASK_STATUS_STOPPED
+                            )
+                            logger.info(
+                                f"Poller successfully stopped task {task_id} and updated status to '{TASK_STATUS_STOPPED}'."
+                            )
+                        else:
+                            logger.error(
+                                f"Poller failed to stop task {task_id} (stop_task returned False)."
+                            )
+                            task_service.update_task_status_by_id(
+                                session,
+                                task_id,
+                                TASK_STATUS_FAILED,
+                            )
+                    except Exception as stop_e:
                         logger.error(
-                            f"Poller failed to stop task {task_id} (stop_task returned False)."
+                            f"Poller encountered exception while stopping task {task_id}: {stop_e}"
                         )
-                        task_service.update_task_status_by_id(
-                            session,
-                            task_id,
-                            TASK_STATUS_FAILED,
-                        )
+                        # Still try to update status to failed
+                        try:
+                            task_service.update_task_status_by_id(
+                                session,
+                                task_id,
+                                TASK_STATUS_FAILED,
+                            )
+                        except Exception as update_e:
+                            logger.error(
+                                f"Poller failed to update task {task_id} status to failed: {update_e}"
+                            )
             # Wait after processing a batch of tasks
             time.sleep(5)
         except Exception as e:

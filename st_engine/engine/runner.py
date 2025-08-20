@@ -35,6 +35,8 @@ class LocustRunner:
             base_dir (str): The base directory of the engine.
         """
         self.base_dir = base_dir
+        # Track processes that are currently being terminated to avoid duplicate signals
+        self._terminating_processes = set()
 
     def run_locust_process(self, task: Task) -> dict:
         """
