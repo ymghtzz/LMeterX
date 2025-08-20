@@ -20,9 +20,9 @@ LMeterX 是一个专业的大语言模型性能测试平台，支持对 LLM 服�
 
 - **全模型兼容** - 支持 GPT、Claude、Llama 等主流大模型，一键发起压测
 - **高负载压测** - 模拟高并发请求，精准探测模型性能极限
-- **多场景覆盖** - 支持流式/非流式、文本/多模态/自定义数据集<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>
+- **多场景覆盖** - 支持流式/非流式、文本/多模态/自定义数据集<sup>![NEW](https://img.shields.io/badge/NEW-00C851?style=flat&labelColor=transparent)</sup>
 - **专业指标统计** - 首Token延迟、吞吐量(RPS、TPS)、成功率等核心性能指标
-- **AI智能报告** - AI智能分析报告<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>，多维度多模型可视化结果对比
+- **AI智能报告** - AI智能分析报告<sup>![NEW](https://img.shields.io/badge/NEW-00C851?style=flat&labelColor=transparent)</sup>，多维度多模型可视化结果对比
 - **Web控制台** - 提供任务创建、停止、状态跟踪、全链路日志监控等一站式管理
 - **企业级部署** - Docker容器化，支持弹性扩展与分布式部署
 

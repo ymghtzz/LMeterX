@@ -20,9 +20,9 @@ LMeterX is a professional large language model performance testing platform that
 
 - **Full Model Compatibility** - Supports mainstream LLMs like GPT, Claude, and Llama with one-click stress testing
 - **High-Load Stress Testing** - Simulates high-concurrency requests to accurately detect model performance limits
-- **Multi-Scenario Coverage** - Supports streaming/non-streaming, supports text/multimodal/custom datasets<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>
+- **Multi-Scenario Coverage** - Supports streaming/non-streaming, supports text/multimodal/custom datasets<sup>![NEW](https://img.shields.io/badge/NEW-00C851?style=flat&labelColor=transparent)</sup>
 - **Professional Metrics** - Core performance metrics including first token latency, throughput(RPS、TPS), and success rate
-- **AI Smart Reports** - AI-powered performance analysis<sup>![NEW](https://img.shields.io/badge/NEW-brightgreen?style=flat-square)</sup>margin-left: 8px;">NEW</sup>, multi-dimensional model comparison and visualization
+- **AI Smart Reports** - AI-powered performance analysis<sup>![NEW](https://img.shields.io/badge/NEW-00C851?style=flat&labelColor=transparent)</sup>, multi-dimensional model comparison and visualization
 - **Web Console** - One-stop management for task creation, stopping, status tracking, and full-chain log monitoring
 - **Enterprise-level Deployment** - Docker containerization with elastic scaling and distributed deployment support
 
