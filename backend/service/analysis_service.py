@@ -78,9 +78,7 @@ async def analyze_task_svc(
         try:
             ai_config = await get_ai_service_config_internal_svc(request)
         except HTTPException as e:
-            error_msg = (
-                f"Failed to get AI service configuration for task {task_id}: {str(e)}"
-            )
+            error_msg = f"Failed to get AI service configuration. {str(e)}"
             logger.error(error_msg, exc_info=True)
             return AnalysisResponse(
                 task_id=task_id,

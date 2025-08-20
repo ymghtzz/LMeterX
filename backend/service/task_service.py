@@ -5,6 +5,7 @@ Copyright (c) 2025, All Rights Reserved.
 
 import json
 import os
+import ssl
 import time
 import uuid
 from typing import Dict, List, Optional, Tuple, Union
@@ -831,6 +832,77 @@ def _prepare_request_payload(body: TaskCreateReq) -> Dict:
             raise ValueError("Request payload is required for custom API endpoints")
 
 
+def _validate_certificate_files(
+    cert_file: str, key_file: Optional[str]
+) -> Tuple[bool, str]:
+    """
+    Validate certificate files.
+    """
+    try:
+        if not cert_file:
+            return False, "No certificate file provided"
+
+        def _exists(path: str) -> bool:
+            return isinstance(path, str) and len(path) > 0 and os.path.exists(path)
+
+        def _is_pkcs12(path: str) -> bool:
+            lower = path.lower()
+            return lower.endswith(".p12") or lower.endswith(".pfx")
+
+        def _read(path: str) -> str:
+            try:
+                with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                    return f.read()
+            except Exception:
+                return ""
+
+        if not _exists(cert_file):
+            return False, f"Certificate file does not exist: {cert_file}"
+        if _is_pkcs12(cert_file):
+            return (
+                False,
+                "P12/PFX certificates are not supported, please convert to a PEM file containing the private key",
+            )
+
+        cert_text = _read(cert_file)
+        if "BEGIN CERTIFICATE" not in cert_text:
+            return (
+                False,
+                "Certificate file is not a valid PEM format (missing BEGIN CERTIFICATE)",
+            )
+
+        if key_file:
+            if not _exists(key_file):
+                return False, f"Private key file does not exist: {key_file}"
+            if _is_pkcs12(key_file):
+                return (
+                    False,
+                    "Private key file cannot be P12/PFX, please provide a PEM private key",
+                )
+            key_text = _read(key_file)
+            if (
+                "BEGIN PRIVATE KEY" not in key_text
+                and "BEGIN RSA PRIVATE KEY" not in key_text
+                and "BEGIN EC PRIVATE KEY" not in key_text
+            ):
+                return False, "Private key file is not a valid PEM private key"
+        else:
+            # 仅提供了一个 cert_file，需同时包含证书+私钥
+            if (
+                "BEGIN PRIVATE KEY" not in cert_text
+                and "BEGIN RSA PRIVATE KEY" not in cert_text
+                and "BEGIN EC PRIVATE KEY" not in cert_text
+            ):
+                return (
+                    False,
+                    "Only a certificate file was provided, but it does not contain a private key, please upload the private key or provide a merged PEM file",
+                )
+
+        return True, ""
+    except Exception as e:
+        return False, f"Certificate validation error: {str(e)}"
+
+
 def _prepare_client_cert(body: TaskCreateReq):
     """Prepare SSL certificate configuration for the HTTP client."""
     client_cert: Optional[Union[str, Tuple[str, str]]] = None
@@ -841,14 +913,17 @@ def _prepare_client_cert(body: TaskCreateReq):
     # Use absolute paths directly from upload service
     if cert_file or key_file:
         try:
+            is_valid, err_msg = _validate_certificate_files(cert_file, key_file or None)
+            if not is_valid:
+                logger.error(f"Invalid client certificate configuration: {err_msg}")
+                return None
+
             if cert_file and key_file:
                 # Both cert and key files provided
-                if os.path.exists(cert_file) and os.path.exists(key_file):
-                    client_cert = (cert_file, key_file)
+                client_cert = (cert_file, key_file)
             elif cert_file:
                 # Only cert file provided (combined cert+key file)
-                if os.path.exists(cert_file):
-                    client_cert = cert_file
+                client_cert = cert_file
         except Exception as e:
             logger.error(f"Error preparing certificate configuration: {e}")
             return None
@@ -950,6 +1025,21 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
                 )
                 return await _handle_non_streaming_response(response)
 
+    except ssl.SSLError as e:
+        msg = str(e)
+        hint = ""
+        if "PEM lib" in msg or "PEM routines" in msg:
+            hint = "Client certificate/private key format error: only PEM is supported. Please upload a PEM file containing the private key, or provide both PEM certificate and PEM private key; P12/PFX is not supported."
+        elif "no certificate or crl found" in msg:
+            hint = (
+                "No valid certificate content found, please confirm the file is correct"
+            )
+        logger.error(f"SSL error when testing API endpoint: {e}")
+        return {
+            "status": "error",
+            "error": f"SSL error: {msg}. {hint}",
+            "response": None,
+        }
     except httpx.TimeoutException as e:
         logger.error(f"Request timeout when testing API endpoint: {e}")
         return {

@@ -14,7 +14,7 @@
     "benchmarkJobs": {
       "title": "Benchmark Jobs",
       "description": "Test task management and monitoring",
-      "createNew": "Create New",
+      "createNew": "Create Task",
       "edit": "Edit Task",
       "status": "Status",
       "actions": "Actions",
@@ -93,7 +93,7 @@
       "concurrentUsers": "Concurrent Users",
       "testDuration": "Test Duration",
       "builtInDataset": "Built-in Dataset",
-      "customDataset": "Custom Dataset",
+      "customDataset": "Custom Dataset 🆕",
       "textOnlyConversations": "Text-Only Conversations",
       "multimodalTextImage": "Multimodal (Text + Image)",
       "noValidResults": "No valid test results found",
@@ -181,7 +181,7 @@
       "enterApiKeyWithoutBearer": "Enter your API key without Bearer prefix"
     },
     "resultComparison": {
-      "title": "Result Comparison",
+      "title": "Model Arena",
       "selectModels": "Select Models",
       "compare": "Compare",
       "addModel": "Add Model",
@@ -475,7 +475,7 @@
       "refreshLogs": "Refresh Logs",
       "exportLogs": "Export Logs",
       "engineLogs": "Engine Logs",
-      "backendLogs": "Backend Service Logs",
+      "backendLogs": "Backend Logs",
       "loadingData": "Loading {{displayName}} data...",
       "noLogsAvailable": "No {{displayName}} available",
       "last100Lines": "Last 100 lines",

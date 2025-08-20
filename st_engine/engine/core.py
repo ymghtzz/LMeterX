@@ -6,12 +6,15 @@ Core data structures and configuration management for the stress testing engine.
 """
 
 import json
+import ssl
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, Union
 
 from gevent import queue
+from gevent.lock import Semaphore
 
 from utils.config import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
+from utils.logger import logger
 
 
 # === DATA CLASSES ===
@@ -73,16 +76,22 @@ class GlobalStateManager:
     _global_config: Optional[GlobalConfig] = None
     _global_task_queue: Optional[Dict[str, queue.Queue]] = None
     _start_time: Optional[float] = None
+    _lock: Semaphore = Semaphore()
+    _logger_cache: Dict[str, any] = {}
+    _ssl_context: Optional[ssl.SSLContext] = None
 
     @classmethod
     def initialize_global_state(cls) -> None:
         """Initialize global state."""
-        cls._global_config = GlobalConfig()
-        cls._global_task_queue = {
-            "completion_tokens_queue": queue.Queue(),
-            "all_tokens_queue": queue.Queue(),
-        }
-        cls._start_time = None
+        with cls._lock:
+            cls._global_config = GlobalConfig()
+            cls._global_task_queue = {
+                "completion_tokens_queue": queue.Queue(),
+                "all_tokens_queue": queue.Queue(),
+            }
+            cls._start_time = None
+            cls._logger_cache = {}
+            cls._ssl_context = None
 
     @classmethod
     def get_global_config(cls) -> GlobalConfig:
@@ -101,12 +110,55 @@ class GlobalStateManager:
     @classmethod
     def set_start_time(cls, start_time: float) -> None:
         """Set the test start time."""
-        cls._start_time = start_time
+        with cls._lock:
+            cls._start_time = start_time
 
     @classmethod
     def get_start_time(cls) -> Optional[float]:
         """Get the test start time."""
         return cls._start_time
+
+    # --- Logger cache ---
+    @classmethod
+    def get_task_logger(cls, task_id: str):
+        """Get a cached bound logger for the given task id (reduces bind overhead)."""
+        if not task_id:
+            return logger
+        with cls._lock:
+            if task_id not in cls._logger_cache:
+                cls._logger_cache[task_id] = logger.bind(task_id=task_id)
+            return cls._logger_cache[task_id]
+
+    # --- SSL Context cache ---
+    @classmethod
+    def build_ssl_context_if_needed(
+        cls, cert_config: Optional[Union[str, Tuple[str, str]]]
+    ) -> None:
+        """Build and cache SSL context once per process."""
+        if cls._ssl_context is not None:
+            return
+        with cls._lock:
+            if cls._ssl_context is not None:
+                return
+            try:
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+                if cert_config:
+                    if isinstance(cert_config, tuple):
+                        cert_file, key_file = cert_config
+                        ssl_context.load_cert_chain(cert_file, key_file)
+                    elif isinstance(cert_config, str):
+                        ssl_context.load_cert_chain(cert_config)
+                cls._ssl_context = ssl_context
+            except Exception as e:
+                # Do not raise; leave as None to fallback gracefully
+                logger.warning(f"Failed to build SSL context: {e}")
+                cls._ssl_context = None
+
+    @classmethod
+    def get_ssl_context(cls) -> Optional[ssl.SSLContext]:
+        return cls._ssl_context
 
 
 # === CONFIGURATION MANAGEMENT ===

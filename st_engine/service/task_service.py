@@ -388,44 +388,131 @@ class TaskService:
             self.runner.process_dict.pop(task_id, None)
             return True
 
+        # Check if process is already being terminated to avoid duplicate signals
+        # Add a flag to track ongoing termination attempts
+        termination_key = f"{task_id}_terminating"
+        if hasattr(self.runner, "_terminating_processes"):
+            if termination_key in self.runner._terminating_processes:
+                task_logger.info(
+                    f"Task {task_id}, Process with PID {process.pid} is already being terminated. Skipping duplicate termination attempt."
+                )
+                return True
+        else:
+            self.runner._terminating_processes = set()
+
+        # Mark process as being terminated
+        self.runner._terminating_processes.add(termination_key)
+
         task_logger.info(
             f"Task {task_id}, Attempting to terminate process with PID {process.pid} (SIGTERM)."
         )
         try:
+            # Check if process is still running before sending signal
+            if process.poll() is not None:
+                task_logger.info(
+                    f"Task {task_id}, Process with PID {process.pid} terminated naturally while preparing to stop it."
+                )
+                self.runner.process_dict.pop(task_id, None)
+                self.runner._terminating_processes.discard(termination_key)
+                return True
+
             process.terminate()
             process.wait(timeout=10)
             task_logger.info(
                 f"Task {task_id}, Process terminated successfully via SIGTERM."
             )
             self.runner.process_dict.pop(task_id, None)
+            self.runner._terminating_processes.discard(termination_key)
             return True
         except subprocess.TimeoutExpired:
             task_logger.warning(
                 f"SIGTERM timed out for task {task_id}, process {process.pid}. Attempting to kill (SIGKILL)."
             )
             try:
+                # Double-check if process is still alive before sending SIGKILL
+                if process.poll() is not None:
+                    task_logger.info(
+                        f"Task {task_id}, Process with PID {process.pid} terminated naturally during SIGTERM timeout."
+                    )
+                    self.runner.process_dict.pop(task_id, None)
+                    self.runner._terminating_processes.discard(termination_key)
+                    return True
+
                 process.kill()
                 process.wait(timeout=5)
                 task_logger.info(
                     f"Task {task_id}, Process killed successfully via SIGKILL."
                 )
                 self.runner.process_dict.pop(task_id, None)
+                self.runner._terminating_processes.discard(termination_key)
                 return True
             except subprocess.TimeoutExpired:
                 task_logger.error(
                     f"Task {task_id}, Failed to kill process {process.pid} even with SIGKILL. Manual intervention may be required."
                 )
+                self.runner._terminating_processes.discard(termination_key)
                 return False
             except Exception as e:
                 task_logger.exception(
                     f"Task {task_id}, An unexpected error occurred while trying to kill process {process.pid}: {e}"
                 )
+                self.runner._terminating_processes.discard(termination_key)
                 return False
-        except Exception as e:
-            task_logger.exception(
-                f"Task {task_id}, An unexpected error occurred while terminating process {process.pid}: {e}"
+        except ProcessLookupError:
+            # Process has already terminated
+            task_logger.info(
+                f"Task {task_id}, Process with PID {process.pid} no longer exists (ProcessLookupError). Cleaning up."
             )
-            return False
+            self.runner.process_dict.pop(task_id, None)
+            self.runner._terminating_processes.discard(termination_key)
+            return True
+        except Exception as e:
+            # Check if the error is related to process already being in stopping state
+            error_msg = str(e).lower()
+            if "stopping" in error_msg or "unexpected state" in error_msg:
+                task_logger.info(
+                    f"Task {task_id}, Process with PID {process.pid} is already in stopping state. This is expected when process is naturally shutting down."
+                )
+                # Wait a bit for the process to complete its natural shutdown
+                try:
+                    process.wait(timeout=15)
+                    task_logger.info(
+                        f"Task {task_id}, Process completed its natural shutdown successfully."
+                    )
+                    self.runner.process_dict.pop(task_id, None)
+                    self.runner._terminating_processes.discard(termination_key)
+                    return True
+                except subprocess.TimeoutExpired:
+                    task_logger.warning(
+                        f"Task {task_id}, Process natural shutdown timed out. Attempting force kill."
+                    )
+                    try:
+                        process.kill()
+                        process.wait(timeout=5)
+                        task_logger.info(
+                            f"Task {task_id}, Process force-killed successfully after natural shutdown timeout."
+                        )
+                        self.runner.process_dict.pop(task_id, None)
+                        self.runner._terminating_processes.discard(termination_key)
+                        return True
+                    except Exception as kill_e:
+                        task_logger.error(
+                            f"Task {task_id}, Failed to force-kill process after natural shutdown timeout: {kill_e}"
+                        )
+                        self.runner._terminating_processes.discard(termination_key)
+                        return False
+                except Exception as wait_e:
+                    task_logger.error(
+                        f"Task {task_id}, Error while waiting for natural shutdown: {wait_e}"
+                    )
+                    self.runner._terminating_processes.discard(termination_key)
+                    return False
+            else:
+                task_logger.exception(
+                    f"Task {task_id}, An unexpected error occurred while terminating process {process.pid}: {e}"
+                )
+                self.runner._terminating_processes.discard(termination_key)
+                return False
 
     def get_stopping_task_ids(self, session: Session) -> list[str]:
         """
