@@ -26,17 +26,47 @@ export const validateJson = (value: string): string | undefined => {
 /**
  * Validate URL format
  * @param value - URL string to validate
+ * @param t - Translation function (optional, for i18n)
  * @returns Error message or undefined if valid
  */
-export const validateUrl = (value: string): string | undefined => {
+export const validateUrl = (
+  value: string,
+  t?: (key: string) => string
+): string | undefined => {
   if (!value?.trim()) return undefined;
 
+  const trimmedValue = value.trim();
+
+  // Check for spaces in URL
+  if (trimmedValue.includes(' ')) {
+    return t
+      ? t('components.createJobForm.urlCannotContainSpaces')
+      : 'URL cannot contain spaces';
+  }
+
+  // Check for proper protocol
+  if (
+    !trimmedValue.startsWith('http://') &&
+    !trimmedValue.startsWith('https://')
+  ) {
+    return t
+      ? t('components.createJobForm.invalidUrlFormat')
+      : 'Please enter a valid URL format (starting with http:// or https://)';
+  }
+
   try {
-    const url = new URL(value);
-    // Use url to avoid unused variable warning
-    return url ? undefined : 'Please enter a valid URL';
+    const url = new URL(trimmedValue);
+    // Additional validation: ensure hostname is present
+    if (!url.hostname || url.hostname.length === 0) {
+      return t
+        ? t('components.createJobForm.invalidUrlFormat')
+        : 'Please enter a valid URL format (starting with http:// or https://)';
+    }
+    return undefined;
   } catch (error) {
-    return 'Please enter a valid URL';
+    return t
+      ? t('components.createJobForm.invalidUrlFormat')
+      : 'Please enter a valid URL format (starting with http:// or https://)';
   }
 };
 
@@ -105,11 +135,11 @@ export const VALIDATION_RULES = {
   }),
 
   // URL validation
-  url: (required: boolean = false): Rule => ({
+  url: (required: boolean = false, t?: (key: string) => string): Rule => ({
     required,
     validator: (_, value) => {
       if (!required && !value) return Promise.resolve();
-      const error = validateUrl(value);
+      const error = validateUrl(value, t);
       return error ? Promise.reject(new Error(error)) : Promise.resolve();
     },
   }),
@@ -210,6 +240,27 @@ export const isFormValidForTest = (values: Record<string, any>): boolean => {
     const value = values[field];
     return value !== undefined && value !== null && value !== '';
   });
+};
+
+/**
+ * Trim whitespace from input value
+ * @param value - Input value
+ * @returns Trimmed value
+ */
+export const trimValue = (value: string | undefined | null): string => {
+  return value?.trim() || '';
+};
+
+/**
+ * Create a validator that automatically trims the value
+ * @param validator - Original validator function
+ * @returns Validator that trims before validating
+ */
+export const withTrim = (validator: (value: string) => string | undefined) => {
+  return (value: string | undefined | null) => {
+    const trimmedValue = trimValue(value);
+    return validator(trimmedValue);
+  };
 };
 
 /**

@@ -8,7 +8,7 @@ Core data structures and configuration management for the stress testing engine.
 import json
 import ssl
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 from gevent import queue
 from gevent.lock import Semaphore
@@ -26,8 +26,8 @@ class StreamMetrics:
     first_thinking_received: bool = False
     reasoning_is_active: bool = False
     reasoning_ended: bool = False
-    first_output_token_time: float = 0.0
-    first_thinking_token_time: float = 0.0
+    first_output_token_time: Optional[float] = None
+    first_thinking_token_time: Optional[float] = None
     model_output: str = ""
     reasoning_content: str = ""
 
@@ -77,7 +77,7 @@ class GlobalStateManager:
     _global_task_queue: Optional[Dict[str, queue.Queue]] = None
     _start_time: Optional[float] = None
     _lock: Semaphore = Semaphore()
-    _logger_cache: Dict[str, any] = {}
+    _logger_cache: Dict[str, Any] = {}
     _ssl_context: Optional[ssl.SSLContext] = None
 
     @classmethod
