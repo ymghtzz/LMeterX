@@ -57,9 +57,18 @@ class ErrorHandler:
             if output_object == "error":
                 return f"Response object type is error"
 
-            # Check for HTTP error status in response
-            if "status" in json_data and json_data["status"] != 200:
-                return f"HTTP error status: {json_data['status']}"
+            # Check for HTTP error status in response - with proper type checking
+            # if "status" in json_data:
+            #     status_value = json_data["status"]
+            #     # Handle both string and integer status values
+            #     if isinstance(status_value, str):
+            #         # For string status, check if it indicates an error
+            #         if status_value.lower() not in ["ok", "success", "completed"]:
+            #             return f"HTTP error status: {status_value}"
+            #     elif isinstance(status_value, (int, float)):
+            #         # For numeric status, check if it's not 200
+            #         if int(status_value) != 200:
+            #             return f"HTTP error status: {status_value}"
 
             return None
         except Exception:
@@ -81,9 +90,13 @@ class ErrorHandler:
         else:
             # If no response object available (e.g., connection failed),
             # we need to manually fire the failure event with the correct request name
+            # Ensure response_time is a valid float
+            safe_response_time = (
+                float(response_time) if response_time is not None else 0.0
+            )
             EventManager.fire_failure_event(
                 name=request_name,
-                response_time=response_time,
+                response_time=safe_response_time,
                 exception=Exception(error_msg),
             )
 
@@ -100,11 +113,17 @@ class EventManager:
         exception: Optional[Exception] = None,
     ) -> None:
         """Fire failure events with proper Locust event format."""
+        # Ensure all parameters are of correct type
+        safe_response_time = float(response_time) if response_time is not None else 0.0
+        safe_response_length = (
+            int(response_length) if response_length is not None else 0
+        )
+
         events.request.fire(
             request_type="POST",
             name=name,
-            response_time=response_time,
-            response_length=response_length,
+            response_time=safe_response_time,
+            response_length=safe_response_length,
             exception=exception or Exception("Request failed"),
         )
 
@@ -113,11 +132,17 @@ class EventManager:
         name: str, response_time: float, response_length: int
     ) -> None:
         """Fire metric events."""
+        # Ensure all parameters are of correct type
+        safe_response_time = float(response_time) if response_time is not None else 0.0
+        safe_response_length = (
+            int(response_length) if response_length is not None else 0
+        )
+
         events.request.fire(
             request_type="metric",
             name=name,
-            response_time=response_time,
-            response_length=response_length,
+            response_time=safe_response_time,
+            response_length=safe_response_length,
         )
 
 
@@ -285,10 +310,12 @@ class StreamProcessor:
             if not metrics.first_token_received:
                 metrics.first_token_received = True
                 metrics.first_output_token_time = time.time()
-                ttfot = (metrics.first_output_token_time - start_time) * 1000
-                EventManager.fire_metric_event(
-                    "Time_to_first_output_token", ttfot, len(content_chunk)
-                )
+                # Add safety check for start_time
+                if start_time is not None and start_time > 0:
+                    ttfot = (metrics.first_output_token_time - start_time) * 1000
+                    EventManager.fire_metric_event(
+                        "Time_to_first_output_token", ttfot, len(content_chunk)
+                    )
                 # task_logger.info(f"Recv first output token: {content_chunk}")
 
         # Process reasoning tokens with safety checks
@@ -311,10 +338,12 @@ class StreamProcessor:
             if not metrics.first_thinking_received:
                 metrics.first_thinking_received = True
                 metrics.first_thinking_token_time = time.time()
-                ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
-                EventManager.fire_metric_event(
-                    "Time_to_first_reasoning_token", ttfrt, len(reasoning_chunk)
-                )
+                # Add safety check for start_time
+                if start_time is not None and start_time > 0:
+                    ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
+                    EventManager.fire_metric_event(
+                        "Time_to_first_reasoning_token", ttfrt, len(reasoning_chunk)
+                    )
                 # task_logger.info(f"Recv first reasoning token: {reasoning_chunk}")
         elif (
             metrics.reasoning_is_active
@@ -322,7 +351,10 @@ class StreamProcessor:
             and not metrics.reasoning_ended
             and content_chunk
         ):
-            if metrics.first_thinking_received:
+            if (
+                metrics.first_thinking_received
+                and metrics.first_thinking_token_time is not None
+            ):
                 metrics.reasoning_ended = True
                 ttrc = (time.time() - metrics.first_thinking_token_time) * 1000
                 EventManager.fire_metric_event(
@@ -727,16 +759,20 @@ class StreamHandler:
                         completion_time = (
                             (time.time() - metrics.first_output_token_time) * 1000
                             if metrics.first_token_received
+                            and metrics.first_output_token_time is not None
                             else 0
                         )
 
                         EventManager.fire_metric_event(
-                            METRIC_TTOC, completion_time, len(metrics.model_output)
+                            METRIC_TTOC,
+                            completion_time,
+                            len(metrics.model_output or ""),
                         )
                         EventManager.fire_metric_event(
                             METRIC_TTT,
                             total_time,
-                            len(metrics.model_output) + len(metrics.reasoning_content),
+                            len(metrics.model_output or "")
+                            + len(metrics.reasoning_content or ""),
                         )
                         response.success()
 
@@ -873,7 +909,7 @@ class StreamHandler:
                         EventManager.fire_metric_event(
                             METRIC_TTT,
                             total_time,
-                            len(model_output) + len(reasoning_content),
+                            len(model_output or "") + len(reasoning_content or ""),
                         )
                         response.success()
 
@@ -897,11 +933,47 @@ class StreamHandler:
         self, response, start_time: float = 0, request_name: str = "failure"
     ) -> bool:
         """Handle HTTP status code errors."""
-        if response.status_code != HTTP_OK:
-            error_msg = f"Request failed with status {response.status_code}. Response: {response.text}"
+        # Add safety checks for response object
+        if response is None:
+            error_msg = "Response object is None"
+            response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
+            ErrorHandler.handle_general_exception(
+                error_msg, self.task_logger, None, response_time, request_name
+            )
+            return True
+
+        # Safely get status code with fallback
+        try:
+            status_code = getattr(response, "status_code", None)
+            if status_code is None:
+                error_msg = "Response object has no status_code attribute"
+                response_time = (
+                    (time.time() - start_time) * 1000 if start_time > 0 else 0
+                )
+                ErrorHandler.handle_general_exception(
+                    error_msg, self.task_logger, response, response_time, request_name
+                )
+                return True
+
+            if status_code != HTTP_OK:
+                # Safely get response text
+                response_text = getattr(
+                    response, "text", "Unable to retrieve response text"
+                )
+                error_msg = f"Request failed with status {status_code}. Response: {response_text}"
+                response_time = (
+                    (time.time() - start_time) * 1000 if start_time > 0 else 0
+                )
+                ErrorHandler.handle_general_exception(
+                    error_msg, self.task_logger, response, response_time, request_name
+                )
+                return True
+        except Exception as e:
+            error_msg = f"Error checking response status: {e}"
             response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
             ErrorHandler.handle_general_exception(
                 error_msg, self.task_logger, response, response_time, request_name
             )
             return True
+
         return False

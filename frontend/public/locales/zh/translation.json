@@ -436,6 +436,8 @@
       "taskTemplateCopied": "任务模板已复制。请注意：鉴权信息和上传文件需要重新填写或上传。",
       "pleaseEnterTaskName": "请输入任务名称",
       "pleaseEnterApiUrl": "请输入API URL",
+      "invalidUrlFormat": "请输入正确的URL格式（http://或https://开头）",
+      "urlCannotContainSpaces": "URL不能包含空格",
       "pleaseEnterApiPath": "请输入API路径",
       "pleaseEnterModelName": "请输入模型名称",
       "pleaseSelectResponseMode": "请选择响应模式",

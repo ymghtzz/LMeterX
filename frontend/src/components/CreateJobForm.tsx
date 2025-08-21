@@ -1118,6 +1118,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 message: t('components.createJobForm.pleaseEnterTaskName'),
               },
             ]}
+            normalize={value => value?.trim() || ''}
           >
             <Input
               placeholder={t('components.createJobForm.taskNamePlaceholder')}
@@ -1151,7 +1152,55 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     required: true,
                     message: t('components.createJobForm.pleaseEnterApiUrl'),
                   },
+                  {
+                    validator: (_, value) => {
+                      if (!value?.trim()) return Promise.resolve();
+
+                      const trimmedValue = value.trim();
+
+                      // Check for spaces in URL
+                      if (trimmedValue.includes(' ')) {
+                        return Promise.reject(
+                          new Error(
+                            t('components.createJobForm.urlCannotContainSpaces')
+                          )
+                        );
+                      }
+
+                      // Check for proper protocol
+                      if (
+                        !trimmedValue.startsWith('http://') &&
+                        !trimmedValue.startsWith('https://')
+                      ) {
+                        return Promise.reject(
+                          new Error(
+                            t('components.createJobForm.invalidUrlFormat')
+                          )
+                        );
+                      }
+
+                      try {
+                        const url = new URL(trimmedValue);
+                        // Additional validation: ensure hostname is present
+                        if (!url.hostname || url.hostname.length === 0) {
+                          return Promise.reject(
+                            new Error(
+                              t('components.createJobForm.invalidUrlFormat')
+                            )
+                          );
+                        }
+                        return Promise.resolve();
+                      } catch (error) {
+                        return Promise.reject(
+                          new Error(
+                            t('components.createJobForm.invalidUrlFormat')
+                          )
+                        );
+                      }
+                    },
+                  },
                 ]}
+                normalize={value => value?.trim() || ''}
               >
                 <Input
                   style={{ width: '70%' }}
@@ -1167,6 +1216,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     message: t('components.createJobForm.pleaseEnterApiPath'),
                   },
                 ]}
+                normalize={value => value?.trim() || ''}
               >
                 <Input
                   style={{ width: '30%' }}
@@ -1196,6 +1246,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 message: t('components.createJobForm.pleaseEnterModelName'),
               },
             ]}
+            normalize={value => value?.trim() || ''}
           >
             <Input placeholder='e.g. gpt-4, claude-3, internlm3-latest' />
           </Form.Item>
@@ -1974,6 +2025,25 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
               <Col span={8}>
                 <Form.Item
+                  name={['field_mapping', 'end_condition']}
+                  label={
+                    <span>
+                      {t('components.createJobForm.endFieldPath')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.endFieldPathTooltip'
+                        )}
+                      >
+                        <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                      </Tooltip>
+                    </span>
+                  }
+                >
+                  <Input placeholder='choices.0.finish_reason' />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
                   name={['field_mapping', 'stop_flag']}
                   label={
                     <span>
@@ -1995,26 +2065,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   ]}
                 >
                   <Input placeholder='[DONE]' />
-                </Form.Item>
-              </Col>
-
-              <Col span={8}>
-                <Form.Item
-                  name={['field_mapping', 'end_condition']}
-                  label={
-                    <span>
-                      {t('components.createJobForm.endFieldPath')}
-                      <Tooltip
-                        title={t(
-                          'components.createJobForm.endFieldPathTooltip'
-                        )}
-                      >
-                        <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                      </Tooltip>
-                    </span>
-                  }
-                >
-                  <Input placeholder='choices.0.finish_reason' />
                 </Form.Item>
               </Col>
             </Row>
