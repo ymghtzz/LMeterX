@@ -249,7 +249,7 @@ class ComparisonMetrics(BaseModel):
         model_name: The model name.
         concurrent_users: The number of concurrent users.
         task_name: The task name.
-        ttft: Time to first token (min_latency).
+        ttft: Time to first token (avg_latency in seconds).
         total_tps: Total tokens per second.
         completion_tps: Completion tokens per second.
         avg_total_tpr: Average total tokens per request.

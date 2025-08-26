@@ -22,6 +22,7 @@ from utils.config import (
     METRIC_TTOC,
     METRIC_TTT,
 )
+from utils.logger import logger
 
 
 # === ERROR HANDLING ===
@@ -39,6 +40,7 @@ class ErrorHandler:
             code = json_data.get("code", 0)
             error = json_data.get("error", "")
             output_object = json_data.get("object", "")
+            event_error = json_data.get("event", "")
 
             # API-specific error checks
             error_details = json_data.get("error", {})
@@ -49,13 +51,16 @@ class ErrorHandler:
                     return f"API error - type: {error_type}, message: {error_message}"
 
             if code < 0:
-                return f"Response contains error code: {code}"
+                return f"Response contains error code: {json_data}"
 
             if error and str(error).strip():
-                return f"Response contains error: {error}"
+                return f"Response contains error: {json_data}"
 
             if output_object == "error":
-                return f"Response object type is error"
+                return f"Response object type is error: {json_data}"
+
+            if event_error == "error":
+                return f"Response event type is error: {json_data}"
 
             # Check for HTTP error status in response - with proper type checking
             # if "status" in json_data:
@@ -71,9 +76,9 @@ class ErrorHandler:
             #             return f"HTTP error status: {status_value}"
 
             return None
-        except Exception:
-            # Log parsing errors but don't treat them as API errors
-            return None
+        except Exception as e:
+            # Enhanced logging for parsing errors
+            return f"Error parsing response JSON for error checking: {e}"
 
     @staticmethod
     def handle_general_exception(
@@ -81,24 +86,27 @@ class ErrorHandler:
         task_logger,
         response=None,
         response_time: float = 0,
-        request_name: str = "failure",
+        additional_context: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Centralized handler for logging exceptions during requests."""
-        task_logger.error(error_msg)
-        if response:
-            response.failure(error_msg)
-        else:
-            # If no response object available (e.g., connection failed),
-            # we need to manually fire the failure event with the correct request name
-            # Ensure response_time is a valid float
-            safe_response_time = (
-                float(response_time) if response_time is not None else 0.0
-            )
+        # Enhanced error logging with context
+        context_info = ""
+        if additional_context:
+            context_info = f" | Context: {additional_context}"
+
+        full_error_msg = f"{error_msg}{context_info}"
+        task_logger.error(full_error_msg)
+
+        try:
             EventManager.fire_failure_event(
-                name=request_name,
-                response_time=safe_response_time,
-                exception=Exception(error_msg),
+                name="failure",
+                response_time=response_time,
+                response_length=0,
+                exception=Exception(full_error_msg),
             )
+        except Exception as fire_err:
+            # Never let event firing escalate; log and continue
+            task_logger.warning(f"Failed to emit failure event: {fire_err}")
 
 
 # === EVENT MANAGEMENT ===
@@ -113,37 +121,76 @@ class EventManager:
         exception: Optional[Exception] = None,
     ) -> None:
         """Fire failure events with proper Locust event format."""
-        # Ensure all parameters are of correct type
-        safe_response_time = float(response_time) if response_time is not None else 0.0
-        safe_response_length = (
-            int(response_length) if response_length is not None else 0
-        )
+        # Enhanced safety checks for all parameters
+        try:
+            safe_response_time = (
+                float(response_time)
+                if isinstance(response_time, (int, float)) and response_time >= 0
+                else 0.0
+            )
+        except Exception:
+            safe_response_time = 0.0
 
-        events.request.fire(
-            request_type="POST",
-            name=name,
-            response_time=safe_response_time,
-            response_length=safe_response_length,
-            exception=exception or Exception("Request failed"),
-        )
+        try:
+            safe_response_length = (
+                int(response_length)
+                if isinstance(response_length, (int, float)) and response_length >= 0
+                else 0
+            )
+        except Exception:
+            safe_response_length = 0
+
+        safe_name = str(name) if name is not None else "failure"
+        safe_exception = exception or Exception("Request failed")
+
+        try:
+            # Some Locust versions prefer integer ms for response_time
+            events.request.fire(
+                request_type="POST",
+                name=safe_name,
+                response_time=int(safe_response_time),
+                response_length=int(safe_response_length),
+                exception=safe_exception,
+            )
+        except Exception as e:
+            # Never crash on metrics emission
+            logger.warning(f"Failed to fire failure event: {e}")
 
     @staticmethod
     def fire_metric_event(
         name: str, response_time: float, response_length: int
     ) -> None:
         """Fire metric events."""
-        # Ensure all parameters are of correct type
-        safe_response_time = float(response_time) if response_time is not None else 0.0
-        safe_response_length = (
-            int(response_length) if response_length is not None else 0
-        )
+        # Enhanced safety checks for all parameters
+        try:
+            safe_response_time = (
+                float(response_time)
+                if isinstance(response_time, (int, float)) and response_time >= 0
+                else 0.0
+            )
+        except Exception:
+            safe_response_time = 0.0
 
-        events.request.fire(
-            request_type="metric",
-            name=name,
-            response_time=safe_response_time,
-            response_length=safe_response_length,
-        )
+        try:
+            safe_response_length = (
+                int(response_length)
+                if isinstance(response_length, (int, float)) and response_length >= 0
+                else 0
+            )
+        except Exception:
+            safe_response_length = 0
+
+        safe_name = str(name) if name is not None else "metric"
+
+        try:
+            events.request.fire(
+                request_type="metric",
+                name=safe_name,
+                response_time=int(safe_response_time),
+                response_length=int(safe_response_length),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to fire metric event '{safe_name}': {e}")
 
 
 # === STREAM PROCESSING ===
@@ -180,6 +227,9 @@ class StreamProcessor:
                     else:
                         return ""
 
+            # Ensure we never return None, always return a string
+            if current is None:
+                return ""
             return str(current) if current else ""
         except (KeyError, IndexError, TypeError, ValueError):
             return ""
@@ -266,6 +316,7 @@ class StreamProcessor:
                 if StreamProcessor.check_stream_end_condition(
                     chunk_str, chunk_data, field_mapping
                 ):
+                    # task_logger.info(f"Stream end, response: {chunk_str}")
                     return metrics
 
                 content_chunk = (
@@ -284,52 +335,88 @@ class StreamProcessor:
                 if StreamProcessor.check_stream_end_condition(
                     chunk_str, {}, field_mapping
                 ):
+                    # task_logger.info(f"Stream end, response: {chunk_str}")
                     return metrics
                 content_chunk = chunk_str
 
         except (json.JSONDecodeError, IndexError, KeyError):
-            if field_mapping.data_format == "json":
-                # For malformed JSON chunks, treat as text content if not too large
-                if len(chunk_str) < 1000:  # Reasonable size threshold
-                    content_chunk = chunk_str
-            else:
-                content_chunk = chunk_str
+            task_logger.error(f"Error processing chunk: {chunk_str}")
+            EventManager.fire_failure_event(
+                name="failure",
+                response_time=0,
+                response_length=0,
+                exception=Exception(f"Error processing chunk: {chunk_str}"),
+            )
+            return metrics
 
-        # Process content tokens with safety checks
-        if content_chunk and len(content_chunk.strip()) > 0:
+        # Process content tokens with enhanced safety checks
+        if (
+            content_chunk
+            and isinstance(content_chunk, str)
+            and len(content_chunk.strip()) > 0
+        ):
+            # Ensure metrics.model_output is not None
+            if metrics.model_output is None:
+                task_logger.warning(
+                    "metrics.model_output was None, initializing to empty string"
+                )
+                metrics.model_output = ""
+
             # Prevent memory issues by limiting output length
-            if len(metrics.model_output) + len(content_chunk) > MAX_OUTPUT_LENGTH:
+            current_output_len = len(metrics.model_output)
+            content_chunk_len = len(content_chunk)
+
+            if current_output_len + content_chunk_len > MAX_OUTPUT_LENGTH:
                 task_logger.warning(
                     f"Output length exceeded {MAX_OUTPUT_LENGTH} characters, truncating"
                 )
-                content_chunk = content_chunk[
-                    : MAX_OUTPUT_LENGTH - len(metrics.model_output)
-                ]
+                content_chunk = content_chunk[: MAX_OUTPUT_LENGTH - current_output_len]
 
             metrics.model_output += content_chunk
             if not metrics.first_token_received:
                 metrics.first_token_received = True
                 metrics.first_output_token_time = time.time()
-                # Add safety check for start_time
-                if start_time is not None and start_time > 0:
-                    ttfot = (metrics.first_output_token_time - start_time) * 1000
-                    EventManager.fire_metric_event(
-                        "Time_to_first_output_token", ttfot, len(content_chunk)
+                # Enhanced safety check for start_time and time calculations
+                try:
+                    if (
+                        start_time is not None
+                        and start_time > 0
+                        and metrics.first_output_token_time is not None
+                    ):
+                        ttfot = (metrics.first_output_token_time - start_time) * 1000
+                        if ttfot >= 0:  # Ensure positive time difference
+                            EventManager.fire_metric_event(
+                                "Time_to_first_output_token", ttfot, len(content_chunk)
+                            )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating first output token time: {e}"
                     )
                 # task_logger.info(f"Recv first output token: {content_chunk}")
 
-        # Process reasoning tokens with safety checks
-        if reasoning_chunk and len(reasoning_chunk.strip()) > 0:
+        # Process reasoning tokens with enhanced safety checks
+        if (
+            reasoning_chunk
+            and isinstance(reasoning_chunk, str)
+            and len(reasoning_chunk.strip()) > 0
+        ):
+            # Ensure metrics.reasoning_content is not None
+            if metrics.reasoning_content is None:
+                task_logger.warning(
+                    "metrics.reasoning_content was None, initializing to empty string"
+                )
+                metrics.reasoning_content = ""
+
             # Prevent memory issues by limiting reasoning content length
-            if (
-                len(metrics.reasoning_content) + len(reasoning_chunk)
-                > MAX_OUTPUT_LENGTH
-            ):
+            current_reasoning_len = len(metrics.reasoning_content)
+            reasoning_chunk_len = len(reasoning_chunk)
+
+            if current_reasoning_len + reasoning_chunk_len > MAX_OUTPUT_LENGTH:
                 task_logger.warning(
                     f"Reasoning content length exceeded {MAX_OUTPUT_LENGTH} characters, truncating"
                 )
                 reasoning_chunk = reasoning_chunk[
-                    : MAX_OUTPUT_LENGTH - len(metrics.reasoning_content)
+                    : MAX_OUTPUT_LENGTH - current_reasoning_len
                 ]
 
             metrics.reasoning_content += reasoning_chunk
@@ -338,11 +425,23 @@ class StreamProcessor:
             if not metrics.first_thinking_received:
                 metrics.first_thinking_received = True
                 metrics.first_thinking_token_time = time.time()
-                # Add safety check for start_time
-                if start_time is not None and start_time > 0:
-                    ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
-                    EventManager.fire_metric_event(
-                        "Time_to_first_reasoning_token", ttfrt, len(reasoning_chunk)
+                # Enhanced safety check for start_time and time calculations
+                try:
+                    if (
+                        start_time is not None
+                        and start_time > 0
+                        and metrics.first_thinking_token_time is not None
+                    ):
+                        ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
+                        if ttfrt >= 0:  # Ensure positive time difference
+                            EventManager.fire_metric_event(
+                                "Time_to_first_reasoning_token",
+                                ttfrt,
+                                len(reasoning_chunk),
+                            )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating first reasoning token time: {e}"
                     )
                 # task_logger.info(f"Recv first reasoning token: {reasoning_chunk}")
         elif (
@@ -356,10 +455,25 @@ class StreamProcessor:
                 and metrics.first_thinking_token_time is not None
             ):
                 metrics.reasoning_ended = True
-                ttrc = (time.time() - metrics.first_thinking_token_time) * 1000
-                EventManager.fire_metric_event(
-                    "Time_to_reasoning_completion", ttrc, len(metrics.reasoning_content)
-                )
+                try:
+                    current_time = time.time()
+                    ttrc = (current_time - metrics.first_thinking_token_time) * 1000
+                    if ttrc >= 0:  # Ensure positive time difference
+                        # Ensure metrics.reasoning_content is not None before calling len()
+                        reasoning_content_len = (
+                            len(metrics.reasoning_content)
+                            if metrics.reasoning_content is not None
+                            else 0
+                        )
+                        EventManager.fire_metric_event(
+                            "Time_to_reasoning_completion",
+                            ttrc,
+                            reasoning_content_len,
+                        )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating reasoning completion time: {e}"
+                    )
                 # task_logger.info(
                 #     f"Recv reasoning completion: {metrics.reasoning_content}"
                 # )
@@ -399,8 +513,12 @@ class StreamProcessor:
             if field_mapping.data_format == "json":
                 try:
                     chunk_json = json.loads(chunk_content)
-                    return ErrorHandler.check_json_error(chunk_json)
-                except (json.JSONDecodeError, UnicodeDecodeError):
+                    error_result = ErrorHandler.check_json_error(chunk_json)
+                    return error_result
+                except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                    task_logger.error(
+                        f"Failed to parse chunk as JSON: {e} | Chunk content: {chunk_content} if chunk_content else 'No content'"
+                    )
                     return None
 
             return None
@@ -425,7 +543,7 @@ class RequestHandler:
         self.task_logger = task_logger
 
     def prepare_request_kwargs(
-        self, prompt_data: Dict[str, Any]
+        self, prompt_data: Optional[Dict[str, Any]]
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Handle API requests with user-provided payload."""
         try:
@@ -441,13 +559,23 @@ class RequestHandler:
 
             user_prompt = ""
 
-            # Check if test_data is empty (no dataset mode)
-            if not self.config.test_data or self.config.test_data.strip() == "":
+            # Check if we're in dataset mode
+            is_dataset_mode = bool(
+                self.config.test_data and self.config.test_data.strip()
+            )
+
+            if not is_dataset_mode:
+                # No dataset mode - use payload directly
                 user_prompt = self._extract_prompt_from_payload(payload)
             else:
                 # Dataset mode - update payload with prompt data
-                user_prompt = prompt_data.get("prompt", DEFAULT_PROMPT)
+                if prompt_data is None:
+                    self.task_logger.error(
+                        "Dataset mode enabled but no prompt data provided"
+                    )
+                    return None, None
 
+                user_prompt = prompt_data.get("prompt", DEFAULT_PROMPT)
                 # Special handling for chat/completions API
                 if self.config.api_path == DEFAULT_API_PATH:
                     self._handle_chat_completions_payload(
@@ -461,7 +589,7 @@ class RequestHandler:
             request_name = (
                 "chat_completions"
                 if self.config.api_path == DEFAULT_API_PATH
-                else "api_request"
+                else "custom_api"
             )
 
             base_request_kwargs = {
@@ -533,9 +661,6 @@ class RequestHandler:
                 or payload.get("stream") == ""
             ):
                 payload["stream"] = self.config.stream_mode
-                self.task_logger.debug(
-                    f"Auto-set stream field to: {self.config.stream_mode}"
-                )
 
             # Auto-supplement model field if missing or empty
             if (
@@ -563,7 +688,6 @@ class RequestHandler:
             field_mapping = ConfigManager.parse_field_mapping(
                 self.config.field_mapping or ""
             )
-
             # Update payload with current prompt data if field mapping is configured
             if field_mapping.prompt:
                 try:
@@ -597,7 +721,6 @@ class RequestHandler:
         try:
             keys = path.split(".")
             current = data
-
             # Navigate to the parent of the target field
             for key in keys[:-1]:
                 current = self._navigate_to_key(current, key)
@@ -729,6 +852,7 @@ class StreamHandler:
                 try:
                     # Process as streaming response
                     for chunk in self._iter_stream_lines(response):
+                        # self.task_logger.info(f"chunk: {chunk}")
                         error_msg = StreamProcessor.check_chunk_error(
                             chunk, field_mapping, self.task_logger
                         )
@@ -739,7 +863,13 @@ class StreamHandler:
                                 self.task_logger,
                                 response,
                                 response_time,
-                                request_name,
+                                additional_context={
+                                    "chunk_preview": (
+                                        chunk[:100] if chunk else "No chunk data"
+                                    ),
+                                    "api_path": self.config.api_path,
+                                    "request_name": request_name,
+                                },
                             )
                             has_failed = True
                             return "", ""
@@ -754,27 +884,54 @@ class StreamHandler:
 
                     # Only mark as success if no failures occurred
                     if not has_failed:
-                        # Fire completion events for streaming
-                        total_time = (time.time() - start_time) * 1000
-                        completion_time = (
-                            (time.time() - metrics.first_output_token_time) * 1000
-                            if metrics.first_token_received
-                            and metrics.first_output_token_time is not None
-                            else 0
-                        )
+                        # Fire completion events for streaming with enhanced safety checks
+                        try:
+                            current_time = time.time()
+                            total_time = (
+                                (current_time - start_time) * 1000
+                                if start_time is not None and start_time > 0
+                                else 0
+                            )
 
-                        EventManager.fire_metric_event(
-                            METRIC_TTOC,
-                            completion_time,
-                            len(metrics.model_output or ""),
-                        )
-                        EventManager.fire_metric_event(
-                            METRIC_TTT,
-                            total_time,
-                            len(metrics.model_output or "")
-                            + len(metrics.reasoning_content or ""),
-                        )
-                        response.success()
+                            completion_time = 0.0
+                            if (
+                                metrics.first_token_received
+                                and metrics.first_output_token_time is not None
+                                and metrics.first_output_token_time > 0
+                            ):
+                                completion_time = (
+                                    current_time - metrics.first_output_token_time
+                                ) * 1000
+
+                            # Ensure metrics fields are not None before calling len()
+                            model_output_len = (
+                                len(metrics.model_output)
+                                if metrics.model_output is not None
+                                else 0
+                            )
+                            reasoning_content_len = (
+                                len(metrics.reasoning_content)
+                                if metrics.reasoning_content is not None
+                                else 0
+                            )
+
+                            EventManager.fire_metric_event(
+                                METRIC_TTOC,
+                                completion_time,
+                                model_output_len,
+                            )
+                            EventManager.fire_metric_event(
+                                METRIC_TTT,
+                                total_time,
+                                model_output_len + reasoning_content_len,
+                            )
+                            response.success()
+
+                        except Exception as e:
+                            self.task_logger.error(
+                                f"Error calculating streaming metrics: {e}"
+                            )
+                            response.success()  # Still mark as success since we got response
 
                 except OSError as e:
                     self._handle_stream_error(e, response, start_time, request_name)
@@ -786,7 +943,6 @@ class StreamHandler:
                         self.task_logger,
                         response,
                         response_time,
-                        request_name,
                     )
                     has_failed = True
 
@@ -797,7 +953,10 @@ class StreamHandler:
                 self.task_logger,
                 response,
                 response_time,
-                request_name,
+                additional_context={
+                    "api_path": self.config.api_path,
+                    "request_name": request_name,
+                },
             )
             has_failed = True
         except Exception as e:
@@ -807,7 +966,10 @@ class StreamHandler:
                 self.task_logger,
                 response,
                 response_time,
-                request_name,
+                additional_context={
+                    "api_path": self.config.api_path,
+                    "request_name": request_name,
+                },
             )
             has_failed = True
 
@@ -830,7 +992,14 @@ class StreamHandler:
             self.task_logger.error(f"Stream processing network error: {error_details}")
 
         ErrorHandler.handle_general_exception(
-            error_details, self.task_logger, response, response_time, request_name
+            error_details,
+            self.task_logger,
+            response,
+            response_time,
+            additional_context={
+                "api_path": self.config.api_path,
+                "request_name": request_name,
+            },
         )
 
     def handle_non_stream_request(
@@ -866,7 +1035,15 @@ class StreamHandler:
                             self.task_logger,
                             response,
                             total_time,
-                            request_name,
+                            additional_context={
+                                "response_preview": (
+                                    str(resp_json)[:200]
+                                    if resp_json
+                                    else "No response data"
+                                ),
+                                "api_path": self.config.api_path,
+                                "request_name": request_name,
+                            },
                         )
                         has_failed = True
                         return "", "", usage_tokens
@@ -906,24 +1083,47 @@ class StreamHandler:
 
                     # Only mark as success if no failures occurred
                     if not has_failed:
-                        EventManager.fire_metric_event(
-                            METRIC_TTT,
-                            total_time,
-                            len(model_output or "") + len(reasoning_content or ""),
-                        )
-                        response.success()
+                        try:
+                            # Ensure output fields are not None before calling len()
+                            model_output_len = (
+                                len(model_output) if model_output is not None else 0
+                            )
+                            reasoning_content_len = (
+                                len(reasoning_content)
+                                if reasoning_content is not None
+                                else 0
+                            )
+
+                            EventManager.fire_metric_event(
+                                METRIC_TTT,
+                                total_time,
+                                model_output_len + reasoning_content_len,
+                            )
+                            response.success()
+                        except Exception as e:
+                            self.task_logger.error(
+                                f"Error calculating non-streaming metrics: {e}"
+                            )
+                            response.success()  # Still mark as success since we got response
 
                 except (json.JSONDecodeError, KeyError) as e:
                     self.task_logger.error(f"Failed to parse response JSON: {e}")
                     ErrorHandler.handle_general_exception(
-                        str(e), self.task_logger, response, total_time, request_name
+                        str(e), self.task_logger, response, total_time
                     )
                     has_failed = True
 
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             ErrorHandler.handle_general_exception(
-                str(e), self.task_logger, response, response_time, request_name
+                str(e),
+                self.task_logger,
+                response,
+                total_time,
+                additional_context={
+                    "api_path": self.config.api_path,
+                    "request_name": request_name,
+                },
             )
             has_failed = True
 
@@ -938,7 +1138,7 @@ class StreamHandler:
             error_msg = "Response object is None"
             response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
             ErrorHandler.handle_general_exception(
-                error_msg, self.task_logger, None, response_time, request_name
+                error_msg, self.task_logger, None, response_time
             )
             return True
 
@@ -951,7 +1151,7 @@ class StreamHandler:
                     (time.time() - start_time) * 1000 if start_time > 0 else 0
                 )
                 ErrorHandler.handle_general_exception(
-                    error_msg, self.task_logger, response, response_time, request_name
+                    error_msg, self.task_logger, response, response_time
                 )
                 return True
 
@@ -965,14 +1165,21 @@ class StreamHandler:
                     (time.time() - start_time) * 1000 if start_time > 0 else 0
                 )
                 ErrorHandler.handle_general_exception(
-                    error_msg, self.task_logger, response, response_time, request_name
+                    error_msg, self.task_logger, response, response_time
                 )
                 return True
         except Exception as e:
             error_msg = f"Error checking response status: {e}"
             response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
             ErrorHandler.handle_general_exception(
-                error_msg, self.task_logger, response, response_time, request_name
+                error_msg,
+                self.task_logger,
+                response,
+                response_time,
+                additional_context={
+                    "api_path": self.config.api_path,
+                    "request_name": request_name,
+                },
             )
             return True
 

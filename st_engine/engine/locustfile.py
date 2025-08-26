@@ -65,7 +65,6 @@ def graceful_signal_handler(signum, frame):
         )
         return
 
-    task_logger.info(f"Received signal {signum}. Initiating graceful shutdown.")
     _shutdown_in_progress = True
 
     # Let the default signal handler proceed, but our flag will prevent duplicate User.stop() calls
@@ -391,9 +390,6 @@ class LLMTestUser(FastHttpUser):
                 self.environment.prompt_queue.put_nowait(prompt_data)
                 return prompt_data
             else:
-                self.task_logger.warning(
-                    "Prompt queue is empty or not initialized. Using default prompt."
-                )
                 return {"id": "default", "prompt": DEFAULT_PROMPT}
         except queue.Empty:
             self.task_logger.warning("Prompt queue is empty. Using default prompt.")
@@ -419,21 +415,19 @@ class LLMTestUser(FastHttpUser):
             model_name = global_config.model_name or ""
             system_prompt = global_config.system_prompt or ""
 
-            # Validate inputs
             user_prompt = user_prompt or ""
             reasoning_content = reasoning_content or ""
             model_output = model_output or ""
 
             # Prefer usage_tokens if available and valid
-            completion_tokens = None
-            total_tokens = None
-
-            if usage_tokens:
-                completion_tokens = usage_tokens.get("completion_tokens")
-                total_tokens = usage_tokens.get("total_tokens")
+            completion_tokens = 0
+            total_tokens = 0
 
             # Fallback: manual counting if completion_tokens and total_tokens are missing
-            if completion_tokens is None or total_tokens is None:
+            if usage_tokens and isinstance(usage_tokens, dict):
+                completion_tokens = usage_tokens.get("completion_tokens", 0) or 0
+                total_tokens = usage_tokens.get("total_tokens", 0) or 0
+            else:
                 system_tokens = (
                     count_tokens(system_prompt, model_name) if system_prompt else 0
                 )
@@ -453,9 +447,17 @@ class LLMTestUser(FastHttpUser):
                 total_tokens = system_tokens + user_tokens + completion_tokens
 
             # Ensure integer and log - only if tokens are not None and positive
-            if completion_tokens is not None and completion_tokens > 0:
+            if (
+                completion_tokens
+                and isinstance(completion_tokens, (int, float))
+                and completion_tokens > 0
+            ):
                 global_task_queue["completion_tokens_queue"].put(int(completion_tokens))
-            if total_tokens is not None and total_tokens > 0:
+            if (
+                total_tokens
+                and isinstance(total_tokens, (int, float))
+                and total_tokens > 0
+            ):
                 global_task_queue["all_tokens_queue"].put(int(total_tokens))
 
         except Exception as e:
@@ -465,14 +467,14 @@ class LLMTestUser(FastHttpUser):
     def chat_request(self):
         """Main Locust task that executes a single chat request."""
         global_config = get_global_config()
-
-        prompt_data = self.get_next_prompt()
-
+        # Check if we need dataset mode (avoid unnecessary queue operations)
+        needs_dataset = bool(
+            global_config.test_data and global_config.test_data.strip()
+        )
+        prompt_data = self.get_next_prompt() if needs_dataset else None
         base_request_kwargs, user_prompt = self.request_handler.prepare_request_kwargs(
             prompt_data
         )
-        # self.task_logger.info(f"base_request_kwargs: {base_request_kwargs}")
-
         if not base_request_kwargs:
             self.task_logger.error(
                 "Failed to generate request arguments. Skipping task."
@@ -490,7 +492,6 @@ class LLMTestUser(FastHttpUser):
             if base_request_kwargs
             else "failure"
         )
-
         try:
             if global_config.stream_mode:
                 reasoning_content, model_output = (
@@ -505,17 +506,29 @@ class LLMTestUser(FastHttpUser):
                     )
                 )
         except Exception as e:
-            self.task_logger.error(
-                f"Unhandled exception in chat_request: {e}", exc_info=True
-            )
-            # Record the failure event for unhandled exceptions
-            response_time = (time.time() - start_time) * 1000
+            self.task_logger.error(f"Unhandled exception in chat_request: {e}")
+            # Record the failure event for unhandled exceptions with enhanced context
+            try:
+                response_time = (
+                    (time.time() - start_time) * 1000 if start_time is not None else 0
+                )
+            except Exception:
+                response_time = 0
+
             ErrorHandler.handle_general_exception(
                 f"Unhandled exception in chat_request: {e}",
                 self.task_logger,
                 response=None,
                 response_time=response_time,
-                request_name=request_name,
+                additional_context={
+                    "stream_mode": global_config.stream_mode,
+                    "api_path": global_config.api_path,
+                    "prompt_preview": (
+                        str(user_prompt)[:100] if user_prompt else "No prompt"
+                    ),
+                    "task_id": global_config.task_id,
+                    "request_name": request_name,
+                },
             )
 
         if reasoning_content or model_output or usage_tokens:

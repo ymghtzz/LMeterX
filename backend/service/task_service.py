@@ -692,8 +692,20 @@ async def compare_performance_svc(
         for task_id in task_ids:
             task = tasks[task_id]
 
-            # Get TTFT and RPS metrics (from Time_to_first_output_token)
-            ttft_query = (
+            # Get TTFT metrics - first try Time_to_first_reasoning_token, then Time_to_first_output_token
+            ttft_reasoning_query = (
+                select(TaskResult)
+                .where(
+                    TaskResult.task_id == task_id,
+                    TaskResult.metric_type == "Time_to_first_reasoning_token",
+                )
+                .order_by(TaskResult.created_at.desc())
+                .limit(1)
+            )
+            ttft_reasoning_result = await db.execute(ttft_reasoning_query)
+            ttft_reasoning_data = ttft_reasoning_result.scalar_one_or_none()
+
+            ttft_output_query = (
                 select(TaskResult)
                 .where(
                     TaskResult.task_id == task_id,
@@ -702,8 +714,21 @@ async def compare_performance_svc(
                 .order_by(TaskResult.created_at.desc())
                 .limit(1)
             )
-            ttft_result = await db.execute(ttft_query)
-            ttft_data = ttft_result.scalar_one_or_none()
+            ttft_output_result = await db.execute(ttft_output_query)
+            ttft_output_data = ttft_output_result.scalar_one_or_none()
+
+            # Get Total_time metrics for RPS
+            total_time_query = (
+                select(TaskResult)
+                .where(
+                    TaskResult.task_id == task_id,
+                    TaskResult.metric_type == "Total_time",
+                )
+                .order_by(TaskResult.created_at.desc())
+                .limit(1)
+            )
+            total_time_result = await db.execute(total_time_query)
+            total_time_data = total_time_result.scalar_one_or_none()
 
             # Get token metrics (from token_metrics)
             token_query = (
@@ -719,7 +744,7 @@ async def compare_performance_svc(
             token_data = token_result.scalar_one_or_none()
 
             # Check if we have the required data
-            if not ttft_data and not token_data:
+            if not ttft_reasoning_data and not ttft_output_data and not token_data:
                 logger.warning(f"No results found for task {task_id}")
                 continue
 
@@ -732,11 +757,20 @@ async def compare_performance_svc(
             avg_total_tpr = 0.0
             avg_completion_tpr = 0.0
 
-            # Extract TTFT and RPS data
-            if ttft_data:
-                ttft = ttft_data.min_latency or 0.0  # TTFT as minimum latency
-                rps = ttft_data.rps or 0.0
-                avg_response_time = ttft_data.avg_latency or 0.0
+            # Extract TTFT data - prioritize Time_to_first_reasoning_token, then Time_to_first_output_token
+            # Use avg_latency and convert from ms to seconds
+            if ttft_reasoning_data and ttft_reasoning_data.avg_latency:
+                ttft = ttft_reasoning_data.avg_latency / 1000.0  # Convert ms to seconds
+                avg_response_time = ttft_reasoning_data.avg_latency
+            elif ttft_output_data and ttft_output_data.avg_latency:
+                ttft = ttft_output_data.avg_latency / 1000.0  # Convert ms to seconds
+                avg_response_time = ttft_output_data.avg_latency
+
+            # Extract RPS data - prioritize Total_time, then Time_to_first_output_token
+            if total_time_data and total_time_data.rps:
+                rps = total_time_data.rps
+            elif ttft_output_data and ttft_output_data.rps:
+                rps = ttft_output_data.rps
 
             # Extract token metrics data
             if token_data:
@@ -1041,14 +1075,14 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
             "response": None,
         }
     except httpx.TimeoutException as e:
-        logger.error(f"Request timeout when testing API endpoint: {e}")
+        logger.error(f"Request timeout when testing API endpoint.")
         return {
             "status": "error",
             "error": f"Request timeout: {str(e)}",
             "response": None,
         }
     except httpx.ConnectError as e:
-        logger.error(f"Connection error when testing API endpoint: {e}")
+        logger.error(f"Connection error when testing API endpoint.")
         return {
             "status": "error",
             "error": f"Connection error: {str(e)}",
@@ -1163,7 +1197,9 @@ async def _handle_streaming_response(response, full_url: str) -> Dict:
             },
         }
     except Exception as stream_error:
-        logger.error(f"Error processing stream: {stream_error}")
+        logger.error(
+            f"Error processing stream: {stream_error}. stream data: {stream_data}"
+        )
         return {
             "status": "error",
             "error": f"Streaming data processing error: {str(stream_error)}",

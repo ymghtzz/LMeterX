@@ -58,7 +58,7 @@ DEFAULT_API_PATH = "/chat/completions"
 STREAM_END_MARKERS = ["[DONE]", "[END]", "DONE", "END"]
 STREAM_ERROR_MARKERS = ["[ERROR]", "ERROR"]
 MAX_CHUNK_SIZE = 1000  # Maximum chunk size to process
-MAX_OUTPUT_LENGTH = 100000  # Maximum output length to prevent memory issues
+MAX_OUTPUT_LENGTH = 1000000  # Maximum output length to prevent memory issues
 
 # === TIMING METRICS NAMES ===
 METRIC_TTFOT = "Time_to_first_output_token"

@@ -354,9 +354,6 @@ def init_prompt_queue_from_file(file_path: str, task_logger=None) -> queue.Queue
         for prompt_data in prompts:
             q.put_nowait(prompt_data)
 
-        # effective_logger.info(
-        #     f"Successfully initialized queue with {q.qsize()} prompts from file: {file_path}"
-        # )
         return q
 
     except Exception as e:
@@ -387,15 +384,11 @@ def init_prompt_queue(
 
     # Case 1: Empty test_data - no dataset mode, use request_payload directly
     if not test_data or test_data.strip() == "":
-        # effective_logger.info(
-        #     "No test_data provided, will use request_payload directly"
-        # )
         # Return empty queue for no-dataset mode
         return queue.Queue()
 
     # Case 2: test_data is "default" - use built-in dataset based on chat_type
     if test_data.strip().lower() == "default":
-        # effective_logger.info(f"Using default dataset for chat_type={chat_type}")
         filename = "0.jsonl" if chat_type == 0 else "1.jsonl"
         data_file = os.path.join(PROMPTS_DIR, filename)
 
@@ -406,7 +399,6 @@ def init_prompt_queue(
 
     # Case 3: test_data is JSONL content string (starts with "{")
     if test_data.strip().startswith("{"):
-        # effective_logger.info("Processing test_data as JSONL content string")
         return init_prompt_queue_from_string(test_data, task_logger)
 
     # Case 4: test_data is a file path - handle both absolute and relative paths
@@ -469,6 +461,8 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     Returns:
         int: The number of tokens in the text.
     """
+    if not text or text == "":
+        return 0
     try:
         text_key = hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest()
         cache_key = (text_key, model_name)
@@ -507,6 +501,10 @@ def _drain_queue(q: queue.Queue) -> List[int]:
         try:
             items.append(q.get_nowait())
         except queue.Empty:
+            break
+        except Exception as e:
+            # Be defensive: different queue implementations may raise different exceptions
+            logger.warning(f"Unexpected error draining queue: {e}")
             break
     return items
 
