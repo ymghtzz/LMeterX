@@ -358,9 +358,9 @@ const ResultComparison: React.FC = () => {
       title: t('pages.resultComparison.modelName'),
       dataIndex: 'model_name',
       key: 'model_name',
-      render: (model: string) => (
-        <Tag color={getModelColor(model)}>{model}</Tag>
-      ),
+      // render: (model: string) => (
+      //   <Tag color={getModelColor(model)}>{model}</Tag>
+      // ),
     },
     {
       title: t('pages.resultComparison.concurrentUsers'),

@@ -237,12 +237,6 @@ class ConfigManager:
 class CertificateManager:
     """Manages SSL certificate configuration."""
 
-    # @staticmethod
-    # def configure_certificates(
-    #     cert_file: Optional[str], key_file: Optional[str], task_logger
-    # ) -> Optional[Union[str, Tuple[str, str]]]:
-    #     """Configure client certificate and key."""
-    #     return FilePathUtils.configure_certificates(cert_file, key_file, task_logger)
     @staticmethod
     def configure_certificates(
         cert_file: Optional[str], key_file: Optional[str], task_logger
