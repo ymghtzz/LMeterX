@@ -294,7 +294,7 @@ const TaskResults: React.FC = () => {
 
     setIsAnalyzing(true);
     try {
-      const response = await analysisApi.analyzeTask(id, currentLanguage);
+      const response = await analysisApi.analyzeTasks([id], currentLanguage);
 
       // Check if the response indicates an error
       if (
@@ -303,9 +303,7 @@ const TaskResults: React.FC = () => {
       ) {
         // Extract the most specific error message
         const errorMessage =
-          response.data?.error_message ||
-          response.data?.error ||
-          t('pages.results.analysisFailed');
+          response.data?.error_message || t('pages.results.analysisFailed');
 
         // If backend returns error_message, show it directly without prefix
         if (response.data?.error_message) {
@@ -331,7 +329,12 @@ const TaskResults: React.FC = () => {
       // Handle different types of errors
       let errorMessage = t('pages.results.analysisFailed');
 
-      if (err.data) {
+      // Check for timeout errors specifically
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage =
+          t('pages.results.analysisTimeout') ||
+          'AI analysis timeout, please try again later';
+      } else if (err.data) {
         // API error response - prioritize error_message over error
         if (err.data.error_message) {
           errorMessage = err.data.error_message;

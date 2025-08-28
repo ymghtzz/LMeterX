@@ -62,10 +62,14 @@ const BenchmarkJobs: React.FC = () => {
     refreshing,
     error,
     lastRefreshTime,
+    searchText,
+    searchInput,
+    statusFilter,
     createJob,
     stopJob,
     manualRefresh,
-    setSearchText,
+    performSearch,
+    updateSearchInput,
     setStatusFilter,
   } = useBenchmarkJobs(messageApi);
 
@@ -248,11 +252,12 @@ const BenchmarkJobs: React.FC = () => {
         dataIndex: 'status',
         key: 'status',
         width: 120,
-        filters: Object.entries(TASK_STATUS_MAP).map(([key, value]) => ({
+        filters: Object.entries(TASK_STATUS_MAP).map(([key]) => ({
           text: t(`status.${key}`),
           value: key,
         })),
-        onFilter: (value, record) => record.status?.toLowerCase() === value,
+        filteredValue: statusFilter ? statusFilter.split(',') : null,
+        // Remove onFilter since we're using server-side filtering
         render: (status: string) => <StatusTag status={status} />,
       },
       {
@@ -367,24 +372,21 @@ const BenchmarkJobs: React.FC = () => {
    */
   const handleTableChange = useCallback(
     (newPagination: any, filters: any) => {
-      // Check if filters have changed (not just pagination)
-      const isFilterChange =
-        filters && Object.keys(filters).some(key => filters[key]);
+      // Handle status filter change from table
+      const newStatusFilter = filters?.status ? filters.status.join(',') : '';
+      const isFilterChange = newStatusFilter !== statusFilter;
 
+      // Update pagination - reset to page 1 if filters changed
       setPagination({
-        current: isFilterChange ? 1 : newPagination.current, // Reset to page 1 if filters changed
+        current: isFilterChange ? 1 : newPagination.current,
         pageSize: newPagination.pageSize,
         total: newPagination.total,
       });
 
-      // Handle status filter change from table
-      if (filters.status) {
-        setStatusFilter(filters.status.join(','));
-      } else {
-        setStatusFilter('');
-      }
+      // Update status filter
+      setStatusFilter(newStatusFilter);
     },
-    [setPagination, setStatusFilter]
+    [setPagination, setStatusFilter, statusFilter]
   );
 
   /**
@@ -437,12 +439,10 @@ const BenchmarkJobs: React.FC = () => {
           {renderLastRefreshTime()}
           <Search
             placeholder={t('pages.benchmarkJobs.searchPlaceholder')}
-            onSearch={setSearchText}
-            onChange={e => {
-              if (!e.target.value) {
-                setSearchText('');
-              }
-            }}
+            value={searchInput}
+            onSearch={performSearch}
+            onChange={e => updateSearchInput(e.target.value)}
+            onClear={() => performSearch('')}
             className='w-300'
             allowClear
             enterButton
@@ -497,7 +497,7 @@ const BenchmarkJobs: React.FC = () => {
         onCancel={handleModalCancel}
         footer={null}
         width={800}
-        destroyOnClose
+        destroyOnHidden
       >
         <CreateJobForm
           onSubmit={handleCreateJob}

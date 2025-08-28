@@ -158,6 +158,7 @@ class GlobalStateManager:
 
     @classmethod
     def get_ssl_context(cls) -> Optional[ssl.SSLContext]:
+        """Get the SSL context for secure connections."""
         return cls._ssl_context
 
 

@@ -823,20 +823,16 @@ body {
   margin-top: 0;
   margin-bottom: 16px;
   width: 100%;
-  overflow: auto;
-  display: block;
-  border-radius: 6px;
-  overflow: hidden;
+  min-width: 100%;
+  white-space: nowrap;
 }
 
 .markdown-content table th,
 .markdown-content table td {
   padding: 6px 13px;
   border: 1px solid #dfe2e5;
-}
-
-.markdown-content table td:last-child {
-  border-right: none;
+  white-space: nowrap;
+  min-width: 120px;
 }
 
 .markdown-content table th {
@@ -870,10 +866,28 @@ body {
   border-radius: 6px;
   padding: 16px;
   margin: 8px 0;
+  overflow-x: auto;
 }
 
 .analysis-content .markdown-content {
   margin: 0;
+}
+
+.analysis-content .markdown-content table {
+  min-width: 800px;
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .analysis-content .markdown-content table {
+    min-width: 600px;
+  }
+}
+
+@media (max-width: 768px) {
+  .analysis-content .markdown-content table {
+    min-width: 400px;
+  }
 }
 
 @media print {

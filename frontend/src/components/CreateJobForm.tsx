@@ -480,8 +480,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleDatasetFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
-      // Validate file size (10MB limit)
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      // Validate file size (1GB limit)
+      const maxSize = 10 * 1024 * 1024 * 1024; // 10GB
       if (file.size > maxSize) {
         message.error(
           t('components.createJobForm.fileSizeExceedsLimitWithSize', {

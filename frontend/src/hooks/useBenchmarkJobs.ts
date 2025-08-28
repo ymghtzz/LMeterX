@@ -6,7 +6,7 @@
  * */
 import type { MessageInstance } from 'antd/es/message/interface';
 import axios from 'axios';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pagination as ApiPagination, BenchmarkJob } from '../types/benchmark';
 
@@ -32,6 +32,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshTime, setLastRefreshTime] = useState<Date | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [searchInput, setSearchInput] = useState(''); // For input field display
   const [statusFilter, setStatusFilter] = useState('');
 
   const pollingTimerRef = useRef<number | null>(null);
@@ -128,7 +129,7 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
     try {
       const response = await axios.get(`${VITE_API_BASE_URL}/tasks/status`, {
         signal: controller.signal,
-        timeout: 15000,
+        timeout: 30000, // Increase to 30 seconds for status polling
       });
 
       if (controller.signal.aborted) return;
@@ -266,6 +267,9 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
     fetchJobs,
   ]);
 
+  // Only sync searchInput with searchText when searchText changes externally (not from user input)
+  // This prevents clearing the input while user is typing
+
   // Polling lifecycle management
   useEffect(() => {
     const hasRunningTasks = jobs.some(job =>
@@ -346,9 +350,10 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
     [fetchJobs, messageApi, t]
   );
 
-  const setSearchTextWithReset = useCallback(
+  const performSearch = useCallback(
     (text: string) => {
       setSearchText(text);
+      setSearchInput(text);
       // Reset pagination to first page when searching
       if (text !== searchText) {
         setPagination(prev => ({
@@ -360,31 +365,54 @@ export const useBenchmarkJobs = (messageApi: MessageInstance) => {
     [searchText]
   );
 
-  const filteredJobs = useMemo(() => {
-    if (!searchText) return jobs;
-    return jobs.filter(job => {
-      const search = searchText.toLowerCase();
-      return (
-        (job.id || '').toLowerCase().includes(search) ||
-        (job.name || '').toLowerCase().includes(search) ||
-        (job.model || '').toLowerCase().includes(search)
-      );
-    });
-  }, [jobs, searchText]);
+  const updateSearchInput = useCallback((text: string) => {
+    setSearchInput(text);
+  }, []);
+
+  const setStatusFilterWithReset = useCallback(
+    (status: string) => {
+      setStatusFilter(status);
+      // Reset pagination to first page when filtering
+      if (status !== statusFilter) {
+        setPagination(prev => ({
+          ...prev,
+          current: 1,
+        }));
+      }
+    },
+    [statusFilter]
+  );
+
+  // Remove client-side filtering since server handles it
+  // const filteredJobs = useMemo(() => {
+  //   if (!searchText) return jobs;
+  //   return jobs.filter(job => {
+  //     const search = searchText.toLowerCase();
+  //     return (
+  //       (job.id || '').toLowerCase().includes(search) ||
+  //       (job.name || '').toLowerCase().includes(search) ||
+  //       (job.model || '').toLowerCase().includes(search)
+  //     );
+  //   });
+  // }, [jobs, searchText]);
 
   return {
     jobs,
-    filteredJobs,
+    filteredJobs: jobs, // Use jobs directly since server handles filtering
     pagination,
     setPagination,
     loading,
     refreshing,
     error,
     lastRefreshTime,
+    searchText,
+    searchInput,
+    statusFilter,
     createJob,
     stopJob,
     manualRefresh: () => fetchJobs(true),
-    setSearchText: setSearchTextWithReset,
-    setStatusFilter,
+    performSearch,
+    updateSearchInput,
+    setStatusFilter: setStatusFilterWithReset,
   };
 };

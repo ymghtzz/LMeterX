@@ -12,6 +12,7 @@ import {
   InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SwapOutlined,
 } from '@ant-design/icons';
 import { Column } from '@ant-design/plots';
@@ -44,8 +45,12 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { api } from '../api/apiClient';
+import { analysisApi } from '../api/services';
+import { CopyButton } from '../components/ui/CopyButton';
 import { LoadingSpinner } from '../components/ui/LoadingState';
+import MarkdownRenderer from '../components/ui/MarkdownRenderer';
 import { PageHeader } from '../components/ui/PageHeader';
+import { useLanguage } from '../contexts/LanguageContext';
 import { createFileTimestamp, formatDate } from '../utils/date';
 
 const { Title, Text } = Typography;
@@ -57,6 +62,7 @@ interface ModelTaskInfo {
   task_id: string;
   task_name: string;
   created_at: string;
+  duration?: number;
 }
 
 interface ComparisonMetrics {
@@ -64,12 +70,15 @@ interface ComparisonMetrics {
   model_name: string;
   concurrent_users: number;
   task_name: string;
-  ttft: number;
+  duration: string;
+  stream_mode: boolean;
+  dataset_type: string;
+  first_token_latency: number;
+  total_time: number;
   total_tps: number;
   completion_tps: number;
-  avg_total_tpr: number;
-  avg_completion_tpr: number;
-  avg_response_time: number;
+  avg_total_tokens_per_req: number;
+  avg_completion_tokens_per_req: number;
   rps: number;
 }
 
@@ -79,10 +88,12 @@ interface SelectedTask {
   concurrent_users: number;
   task_name: string;
   created_at: string;
+  duration?: number;
 }
 
 const ResultComparison: React.FC = () => {
   const { t } = useTranslation();
+  const { currentLanguage } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -99,9 +110,16 @@ const ResultComparison: React.FC = () => {
   const [tempSelectedTasks, setTempSelectedTasks] = useState<string[]>([]);
   const [messageApi, contextHolder] = message.useMessage();
 
+  // AI Analysis states
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string>('');
+  const [isAnalysisModalVisible, setIsAnalysisModalVisible] = useState(false);
+  const [isDownloadingAnalysis, setIsDownloadingAnalysis] = useState(false);
+
   // Refs for download functionality
   const modelInfoRef = useRef<HTMLDivElement | null>(null);
   const comparisonResultsRef = useRef<HTMLDivElement | null>(null);
+  const analysisModalContentRef = useRef<HTMLDivElement | null>(null);
 
   // Fetch available tasks for comparison
   const fetchAvailableTasks = useCallback(async () => {
@@ -135,8 +153,8 @@ const ResultComparison: React.FC = () => {
       return;
     }
 
-    if (tempSelectedTasks.length > 10) {
-      messageApi.warning(t('pages.resultComparison.max10TasksAllowed'));
+    if (tempSelectedTasks.length > 5) {
+      messageApi.warning(t('pages.resultComparison.max5TasksAllowed'));
       return;
     }
 
@@ -162,6 +180,7 @@ const ResultComparison: React.FC = () => {
             concurrent_users: task.concurrent_users,
             task_name: task.task_name,
             created_at: task.created_at,
+            duration: task.duration,
           }));
 
         setSelectedTasks(selectedTasksData);
@@ -183,8 +202,8 @@ const ResultComparison: React.FC = () => {
   // Handle task selection in modal
   const handleTaskSelection = (taskId: string, checked: boolean) => {
     if (checked) {
-      if (tempSelectedTasks.length >= 10) {
-        messageApi.warning(t('pages.resultComparison.max10TasksAllowed'));
+      if (tempSelectedTasks.length >= 5) {
+        messageApi.warning(t('pages.resultComparison.max5TasksAllowed'));
         return;
       }
       setTempSelectedTasks([...tempSelectedTasks, taskId]);
@@ -333,6 +352,13 @@ const ResultComparison: React.FC = () => {
       align: 'center',
     },
     {
+      title: t('pages.resultComparison.testDuration'),
+      dataIndex: 'duration',
+      key: 'duration',
+      align: 'center',
+      render: (duration: number) => `${duration || 0}s`,
+    },
+    {
       title: t('pages.resultComparison.createdTime'),
       dataIndex: 'created_at',
       key: 'created_at',
@@ -367,6 +393,13 @@ const ResultComparison: React.FC = () => {
       dataIndex: 'concurrent_users',
       key: 'concurrent_users',
       align: 'center',
+    },
+    {
+      title: t('pages.resultComparison.testDuration'),
+      dataIndex: 'duration',
+      key: 'duration',
+      align: 'center',
+      render: (duration: number) => `${duration || 0}s`,
     },
     {
       title: t('pages.resultComparison.createdTime'),
@@ -448,7 +481,121 @@ const ResultComparison: React.FC = () => {
     </Space>
   );
 
+  // Function to download analysis result as image
+  const handleDownloadAnalysis = async () => {
+    if (!analysisModalContentRef.current) {
+      messageApi.error(
+        t('pages.resultComparison.analysisDownloadFailed', {
+          error: t('pages.resultComparison.comparisonComponentsNotLoaded'),
+        })
+      );
+      return;
+    }
+
+    setIsDownloadingAnalysis(true);
+    messageApi.loading({
+      content: t('pages.resultComparison.generatingComparisonReport'),
+      key: 'downloadAnalysis',
+      duration: 0,
+    });
+
+    try {
+      const canvas = await html2canvas(analysisModalContentRef.current, {
+        useCORS: true,
+        scale: 2,
+        backgroundColor: '#ffffff',
+        width: analysisModalContentRef.current.scrollWidth,
+        height: analysisModalContentRef.current.scrollHeight,
+      } as any);
+
+      // Convert canvas to image and download
+      const image = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = image;
+      link.download = `ai-analysis-comparison-${createFileTimestamp()}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      messageApi.success({
+        content: t('pages.resultComparison.analysisDownloadSuccessful'),
+        key: 'downloadAnalysis',
+        duration: 3,
+      });
+    } catch (err: any) {
+      messageApi.error({
+        content: t('pages.resultComparison.analysisDownloadFailed', {
+          error: err.message || t('pages.resultComparison.unknownError'),
+        }),
+        key: 'downloadAnalysis',
+        duration: 4,
+      });
+    } finally {
+      setIsDownloadingAnalysis(false);
+    }
+  };
+
   // Function to handle comparison results download
+  // Handle AI analysis for comparison results
+  const handleAnalyzeComparison = async () => {
+    if (selectedTasks.length < 1) {
+      messageApi.warning(
+        t('pages.resultComparison.selectAtLeast1TaskForAnalysis')
+      );
+      return;
+    }
+
+    if (selectedTasks.length > 5) {
+      messageApi.warning(
+        t('pages.resultComparison.max5TasksAllowedForAnalysis')
+      );
+      return;
+    }
+
+    setIsAnalyzing(true);
+    try {
+      const taskIds = selectedTasks.map(task => task.task_id);
+      const response = await analysisApi.analyzeTasks(taskIds, currentLanguage);
+
+      if (response.data.status === 'completed') {
+        setAnalysisResult(response.data.analysis_report);
+        setIsAnalysisModalVisible(true);
+        messageApi.success(t('pages.resultComparison.analysisCompleted'));
+      } else {
+        messageApi.error(
+          response.data.error_message ||
+            t('pages.resultComparison.analysisFailed')
+        );
+      }
+    } catch (error: any) {
+      // Handle different types of errors
+      let errorMessage = t('pages.resultComparison.analysisError');
+
+      // Check for timeout errors specifically
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        errorMessage =
+          t('pages.resultComparison.analysisTimeout') ||
+          'AI analysis timeout, please try again later';
+      } else if (error.data) {
+        // API error response - prioritize error_message over error
+        if (error.data.error_message) {
+          errorMessage = error.data.error_message;
+        } else if (error.data.error) {
+          errorMessage = error.data.error;
+        } else if (error.data.detail) {
+          errorMessage = error.data.detail;
+        }
+      } else if (error.message) {
+        // Network or other error
+        errorMessage = error.message;
+      }
+
+      messageApi.error(errorMessage);
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleDownloadComparison = async () => {
     if (!modelInfoRef.current || !comparisonResultsRef.current) {
       messageApi.error(
@@ -589,6 +736,27 @@ const ResultComparison: React.FC = () => {
           <Space>
             <Button
               type='primary'
+              icon={<RobotOutlined />}
+              onClick={handleAnalyzeComparison}
+              loading={isAnalyzing}
+              disabled={selectedTasks.length === 0}
+              style={{
+                backgroundColor: '#52c41a',
+                borderColor: '#52c41a',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#73d13d';
+                e.currentTarget.style.borderColor = '#73d13d';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = '#52c41a';
+                e.currentTarget.style.borderColor = '#52c41a';
+              }}
+            >
+              {t('pages.resultComparison.aiAnalysis')}
+            </Button>
+            <Button
+              type='primary'
               icon={<DownloadOutlined />}
               onClick={handleDownloadComparison}
               loading={isDownloading}
@@ -600,6 +768,18 @@ const ResultComparison: React.FC = () => {
               type='primary'
               icon={<PlusOutlined />}
               onClick={handleModalOpen}
+              style={{
+                backgroundColor: '#faad14',
+                borderColor: '#faad14',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.backgroundColor = '#ffc53d';
+                e.currentTarget.style.borderColor = '#ffc53d';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.backgroundColor = '#faad14';
+                e.currentTarget.style.borderColor = '#faad14';
+              }}
             >
               {t('pages.resultComparison.selectModel')}
             </Button>
@@ -657,7 +837,7 @@ const ResultComparison: React.FC = () => {
               >
                 <Column
                   {...createChartConfig(
-                    'ttft',
+                    'first_token_latency',
                     t('pages.resultComparison.chartTitles.ttft')
                   )}
                 />
@@ -721,7 +901,7 @@ const ResultComparison: React.FC = () => {
               >
                 <Column
                   {...createChartConfig(
-                    'avg_total_tpr',
+                    'avg_total_tokens_per_req',
                     t('pages.resultComparison.chartTitles.avgTotalTpr')
                   )}
                 />
@@ -737,7 +917,7 @@ const ResultComparison: React.FC = () => {
               >
                 <Column
                   {...createChartConfig(
-                    'avg_completion_tpr',
+                    'avg_completion_tokens_per_req',
                     t('pages.resultComparison.chartTitles.avgCompletionTpr')
                   )}
                 />
@@ -849,6 +1029,67 @@ const ResultComparison: React.FC = () => {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* AI Analysis Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <RobotOutlined style={{ color: '#52c41a' }} />
+            {t('pages.resultComparison.aiAnalysisResults')}
+          </div>
+        }
+        open={isAnalysisModalVisible}
+        onCancel={() => setIsAnalysisModalVisible(false)}
+        width={1200}
+        style={{ maxWidth: '95vw' }}
+        footer={[
+          <Button
+            key='download'
+            type='primary'
+            icon={<DownloadOutlined />}
+            onClick={handleDownloadAnalysis}
+            loading={isDownloadingAnalysis}
+            disabled={!analysisResult}
+          >
+            {t('pages.resultComparison.downloadAnalysis')}
+          </Button>,
+          <Button key='close' onClick={() => setIsAnalysisModalVisible(false)}>
+            {t('common.close')}
+          </Button>,
+        ]}
+      >
+        <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+          {analysisResult ? (
+            <div ref={analysisModalContentRef} style={{ position: 'relative' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  zIndex: 1,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                  borderRadius: '4px',
+                  padding: '4px',
+                }}
+              >
+                <CopyButton
+                  text={analysisResult}
+                  successMessage={t('pages.resultComparison.analysisCopied')}
+                  tooltip={t('pages.resultComparison.copyAnalysis')}
+                />
+              </div>
+              <div style={{ paddingRight: '50px', paddingTop: '8px' }}>
+                <MarkdownRenderer
+                  content={analysisResult}
+                  className='analysis-content'
+                />
+              </div>
+            </div>
+          ) : (
+            <Empty description={t('pages.resultComparison.noAnalysisResult')} />
+          )}
+        </div>
       </Modal>
     </div>
   );

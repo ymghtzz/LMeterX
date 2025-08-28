@@ -159,11 +159,35 @@ def encode_image(image_path: str) -> str:
 
 # === DATA PROCESSING ===
 def _normalize_prompt_field(prompt: Any) -> str:
-    """Normalize prompt field to string."""
+    """Normalize prompt field to string.
+
+    Supports multiple input formats:
+    - String: returned as-is
+    - Simple list: first element converted to string
+    - Object with 'messages' key: JSON serialized (for chat-like formats)
+    - Other objects: JSON serialized
+    """
     if isinstance(prompt, str):
         return prompt
     elif isinstance(prompt, list) and prompt:
+        # Handle simple list format like ["prompt text"]
         return str(prompt[0])
+    elif isinstance(prompt, dict):
+        # Handle complex object formats
+        try:
+            # Special handling for chat-like formats with messages
+            if "messages" in prompt:
+                # This handles formats like {"messages": [{"role": "user", "content": "..."}]}
+                return json.dumps(prompt, ensure_ascii=False, separators=(",", ":"))
+            else:
+                # Handle other dictionary formats
+                return json.dumps(prompt, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError) as e:
+            # Fallback to string representation if JSON serialization fails
+            logger.warning(
+                f"Failed to serialize prompt object to JSON: {e}, using string representation"
+            )
+            return str(prompt)
     else:
         return ""
 
@@ -200,9 +224,18 @@ def _parse_jsonl_line(
         prompt_id = json_obj.get("id", line_num)
 
         # Extract and normalize prompt
-        prompt = _normalize_prompt_field(json_obj.get("prompt"))
+        raw_prompt = json_obj.get("prompt")
+        prompt = _normalize_prompt_field(raw_prompt)
         if not prompt:
-            effective_logger.warning(f"Empty prompt in line {line_num}: {line}")
+            # For debugging, show the type and structure of the raw prompt
+            prompt_info = f"type: {type(raw_prompt).__name__}"
+            if isinstance(raw_prompt, dict) and "messages" in raw_prompt:
+                prompt_info += f", has {len(raw_prompt['messages'])} messages"
+            elif isinstance(raw_prompt, list):
+                prompt_info += f", list length: {len(raw_prompt)}"
+            effective_logger.warning(
+                f"Empty prompt in line {line_num} ({prompt_info}): {line}..."
+            )
             return None
 
         # Handle images

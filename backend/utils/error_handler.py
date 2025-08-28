@@ -164,5 +164,5 @@ class ErrorMessages:
     # Authentication related errors
     UNAUTHORIZED = "Unauthorized access"
     INVALID_CREDENTIALS = "Invalid credentials"
-    TOKEN_EXPIRED = "Token expired"
+    TOKEN_EXPIRED = "Token expired"  # nosec
     INSUFFICIENT_PERMISSIONS = "Insufficient permissions"

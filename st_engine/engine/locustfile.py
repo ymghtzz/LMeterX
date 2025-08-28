@@ -22,24 +22,24 @@ from urllib3.exceptions import InsecureRequestWarning
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine.core import (
+# Local imports after path setup
+from engine.core import (  # noqa: E402
     CertificateManager,
     ConfigManager,
     GlobalConfig,
     GlobalStateManager,
     ValidationManager,
 )
-from engine.processing import ErrorHandler, EventManager, RequestHandler, StreamHandler
-from utils.common import count_tokens, mask_sensitive_data
-from utils.config import (
+from engine.processing import ErrorHandler, RequestHandler, StreamHandler  # noqa: E402
+from utils.common import count_tokens, mask_sensitive_data  # noqa: E402
+from utils.config import (  # noqa: E402
     DEFAULT_API_PATH,
     DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     DEFAULT_WAIT_TIME_MAX,
     DEFAULT_WAIT_TIME_MIN,
-    METRIC_TTT,
 )
-from utils.logger import logger
+from utils.logger import logger  # noqa: E402
 
 # Disable the specific InsecureRequestWarning from urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -475,6 +475,7 @@ class LLMTestUser(FastHttpUser):
         base_request_kwargs, user_prompt = self.request_handler.prepare_request_kwargs(
             prompt_data
         )
+        self.task_logger.debug(f"base_request_kwargs: {base_request_kwargs}")
         if not base_request_kwargs:
             self.task_logger.error(
                 "Failed to generate request arguments. Skipping task."

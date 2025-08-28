@@ -588,7 +588,12 @@ async def get_model_tasks_for_comparison_svc(request: Request):
         # Query for completed and failed_requests tasks that have results
         query = (
             select(
-                Task.id, Task.name, Task.model, Task.concurrent_users, Task.created_at
+                Task.id,
+                Task.name,
+                Task.model,
+                Task.concurrent_users,
+                Task.created_at,
+                Task.duration,
             )
             .where(Task.status.in_(["completed", "failed_requests"]))
             .join(TaskResult, Task.id == TaskResult.task_id)
@@ -610,6 +615,7 @@ async def get_model_tasks_for_comparison_svc(request: Request):
                 task_id=task.id,
                 task_name=task.name or f"Task {task.id[:8]}",
                 created_at=task.created_at.isoformat() if task.created_at else "",
+                duration=task.duration or 0,
             )
             for task in tasks
         ]
@@ -659,11 +665,9 @@ async def compare_performance_svc(
             )
 
         # Get task information
-        task_query = select(
-            Task.id, Task.name, Task.model, Task.concurrent_users, Task.status
-        ).where(Task.id.in_(task_ids))
+        task_query = select(Task).where(Task.id.in_(task_ids))
         task_result = await db.execute(task_query)
-        tasks = {task.id: task for task in task_result.all()}
+        tasks = {task.id: task for task in task_result.scalars().all()}
 
         # Check if all tasks exist and are completed
         missing_tasks = set(task_ids) - set(tasks.keys())
@@ -686,115 +690,62 @@ async def compare_performance_svc(
                 error=f"Only completed tasks can be compared. Incomplete tasks: {', '.join(incomplete_tasks)}",
             )
 
-        # Get performance metrics for each task
+        # Use the shared utility to extract metrics for all tasks
+        from utils.tools import extract_multiple_task_metrics
+
+        metrics_data_list = await extract_multiple_task_metrics(db, task_ids)
+
+        # Log metrics extraction results for debugging
+        logger.info(
+            f"Extracted metrics for {len(metrics_data_list)} out of {len(task_ids)} tasks"
+        )
+
+        # Check if we have any valid metrics
+        if not metrics_data_list:
+            return ComparisonResponse(
+                data=[],
+                status="error",
+                error="No valid metrics data found for the selected tasks. Please ensure the tasks have completed test results.",
+            )
+
+        # Convert to ComparisonMetrics objects
         comparison_metrics = []
+        for metrics_data in metrics_data_list:
+            if metrics_data:  # Only add valid metrics
+                try:
+                    metrics = ComparisonMetrics(
+                        task_id=metrics_data["task_id"],
+                        model_name=metrics_data["model_name"],
+                        concurrent_users=metrics_data["concurrent_users"],
+                        task_name=metrics_data["task_name"],
+                        duration=metrics_data["duration"],
+                        stream_mode=metrics_data["stream_mode"],
+                        dataset_type=metrics_data["dataset_type"],
+                        first_token_latency=metrics_data["first_token_latency"],
+                        total_time=metrics_data["total_time"],
+                        total_tps=metrics_data["total_tps"],
+                        completion_tps=metrics_data["completion_tps"],
+                        avg_total_tokens_per_req=metrics_data[
+                            "avg_total_tokens_per_req"
+                        ],
+                        avg_completion_tokens_per_req=metrics_data[
+                            "avg_completion_tokens_per_req"
+                        ],
+                        rps=metrics_data["rps"],
+                    )
+                    comparison_metrics.append(metrics)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to create ComparisonMetrics for task {metrics_data.get('task_id', 'unknown')}: {str(e)}"
+                    )
+                    continue
 
-        for task_id in task_ids:
-            task = tasks[task_id]
-
-            # Get TTFT metrics - first try Time_to_first_reasoning_token, then Time_to_first_output_token
-            ttft_reasoning_query = (
-                select(TaskResult)
-                .where(
-                    TaskResult.task_id == task_id,
-                    TaskResult.metric_type == "Time_to_first_reasoning_token",
-                )
-                .order_by(TaskResult.created_at.desc())
-                .limit(1)
+        if not comparison_metrics:
+            return ComparisonResponse(
+                data=[],
+                status="error",
+                error="Failed to process metrics data for any of the selected tasks",
             )
-            ttft_reasoning_result = await db.execute(ttft_reasoning_query)
-            ttft_reasoning_data = ttft_reasoning_result.scalar_one_or_none()
-
-            ttft_output_query = (
-                select(TaskResult)
-                .where(
-                    TaskResult.task_id == task_id,
-                    TaskResult.metric_type == "Time_to_first_output_token",
-                )
-                .order_by(TaskResult.created_at.desc())
-                .limit(1)
-            )
-            ttft_output_result = await db.execute(ttft_output_query)
-            ttft_output_data = ttft_output_result.scalar_one_or_none()
-
-            # Get Total_time metrics for RPS
-            total_time_query = (
-                select(TaskResult)
-                .where(
-                    TaskResult.task_id == task_id,
-                    TaskResult.metric_type == "Total_time",
-                )
-                .order_by(TaskResult.created_at.desc())
-                .limit(1)
-            )
-            total_time_result = await db.execute(total_time_query)
-            total_time_data = total_time_result.scalar_one_or_none()
-
-            # Get token metrics (from token_metrics)
-            token_query = (
-                select(TaskResult)
-                .where(
-                    TaskResult.task_id == task_id,
-                    TaskResult.metric_type == "token_metrics",
-                )
-                .order_by(TaskResult.created_at.desc())
-                .limit(1)
-            )
-            token_result = await db.execute(token_query)
-            token_data = token_result.scalar_one_or_none()
-
-            # Check if we have the required data
-            if not ttft_reasoning_data and not ttft_output_data and not token_data:
-                logger.warning(f"No results found for task {task_id}")
-                continue
-
-            # Initialize default values
-            ttft = 0.0
-            rps = 0.0
-            avg_response_time = 0.0
-            total_tps = 0.0
-            completion_tps = 0.0
-            avg_total_tpr = 0.0
-            avg_completion_tpr = 0.0
-
-            # Extract TTFT data - prioritize Time_to_first_reasoning_token, then Time_to_first_output_token
-            # Use avg_latency and convert from ms to seconds
-            if ttft_reasoning_data and ttft_reasoning_data.avg_latency:
-                ttft = ttft_reasoning_data.avg_latency / 1000.0  # Convert ms to seconds
-                avg_response_time = ttft_reasoning_data.avg_latency
-            elif ttft_output_data and ttft_output_data.avg_latency:
-                ttft = ttft_output_data.avg_latency / 1000.0  # Convert ms to seconds
-                avg_response_time = ttft_output_data.avg_latency
-
-            # Extract RPS data - prioritize Total_time, then Time_to_first_output_token
-            if total_time_data and total_time_data.rps:
-                rps = total_time_data.rps
-            elif ttft_output_data and ttft_output_data.rps:
-                rps = ttft_output_data.rps
-
-            # Extract token metrics data
-            if token_data:
-                total_tps = token_data.total_tps or 0.0
-                completion_tps = token_data.completion_tps or 0.0
-                avg_total_tpr = token_data.avg_total_tokens_per_req or 0.0
-                avg_completion_tpr = token_data.avg_completion_tokens_per_req or 0.0
-
-            # Create comparison metrics
-            metrics = ComparisonMetrics(
-                task_id=task_id,
-                model_name=task.model,
-                concurrent_users=task.concurrent_users,
-                task_name=task.name or f"Task {task_id[:8]}",
-                ttft=ttft,
-                total_tps=total_tps,
-                completion_tps=completion_tps,
-                avg_total_tpr=avg_total_tpr,
-                avg_completion_tpr=avg_completion_tpr,
-                avg_response_time=avg_response_time,
-                rps=rps,
-            )
-
-            comparison_metrics.append(metrics)
 
         return ComparisonResponse(data=comparison_metrics, status="success", error=None)
 
@@ -1075,14 +1026,14 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
             "response": None,
         }
     except httpx.TimeoutException as e:
-        logger.error(f"Request timeout when testing API endpoint.")
+        logger.error("Request timeout when testing API endpoint.")
         return {
             "status": "error",
             "error": f"Request timeout: {str(e)}",
             "response": None,
         }
     except httpx.ConnectError as e:
-        logger.error(f"Connection error when testing API endpoint.")
+        logger.error("Connection error when testing API endpoint.")
         return {
             "status": "error",
             "error": f"Connection error: {str(e)}",

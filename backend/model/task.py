@@ -218,6 +218,7 @@ class ModelTaskInfo(BaseModel):
         task_id: The task ID.
         task_name: The task name.
         created_at: The creation timestamp.
+        duration: The test duration in seconds.
     """
 
     model_name: str
@@ -225,6 +226,7 @@ class ModelTaskInfo(BaseModel):
     task_id: str
     task_name: str
     created_at: str
+    duration: int
 
 
 class ComparisonRequest(BaseModel):
@@ -249,12 +251,15 @@ class ComparisonMetrics(BaseModel):
         model_name: The model name.
         concurrent_users: The number of concurrent users.
         task_name: The task name.
-        ttft: Time to first token (avg_latency in seconds).
+        duration: Test duration with 's' suffix.
+        stream_mode: Whether stream mode is enabled.
+        dataset_type: Type of dataset used.
+        first_token_latency: Time to first token (avg_latency in seconds).
+        total_time: Total time for request completion.
         total_tps: Total tokens per second.
         completion_tps: Completion tokens per second.
-        avg_total_tpr: Average total tokens per request.
-        avg_completion_tpr: Average completion tokens per request.
-        avg_response_time: Average response time.
+        avg_total_tokens_per_req: Average total tokens per request.
+        avg_completion_tokens_per_req: Average completion tokens per request.
         rps: Requests per second.
     """
 
@@ -262,12 +267,15 @@ class ComparisonMetrics(BaseModel):
     model_name: str
     concurrent_users: int
     task_name: str
-    ttft: float
+    duration: str
+    stream_mode: bool
+    dataset_type: str
+    first_token_latency: float
+    total_time: float
     total_tps: float
     completion_tps: float
-    avg_total_tpr: float
-    avg_completion_tpr: float
-    avg_response_time: float
+    avg_total_tokens_per_req: float
+    avg_completion_tokens_per_req: float
     rps: float
 
 
