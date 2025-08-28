@@ -7,24 +7,21 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from model.analysis import AnalysisRequest, AnalysisResponse, GetAnalysisResponse
-from service.analysis_service import analyze_task_svc, get_analysis_svc
+from service.analysis_service import analyze_tasks_svc, get_analysis_svc
 from utils.logger import logger
 
 # Create an API router for analysis-related endpoints
 router = APIRouter()
 
 
-@router.post("/{task_id}", response_model=AnalysisResponse)
-async def analyze_task(
-    request: Request, task_id: str, analysis_request: AnalysisRequest
-):
+@router.post("", response_model=AnalysisResponse)
+async def analyze_tasks(request: Request, analysis_request: AnalysisRequest):
     """
-    Perform AI analysis on task results.
+    Perform AI analysis on task results (single or multiple tasks).
 
     Args:
         request: The incoming request.
-        task_id: The task ID to analyze (from URL path).
-        analysis_request: The analysis request (optional eval_prompt).
+        analysis_request: The analysis request containing task_ids and options.
 
     Returns:
         AnalysisResponse: The analysis result.
@@ -33,7 +30,7 @@ async def analyze_task(
         HTTPException: If the task doesn't exist or analysis fails.
     """
 
-    return await analyze_task_svc(request, task_id, analysis_request)
+    return await analyze_tasks_svc(request, analysis_request)
 
 
 @router.get("/{task_id}", response_model=GetAnalysisResponse)

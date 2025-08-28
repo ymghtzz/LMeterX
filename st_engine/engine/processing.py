@@ -6,9 +6,8 @@ Stream processing and error handling for the stress testing engine.
 """
 
 import json
-import ssl
 import time
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from locust import events
 
@@ -789,9 +788,7 @@ class StreamHandler:
     def _iter_stream_lines(response) -> Any:
         """Yield response lines as bytes for both requests and FastHttp responses."""
         # requests.Response has iter_lines
-        if hasattr(response, "iter_lines") and callable(
-            getattr(response, "iter_lines")
-        ):
+        if hasattr(response, "iter_lines") and callable(response.iter_lines):
             for line in response.iter_lines():
                 if line is None:
                     continue

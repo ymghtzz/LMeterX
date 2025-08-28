@@ -161,14 +161,21 @@ const createMarkdownComponents = (token: any) => ({
     </blockquote>
   ),
   table: ({ children, ...props }: any) => (
-    <div style={{ overflowX: 'auto', margin: '16px 0' }}>
+    <div
+      style={{
+        overflowX: 'auto',
+        margin: '16px 0',
+        border: `1px solid ${token.colorBorder}`,
+        borderRadius: '6px',
+        maxWidth: '100%',
+      }}
+    >
       <table
         style={{
-          width: '100%',
+          minWidth: '100%',
           borderCollapse: 'collapse',
-          borderRadius: '6px',
-          overflow: 'hidden',
           fontSize: '14px',
+          whiteSpace: 'nowrap',
         }}
         {...props}
       >
@@ -205,7 +212,9 @@ const createMarkdownComponents = (token: any) => ({
         fontWeight: 'bold',
         color: token.colorText,
         backgroundColor: token.colorBgContainer,
-        borderRight: 'none',
+        borderRight: `1px solid ${token.colorBorder}`,
+        whiteSpace: 'nowrap',
+        minWidth: '120px',
       }}
       {...props}
     >
@@ -217,6 +226,9 @@ const createMarkdownComponents = (token: any) => ({
       style={{
         padding: '12px 16px',
         color: token.colorText,
+        borderRight: `1px solid ${token.colorBorder}`,
+        whiteSpace: 'nowrap',
+        minWidth: '120px',
       }}
       {...props}
     >

@@ -121,8 +121,8 @@ export const comparisonApi = {
         ttft: number;
         total_tps: number;
         completion_tps: number;
-        avg_total_tpr: number;
-        avg_completion_tpr: number;
+        avg_total_token_per_req: number;
+        avg_completion_token_per_req: number;
         avg_response_time: number;
         rps: number;
       }>;
@@ -145,15 +145,40 @@ export const logApi = {
 
 // Analysis API methods
 export const analysisApi = {
-  // Perform AI analysis on task results
-  analyzeTask: (taskId: string, language?: string) =>
-    api.post<any>(`/analyze/${taskId}`, {
-      task_id: taskId,
-      language: language || 'en',
-    }),
+  // Perform AI analysis on task results (single or multiple tasks)
+  analyzeTasks: (taskIds: string[], language?: string) =>
+    api.post<{
+      task_ids: string[];
+      analysis_report: string;
+      status: string;
+      error_message?: string;
+      created_at: string;
+    }>(
+      '/analyze',
+      {
+        task_ids: taskIds,
+        language: language || 'en',
+      },
+      {
+        timeout: 300000, // 5 minutes timeout for AI analysis
+      }
+    ),
 
   // Get analysis result for a task
-  getAnalysis: (taskId: string) => api.get<any>(`/analyze/${taskId}`),
+  getAnalysis: (taskId: string) =>
+    api.get<{
+      data?: {
+        task_ids: string[];
+        analysis_report: string;
+        status: string;
+        error_message?: string;
+        created_at: string;
+      };
+      status: string;
+      error?: string;
+    }>(`/analyze/${taskId}`, {
+      timeout: 300000, // 5 minutes timeout for getting analysis result
+    }),
 };
 
 // System Configuration API methods

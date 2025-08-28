@@ -10,7 +10,7 @@ import axios from 'axios';
 // Create axios instance
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 150000, // Increase to 150 seconds (longer than backend 120s timeout)
+  timeout: 300000, // Increase to 300 seconds (5 minutes) to match backend AI service timeout
   headers: {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',

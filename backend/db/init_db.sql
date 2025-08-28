@@ -65,5 +65,45 @@ CREATE TABLE `task_results` (
   KEY `idx_task_id` (`task_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=262 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------
+-- Table structure for test_insights (AI Analysis)
+-- ----------------------------
+DROP TABLE IF EXISTS `test_insights`;
+CREATE TABLE `test_insights` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `task_id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `eval_prompt` text COLLATE utf8mb4_unicode_ci NOT NULL,
+  `analysis_report` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
+  `status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'pending, processing, completed, failed',
+  `error_message` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `task_id` (`task_id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Table structure for analysis_jobs (Background Analysis Jobs)
+-- ----------------------------
+DROP TABLE IF EXISTS `analysis_jobs`;
+CREATE TABLE `analysis_jobs` (
+  `id` varchar(36) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `task_ids` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT 'JSON string of task IDs',
+  `analysis_type` int(11) NOT NULL COMMENT '0=single task, 1=multiple tasks',
+  `language` varchar(10) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'en',
+  `eval_prompt` text COLLATE utf8mb4_unicode_ci,
+  `status` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending' COMMENT 'pending, processing, completed, failed',
+  `result_data` longtext COLLATE utf8mb4_unicode_ci COMMENT 'JSON string of analysis result',
+  `error_message` text COLLATE utf8mb4_unicode_ci,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_created_at` (`created_at`),
+  KEY `idx_analysis_type` (`analysis_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 最后重新启用外键检查
 SET FOREIGN_KEY_CHECKS = 1;

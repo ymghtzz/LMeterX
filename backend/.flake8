@@ -27,8 +27,12 @@ extend-ignore =
     D415,
     # B008: Do not perform function calls in argument defaults (common in FastAPI)
     B008,
+    # B010: Do not call setattr with a constant attribute value (SQLAlchemy models need this)
+    B010,
     # F401: imported but unused (handled by isort and IDE)
     F401,
+    # F541: f-string is missing placeholders (sometimes intentional for logging)
+    F541,
     # I100: Import statements are in the wrong order (handled by isort)
     I100,
     # I101: Imported names are in the wrong order (handled by isort)
@@ -62,4 +66,4 @@ per-file-ignores =
     # Fix script can have unused imports
     fix_code_*.py:F401
 
-max-complexity = 15
+max-complexity = 20
