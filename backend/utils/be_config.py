@@ -25,7 +25,7 @@ else:
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "upload_files")
 
 # File upload security configuration
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+MAX_FILE_SIZE = 10 * 1024 * 1024 * 1024  # 10GB
 MAX_FILENAME_LENGTH = 255
 MAX_TASK_ID_LENGTH = 64
 

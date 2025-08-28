@@ -70,7 +70,7 @@ export const FILE_UPLOAD_CONFIG = {
   KEY_FORMATS: '.key,.pem',
   COMBINED_FORMATS: '.pem',
   MAX_COUNT: 1,
-  MAX_SIZE: 10 * 1024 * 1024, // 10MB
+  MAX_SIZE: 10 * 1024 * 1024 * 1024, // 10GB
   ALLOWED_TYPES: ['.json', '.txt', '.csv'],
   CERTIFICATE_TYPES: ['.pem', '.crt', '.key'],
   IMAGE_TYPES: ['.jpg', '.jpeg', '.png', '.gif', '.webp'],

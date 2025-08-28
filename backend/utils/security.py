@@ -95,7 +95,7 @@ def validate_file_size(file_size: int) -> None:
     """
     if file_size > MAX_FILE_SIZE:
         raise ValueError(
-            f"File size exceeds maximum allowed size of {MAX_FILE_SIZE // (1024*1024)}MB"
+            f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024*1024*1024):.1f}GB"
         )
 
 
