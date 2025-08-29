@@ -1043,6 +1043,8 @@ const ResultComparison: React.FC = () => {
         onCancel={() => setIsAnalysisModalVisible(false)}
         width={1200}
         style={{ maxWidth: '95vw' }}
+        maskClosable={false}
+        closable
         footer={[
           <Button
             key='download'

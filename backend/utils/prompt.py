@@ -96,20 +96,21 @@ Required Output Format:
 [2–3 sentence overall assessment, keep it short and concise, including UX judgment and the dominant bottleneck(s).]
 
 ### Key Metrics
-| Metric  |Value| Conclusion |
-|---|---|---|
-| Concurrent_users |N | — |
-| Duration |X.XX | — |
-| Stream_mode |streaming/non-streaming | — |
-| Dataset_type |text/text-image | — |
-| First_token_latency(s) |X.XX | Good/Moderate/Poor |
-| Total_time(s) |X.XX | Good/Moderate/Poor |
-| RPS |X.XX | Good/Poor |
-| Completion_tps |X.XX | Good/Moderate/Poor |
-| Total_tps|X.XX | Good/Moderate/Poor |
-| Avg_completion_tokens/req |X.XX | Concise/Verbose |
-| Avg_total_tokens/req |X.XX | — |
-| Failure_request|N | — |
+| Metric  | Task1 | Task2 | Conclusion |
+|---|---|---|---|
+| Concurrent_users |N | N | — |
+| Duration |X.XX | X.XX | — |
+| Stream_mode |streaming/non-streaming | streaming/non-streaming | — |
+| Dataset_type |text/text-image | text/text-image | — |
+| First_token_latency(s) |X.XX | X.XX | Good/Moderate/Poor |
+| Total_time(s) |X.XX | X.XX | Good/Moderate/Poor |
+| RPS |X.XX | X.XX | Good/Poor |
+| Completion_tps |X.XX | X.XX | Good/Moderate/Poor |
+| Total_tps|X.XX | X.XX | Good/Moderate/Poor |
+| Avg_completion_tokens/req |X.XX | X.XX | Concise/Verbose |
+| Avg_total_tokens/req |X.XX | X.XX | — |
+| Failure_request|N | N | — |
+[Add more columns as needed]
 
 ### Suggestions
 1. [Based on the comparison, provide actionable suggestions]
@@ -202,7 +203,7 @@ COMPARISON_PROMPT_CN = """
 [2-3 句总体评估，控制在 500 字以内，对比所有任务，突出整体性能最佳的任务/模型及关键指标，任务间的显著差异及具体数据，跨任务的共同问题或特定任务的问题]
 
 ### 详细指标对比
-| 指标 |任务1 | 任务2 | 结论 |
+| 指标 |任务1 | 任务2| 结论 |
 |---|---|---|---|
 | 模型 | XX | XX | — |
 | 并发用户数 | N | N | — |

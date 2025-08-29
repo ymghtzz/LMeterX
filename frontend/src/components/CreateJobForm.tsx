@@ -78,6 +78,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const [testResult, setTestResult] = useState<any>(null);
   // Add state for tab management
   const [activeTabKey, setActiveTabKey] = useState('1');
+  // Add state to track upload loading
+  const [uploading, setUploading] = useState(false);
 
   // Get default field_mapping based on API path
   const getDefaultFieldMapping = (apiPath: string) => {
@@ -387,8 +389,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleCertFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
-      // Validate file size (10MB limit)
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      // Validate file size (2GB limit)
+      const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
       if (file.size > maxSize) {
         message.error(t('components.createJobForm.fileSizeExceedsLimit'));
         onError();
@@ -415,8 +417,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleKeyFileUpload = async (options: any) => {
     const { file, onSuccess, onError } = options;
     try {
-      // Validate file size (10MB limit)
-      const maxSize = 10 * 1024 * 1024; // 10MB
+      // Validate file size (2GB limit)
+      const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
       if (file.size > maxSize) {
         message.error(
           t('components.createJobForm.fileSizeExceedsLimitWithSize', {
@@ -481,7 +483,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     const { file, onSuccess, onError } = options;
     try {
       // Validate file size (1GB limit)
-      const maxSize = 10 * 1024 * 1024 * 1024; // 10GB
+      const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
       if (file.size > maxSize) {
         message.error(
           t('components.createJobForm.fileSizeExceedsLimitWithSize', {
@@ -627,7 +629,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   };
 
   const handleSubmit = async () => {
-    if (submitting) return;
+    if (submitting || uploading) return;
 
     try {
       setSubmitting(true);
@@ -635,6 +637,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       if (values.cert_file) {
         try {
+          setUploading(true);
           const certType = form.getFieldValue('cert_type') || 'combined';
 
           const result = await uploadCertificateFiles(
@@ -667,12 +670,16 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
           message.error(errorMessage);
           setSubmitting(false);
+          setUploading(false);
           return;
+        } finally {
+          setUploading(false);
         }
       }
 
       if (values.test_data_file) {
         try {
+          setUploading(true);
           const result = await uploadDatasetFile(
             values.test_data_file,
             tempTaskId
@@ -693,7 +700,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
           message.error(errorMessage);
           setSubmitting(false);
+          setUploading(false);
           return;
+        } finally {
+          setUploading(false);
         }
       }
 
@@ -715,6 +725,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       await onSubmit(values);
     } catch (error) {
       setSubmitting(false); // Only reset state here when error occurs
+      setUploading(false);
     }
   };
 
@@ -2215,9 +2226,15 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             {t('components.createJobForm.previousStep')}
           </Button>
           <Button onClick={onCancel}>{t('common.cancel')}</Button>
-          <Button type='primary' loading={submitting} onClick={handleSubmit}>
-            {submitting
-              ? t('components.createJobForm.submitting')
+          <Button
+            type='primary'
+            loading={submitting || uploading}
+            onClick={handleSubmit}
+          >
+            {submitting || uploading
+              ? uploading
+                ? t('components.createJobForm.uploading')
+                : t('components.createJobForm.submitting')
               : t('components.createJobForm.create')}
           </Button>
         </Space>
