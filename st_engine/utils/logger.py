@@ -8,7 +8,7 @@ import sys
 
 from loguru import logger
 
-from utils.config import LOG_DIR, LOG_TASK_DIR
+from config.base import LOG_DIR, LOG_TASK_DIR
 
 # --- Logger Configuration ---
 
@@ -64,25 +64,21 @@ def add_task_log_sink(task_id: str) -> int:
         return "task_id" in record["extra"] and record["extra"]["task_id"] == task_id
 
     try:
-        # Create a completely independent logger for task logs to avoid format conflicts
-        from loguru import logger as task_logger
-
-        # Remove any existing handlers from the task logger to ensure clean state
-        task_logger.remove()
-
-        handler_id = task_logger.add(
+        # Add a new handler to the existing logger instead of creating a new one
+        handler_id = logger.add(
             task_log_file,
             rotation="20 MB",
             retention="10 days",
             compression="zip",
             encoding="utf-8",
             level="INFO",
-            backtrace=False,
+            backtrace=True,  # Enable backtrace for task logs to help with debugging
             format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <level>{message}</level>",
             filter=is_current_task_log,
             enqueue=False,
         )
 
+        # Test the logger to ensure it's working
         test_logger = logger.bind(task_id=task_id)
         test_logger.info(f"Task log initialized for task {task_id}")
 

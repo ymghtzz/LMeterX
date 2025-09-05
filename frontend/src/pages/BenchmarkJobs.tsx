@@ -498,6 +498,7 @@ const BenchmarkJobs: React.FC = () => {
         footer={null}
         width={800}
         destroyOnHidden
+        maskClosable={false}
       >
         <CreateJobForm
           onSubmit={handleCreateJob}

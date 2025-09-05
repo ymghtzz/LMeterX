@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 from sqlalchemy.orm import Session
 
-from utils.config import (
+from config.business import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_CREATED,
     TASK_STATUS_FAILED,

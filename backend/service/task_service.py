@@ -288,7 +288,7 @@ async def stop_task_svc(request: Request, task_id: str):
             status="stopping", task_id=task_id, message="Task is being stopped."
         )
     except Exception as e:
-        logger.error(f"Failed to stop task {task_id}: {str(e)}", exc_info=True)
+        logger.error("Failed to stop task %s: %s" % (task_id, str(e)), exc_info=True)
         return TaskCreateRsp(
             status="error", task_id=task_id, message="Failed to stop task."
         )
@@ -306,7 +306,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         A `TaskCreateRsp` on success or a `JSONResponse` on failure.
     """
     task_id = str(uuid.uuid4())
-    logger.info(f"Creating task '{body.name}' with ID: {task_id}")
+    logger.info("Creating task '%s' with ID: %s" % (body.name, task_id))
 
     cert_file, key_file = _get_cert_config(body)
 
@@ -363,7 +363,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         db.add(new_task)
         await db.flush()
         await db.commit()
-        logger.info(f"Task created successfully: {new_task.id}")
+        logger.info("Task created successfully: %s" % new_task.id)
 
         return TaskCreateRsp(
             task_id=str(new_task.id),
@@ -372,7 +372,7 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
         )
     except Exception as e:
         await db.rollback()
-        error_msg = f"Failed to create task in database: {str(e)}"
+        error_msg = "Failed to create task in database: %s" % str(e)
         logger.error(error_msg, exc_info=True)
         return ErrorResponse.internal_server_error(error_msg)
 
@@ -431,7 +431,7 @@ async def is_task_exist(request: Request, task_id: str) -> bool:
         return result.scalar_one_or_none() is not None
     except Exception as e:
         logger.error(
-            f"Failed to query for task existence (id={task_id}): {str(e)}",
+            "Failed to query for task existence (id=%s): %s" % (task_id, str(e)),
             exc_info=True,
         )
         return False
@@ -516,7 +516,9 @@ async def get_task_svc(request: Request, task_id: str):
         # Re-raise HTTPException to let FastAPI handle it.
         raise
     except Exception as e:
-        logger.error(f"Failed to retrieve task {task_id}: {str(e)}", exc_info=True)
+        logger.error(
+            "Failed to retrieve task %s: %s" % (task_id, str(e)), exc_info=True
+        )
         raise HTTPException(
             status_code=500,
             detail="An internal error occurred while retrieving the task.",
@@ -563,7 +565,7 @@ async def get_task_status_svc(request: Request, task_id: str):
         raise
     except Exception as e:
         logger.error(
-            f"Failed to retrieve task status {task_id}: {str(e)}", exc_info=True
+            "Failed to retrieve task status %s: %s" % (task_id, str(e)), exc_info=True
         )
         raise HTTPException(
             status_code=500,
@@ -624,7 +626,7 @@ async def get_model_tasks_for_comparison_svc(request: Request):
 
     except Exception as e:
         logger.error(
-            f"Failed to get model tasks for comparison: {str(e)}", exc_info=True
+            "Failed to get model tasks for comparison: %s" % str(e), exc_info=True
         )
         return ModelTasksResponse(
             data=[],
@@ -697,7 +699,8 @@ async def compare_performance_svc(
 
         # Log metrics extraction results for debugging
         logger.info(
-            f"Extracted metrics for {len(metrics_data_list)} out of {len(task_ids)} tasks"
+            "Extracted metrics for %s out of %s tasks"
+            % (len(metrics_data_list), len(task_ids))
         )
 
         # Check if we have any valid metrics
@@ -736,7 +739,8 @@ async def compare_performance_svc(
                     comparison_metrics.append(metrics)
                 except Exception as e:
                     logger.error(
-                        f"Failed to create ComparisonMetrics for task {metrics_data.get('task_id', 'unknown')}: {str(e)}"
+                        "Failed to create ComparisonMetrics for task %s: %s"
+                        % (metrics_data.get("task_id", "unknown"), str(e))
                     )
                     continue
 
@@ -750,7 +754,7 @@ async def compare_performance_svc(
         return ComparisonResponse(data=comparison_metrics, status="success", error=None)
 
     except Exception as e:
-        logger.error(f"Failed to compare performance: {str(e)}", exc_info=True)
+        logger.error("Failed to compare performance: %s" % str(e), exc_info=True)
         return ComparisonResponse(
             data=[], status="error", error="Failed to perform performance comparison"
         )
@@ -812,7 +816,7 @@ def _prepare_request_payload(body: TaskCreateReq) -> Dict:
             try:
                 return json.loads(body.request_payload)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in request payload: {str(e)}")
+                raise ValueError("Invalid JSON in request payload: %s" % str(e))
         else:
             raise ValueError("Request payload is required for custom API endpoints")
 
@@ -885,7 +889,7 @@ def _validate_certificate_files(
 
         return True, ""
     except Exception as e:
-        return False, f"Certificate validation error: {str(e)}"
+        return False, "Certificate validation error: %s" % str(e)
 
 
 def _prepare_client_cert(body: TaskCreateReq):
@@ -900,7 +904,7 @@ def _prepare_client_cert(body: TaskCreateReq):
         try:
             is_valid, err_msg = _validate_certificate_files(cert_file, key_file or None)
             if not is_valid:
-                logger.error(f"Invalid client certificate configuration: {err_msg}")
+                logger.error("Invalid client certificate configuration: %s" % err_msg)
                 return None
 
             if cert_file and key_file:
@@ -910,7 +914,7 @@ def _prepare_client_cert(body: TaskCreateReq):
                 # Only cert file provided (combined cert+key file)
                 client_cert = cert_file
         except Exception as e:
-            logger.error(f"Error preparing certificate configuration: {e}")
+            logger.error("Error preparing certificate configuration: %s" % str(e))
             return None
 
     return client_cert
@@ -1029,14 +1033,14 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
         logger.error("Request timeout when testing API endpoint.")
         return {
             "status": "error",
-            "error": f"Request timeout: {str(e)}",
+            "error": "Request timeout: %s" % str(e),
             "response": None,
         }
     except httpx.ConnectError as e:
         logger.error("Connection error when testing API endpoint.")
         return {
             "status": "error",
-            "error": f"Connection error: {str(e)}",
+            "error": "Connection error: %s" % str(e),
             "response": None,
         }
     except asyncio.TimeoutError:
@@ -1047,10 +1051,10 @@ async def test_api_endpoint_svc(request: Request, body: TaskCreateReq):
             "response": None,
         }
     except Exception as e:
-        logger.error(f"Error testing API endpoint: {e}", exc_info=True)
+        logger.error("Error testing API endpoint: %s" % str(e), exc_info=True)
         return {
             "status": "error",
-            "error": f"Unexpected error: {str(e)}",
+            "error": "Unexpected error: %s" % str(e),
             "response": None,
         }
 
@@ -1149,11 +1153,11 @@ async def _handle_streaming_response(response, full_url: str) -> Dict:
         }
     except Exception as stream_error:
         logger.error(
-            f"Error processing stream: {stream_error}. stream data: {stream_data}"
+            "Error processing stream: %s. stream data: %s" % (stream_error, stream_data)
         )
         return {
             "status": "error",
-            "error": f"Streaming data processing error: {str(stream_error)}",
+            "error": "Streaming data processing error: %s" % str(stream_error),
             "response": {
                 "status_code": (
                     response.status_code if hasattr(response, "status_code") else None

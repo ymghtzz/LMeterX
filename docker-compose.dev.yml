@@ -36,8 +36,6 @@ services:
       - DB_USER=root
       - DB_PASSWORD=lmeterx123
       - DB_NAME=lmeterx
-      - SECRET_KEY=your_secret_key_here
-      - FLASK_DEBUG=false
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
@@ -61,16 +59,30 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      - DB_HOST=mysql
-      - DB_PORT=3306
-      - DB_USER=root
-      - DB_PASSWORD=lmeterx123
-      - DB_NAME=lmeterx
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: lmeterx123
+      DB_NAME: lmeterx
+      # Multi-process configuration
+      ENABLE_MULTIPROCESS: auto
+      LOCUST_CPU_CORES: 2.0
+      MULTIPROCESS_THRESHOLD: 1000
+      MIN_USERS_PER_PROCESS: 100             # Each process handles at least 100 users
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
     ports:
       - "5002:5002"
+    # Resource limits for the container
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'                           # Must match LOCUST_CPU_CORES
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
     healthcheck:
       test: [ "CMD", "curl", "-s", "-f", "http://localhost:5002/health" ]
       interval: 10s

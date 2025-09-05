@@ -8,19 +8,12 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-from fastapi import File, Form, HTTPException, Request, UploadFile
-from starlette.responses import JSONResponse
+import aiofiles
+from fastapi import HTTPException, Request, UploadFile
 from werkzeug.utils import secure_filename
 
 from model.upload import UploadedFileInfo, UploadFileRsp
-from utils.be_config import (
-    ALLOWED_EXTENSIONS,
-    ALLOWED_MIME_TYPES,
-    MAX_FILE_SIZE,
-    MAX_FILENAME_LENGTH,
-    MAX_TASK_ID_LENGTH,
-    UPLOAD_FOLDER,
-)
+from utils.be_config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE, UPLOAD_FOLDER
 from utils.error_handler import ErrorMessages, ErrorResponse
 from utils.logger import logger
 from utils.security import (
@@ -32,6 +25,9 @@ from utils.security import (
     validate_task_id,
     validate_upload_path,
 )
+
+# Chunk size for streaming upload (1MB)
+CHUNK_SIZE = 1024 * 1024
 
 # In-memory dictionary to store certificate configurations per task.
 _task_cert_configs: Dict[str, Dict[str, str]] = {}
@@ -45,6 +41,55 @@ def save_task_cert_config(task_id: str, config: Dict[str, str]):
 def get_task_cert_config(task_id: str) -> Dict[str, str]:
     """Retrieves the certificate configuration for a specific task."""
     return _task_cert_configs.get(task_id, {"cert_file": "", "key_file": ""})
+
+
+async def save_file_stream(file: UploadFile, file_path: str) -> int:
+    """
+    Process the file stream and save it to the file system.
+
+    Args:
+        file: FastAPI UploadFile object
+        file_path: target file path
+
+    Returns:
+        int: saved file size
+    """
+    total_size = 0
+
+    async with aiofiles.open(file_path, "wb") as f:
+        while chunk := await file.read(CHUNK_SIZE):
+            await f.write(chunk)
+            total_size += len(chunk)
+
+            # Real-time check file size to avoid uploading too large files
+            if total_size > MAX_FILE_SIZE:
+                # Delete partially uploaded files
+                await f.close()
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                raise ValueError(
+                    f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024*1024*1024):.1f}GB"
+                )
+
+    return total_size
+
+
+async def validate_file_header(file: UploadFile, filename: str, file_type: str) -> None:
+    """
+    Validate file header information, only read the beginning part of the file for MIME type check
+
+    Args:
+        file: UploadFile object
+        filename: filename
+        file_type: file type ('cert' or 'dataset')
+    """
+    # Only read the first 1024 bytes of the file for MIME type check
+    current_position = file.file.tell()
+    header_content = await file.read(1024)
+    await file.seek(current_position)  # Reset file pointer
+
+    # Validate MIME type based on file content and filename
+    validate_mime_type(header_content, filename, file_type)
 
 
 def determine_cert_config(
@@ -120,17 +165,8 @@ async def process_cert_files(
                 # Validate file extension
                 validate_file_extension(validated_filename, ALLOWED_EXTENSIONS["cert"])
 
-                # Read file content for validation
-                file_content = await file.read()
-
-                # Validate file size
-                validate_file_size(len(file_content))
-
-                # Validate MIME type
-                validate_mime_type(file_content, validated_filename, "cert")
-
-                # Reset file pointer for subsequent operations
-                await file.seek(0)
+                # Fast validation of file header, instead of reading the entire file
+                await validate_file_header(file, validated_filename, "cert")
 
                 filename = secure_filename(validated_filename)
                 # Use safe_join for final file path
@@ -139,17 +175,17 @@ async def process_cert_files(
                 # Additional safety check for the final path
                 validate_upload_path(absolute_file_path, UPLOAD_FOLDER)
 
-                with open(absolute_file_path, "wb") as f:
-                    f.write(file_content)
+                # Use streaming to save file
+                file_size = await save_file_stream(file, absolute_file_path)
 
                 file_info = {
                     "originalname": filename,
                     "path": absolute_file_path,  # Keep absolute path for file info
-                    "size": os.path.getsize(absolute_file_path),
+                    "size": file_size,
                 }
                 uploaded_files_info.append(file_info)
                 logger.info(
-                    f"Certificate file uploaded successfully, type: {cert_type}"
+                    f"Certificate file uploaded successfully, type: {cert_type}, size: {file_size} bytes"
                 )
 
         # Retrieve existing config for the task, if any.
@@ -157,18 +193,12 @@ async def process_cert_files(
         # Determine the new config based on the uploaded files - use absolute paths
         uploaded_files_with_absolute_paths = []
         for file_info in uploaded_files_info:
-            uploaded_files_with_absolute_paths.append(
-                {
-                    "originalname": file_info["originalname"],
-                    "path": file_info["path"],  # Use absolute path for config
-                    "size": file_info["size"],
-                }
-            )
+            uploaded_files_with_absolute_paths.append(file_info)
 
         cert_config = determine_cert_config(
             uploaded_files_with_absolute_paths, cert_type, existing_config
         )
-        # Save the updated configuration.
+        # Save the updated configuration
         save_task_cert_config(validated_task_id, cert_config)
 
         return uploaded_files_info, cert_config
@@ -182,6 +212,7 @@ async def process_cert_files(
 async def process_dataset_files(task_id: str, files: List[UploadFile]):
     """
     Processes uploaded dataset files, saves them, and returns file information.
+
 
     Args:
         task_id: The ID of the task.
@@ -215,17 +246,8 @@ async def process_dataset_files(task_id: str, files: List[UploadFile]):
                     validated_filename, ALLOWED_EXTENSIONS["dataset"]
                 )
 
-                # Read file content for validation
-                file_content = await file.read()
-
-                # Validate file size
-                validate_file_size(len(file_content))
-
-                # Validate MIME type
-                validate_mime_type(file_content, validated_filename, "dataset")
-
-                # Reset file pointer for subsequent operations
-                await file.seek(0)
+                # Fast validation of file header, instead of reading the entire file
+                await validate_file_header(file, validated_filename, "dataset")
 
                 filename = secure_filename(validated_filename)
                 # Use safe_join for final file path
@@ -234,17 +256,19 @@ async def process_dataset_files(task_id: str, files: List[UploadFile]):
                 # Additional safety check for the final path
                 validate_upload_path(absolute_file_path, UPLOAD_FOLDER)
 
-                with open(absolute_file_path, "wb") as f:
-                    f.write(file_content)
+                # Use streaming to save file, avoid memory overflow
+                file_size = await save_file_stream(file, absolute_file_path)
 
                 file_info = {
                     "originalname": filename,
                     "path": absolute_file_path,  # Keep absolute path for file info
-                    "size": os.path.getsize(absolute_file_path),
+                    "size": file_size,
                 }
                 uploaded_files_info.append(file_info)
                 file_path = absolute_file_path  # Use absolute path for test_data
-                logger.info(f"Dataset file uploaded successfully: {filename}")
+                logger.info(
+                    f"Dataset file uploaded successfully: {filename}, size: {file_size} bytes"
+                )
 
         return uploaded_files_info, file_path
     except ValueError as e:
