@@ -296,9 +296,6 @@ class LocustRunner:
         # This includes the task duration, Locust's own stop timeout, and an extra buffer.
         locust_stop_timeout_config = 99
         wait_timeout_total = task_duration_seconds + locust_stop_timeout_config + 30
-        task_logger.info(
-            f"Waiting for Locust process {process.pid} to complete with a timeout of {wait_timeout_total} seconds."
-        )
 
         try:
             process.wait(timeout=wait_timeout_total)

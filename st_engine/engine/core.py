@@ -66,6 +66,7 @@ class GlobalConfig:
     cert_config: Optional[Union[str, Tuple[str, str]]] = None
     field_mapping: Optional[str] = None
     test_data: Optional[str] = None
+    duration: int = 60
 
 
 @dataclass

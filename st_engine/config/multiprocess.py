@@ -27,10 +27,10 @@ class MultiprocessingConfig:
                 "cpu_cores": os.environ.get("LOCUST_CPU_CORES", ""),
                 "processes": os.environ.get("LOCUST_PROCESSES", ""),
                 "multiprocess_threshold": int(
-                    os.environ.get("MULTIPROCESS_THRESHOLD", "5")
+                    os.environ.get("MULTIPROCESS_THRESHOLD", "1000")
                 ),
                 "min_users_per_process": int(
-                    os.environ.get("MIN_USERS_PER_PROCESS", "5")
+                    os.environ.get("MIN_USERS_PER_PROCESS", "100")
                 ),
                 "force_single_process": os.environ.get(
                     "FORCE_SINGLE_PROCESS", "false"
@@ -80,7 +80,7 @@ class MultiprocessingConfig:
 
             # Respect container limits in Docker environment
             if self.is_docker:
-                return min(system_cpu_count, 8)  # Limit to 8 processes for safety
+                return min(system_cpu_count, 4)  # Limit to 4 processes for safety
 
             return system_cpu_count
         except (ImportError, NotImplementedError):
@@ -238,12 +238,12 @@ DEFAULT_PROCESS_COUNT = get_cpu_count() if DEFAULT_ENABLE_MULTIPROCESS else 1
 
 # Performance tuning parameters, clearer names
 MULTIPROCESS_THRESHOLD = int(
-    os.environ.get("MULTIPROCESS_THRESHOLD", "5")
+    os.environ.get("MULTIPROCESS_THRESHOLD", "1000")
 )  # Min users to enable multiprocess (must be > 1000)
 
 MIN_USERS_PER_PROCESS = int(
-    os.environ.get("MIN_USERS_PER_PROCESS", "5")
-)  # Min users each process should handle (updated from 500)
+    os.environ.get("MIN_USERS_PER_PROCESS", "100")
+)  # Min users each process should handle
 
 
 __all__ = [

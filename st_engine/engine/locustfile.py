@@ -12,7 +12,8 @@ import ssl
 import sys
 import tempfile
 import time
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import field
+from typing import Any, Dict, Optional, Tuple, Union
 
 import urllib3
 from gevent import queue
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.base import (
     DEFAULT_API_PATH,
+    DEFAULT_CONTENT_TYPE,
     DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     DEFAULT_WAIT_TIME_MAX,
@@ -218,6 +220,12 @@ def init_parser(parser):
         default="",
         help="Custom test data in JSONL format or file path",
     )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        default=60,
+        help="Test duration in seconds (used as fallback when start_time is unavailable)",
+    )
 
 
 @events.init.add_listener
@@ -256,6 +264,7 @@ def on_locust_init(environment, **kwargs):
         global_config.key_file = options.key_file
         global_config.field_mapping = options.field_mapping
         global_config.test_data = options.test_data
+        global_config.duration = int(options.duration)
 
         # Parse and validate configuration
         global_config.headers = ConfigManager.parse_headers(
@@ -420,9 +429,35 @@ def on_test_stop(environment, **kwargs):
     global_config = get_global_config()
     task_id = global_config.task_id
     task_logger = GlobalStateManager.get_task_logger(task_id)
+
+    execution_time = None
     start_time = GlobalStateManager.get_start_time()
     end_time = time.time()
-    execution_time = max(end_time - start_time, 0.001)  # avoid division by zero
+
+    try:
+        if start_time is not None and end_time is not None:
+            execution_time = max(end_time - start_time, 0.001)
+        else:
+            duration = getattr(global_config, "duration", None)
+            if duration is not None and duration > 0:
+                execution_time = float(duration)
+            else:
+                execution_time = 60.0
+                task_logger.error(
+                    f"Failed to get effective execution time: start_time={start_time}, duration={duration}"
+                )
+
+                raise ValueError(
+                    f"Failed to get effective execution time: start_time={start_time}, duration={duration}"
+                )
+
+    except Exception as e:
+        task_logger.error(
+            "Failed to calculate execution time: %s" % str(e), exc_info=True
+        )
+        execution_time = 60.0
+        raise RuntimeError("Failed to calculate execution time: %s" % str(e))
+
     from utils.common import calculate_custom_metrics, get_locust_stats
 
     # Check if this is a worker process
@@ -461,7 +496,8 @@ def on_test_stop(environment, **kwargs):
 
     task_logger.debug(
         f"Process type: {'Worker' if is_worker else 'Master'}, "
-        f"Multi-process: {is_multiprocess}, Worker count: {worker_count}"
+        f"Multi-process: {is_multiprocess}, Worker count: {worker_count}, "
+        f"Execution time: {execution_time}"
     )
 
     # === WORKER PROCESS LOGIC ===
