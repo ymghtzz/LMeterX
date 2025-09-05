@@ -6,6 +6,7 @@ Core data structures and configuration management for the stress testing engine.
 """
 
 import json
+import multiprocessing as mp
 import ssl
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Union
@@ -13,8 +14,20 @@ from typing import Any, Dict, Optional, Tuple, Union
 from gevent import queue
 from gevent.lock import Semaphore
 
-from utils.config import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
+from config.base import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
+from config.multiprocess import should_use_multiprocessing_manager
 from utils.logger import logger
+
+
+# === UTILITY CLASSES ===
+class SimpleLock:
+    """Simple lock implementation as fallback when multiprocessing fails."""
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
 
 
 # === DATA CLASSES ===
@@ -74,24 +87,82 @@ class GlobalStateManager:
     """Manages global state for Locust testing."""
 
     _global_config: Optional[GlobalConfig] = None
-    _global_task_queue: Optional[Dict[str, queue.Queue]] = None
+    _global_task_queue: Optional[Dict[str, Any]] = None
     _start_time: Optional[float] = None
-    _lock: Semaphore = Semaphore()
+    _lock: Optional[Any] = None
     _logger_cache: Dict[str, Any] = {}
     _ssl_context: Optional[ssl.SSLContext] = None
 
     @classmethod
     def initialize_global_state(cls) -> None:
-        """Initialize global state."""
-        with cls._lock:
-            cls._global_config = GlobalConfig()
-            cls._global_task_queue = {
-                "completion_tokens_queue": queue.Queue(),
-                "all_tokens_queue": queue.Queue(),
-            }
-            cls._start_time = None
-            cls._logger_cache = {}
-            cls._ssl_context = None
+        """Initialize global state with error handling."""
+        try:
+            # Check if we should use multiprocessing manager
+            use_multiprocessing = should_use_multiprocessing_manager()
+
+            # single process mode
+            if not use_multiprocessing:
+                if cls._lock is None:
+                    try:
+                        cls._lock = Semaphore(1)
+                    except Exception as e:
+                        logger.warning(f"Failed to create gevent semaphore: {e}")
+                        cls._lock = SimpleLock()
+
+                # create in-process queues
+                cls._global_task_queue = {
+                    "completion_tokens_queue": queue.Queue(),
+                    "all_tokens_queue": queue.Queue(),
+                }
+
+                cls._global_config = GlobalConfig()
+                cls._start_time = None
+                cls._logger_cache = {}
+                cls._ssl_context = None
+                return
+
+            # multiprocessing mode - use per-process queues
+            # Locust's Worker processes cannot access the Master process's shared queue
+            if use_multiprocessing:
+                logger.info("Multi-process mode detected - using per-process queues")
+                # In multi-process mode, each process uses its own queue, sharing data via messages
+
+            # Create lock - use gevent lock in multi-process mode
+            if cls._lock is None:
+                try:
+                    cls._lock = Semaphore(1)
+                except Exception as e:
+                    logger.warning(f"Failed to create gevent semaphore: {e}")
+                    # final fallback: use simple object as lock
+                    cls._lock = SimpleLock()
+
+            assert cls._lock is not None
+            with cls._lock:
+                cls._global_config = GlobalConfig()
+
+                # Always use single process queue - share data via messages in multi-process mode
+                cls._global_task_queue = {
+                    "completion_tokens_queue": queue.Queue(),
+                    "all_tokens_queue": queue.Queue(),
+                }
+
+                cls._start_time = None
+                cls._logger_cache = {}
+                cls._ssl_context = None
+
+        except Exception as e:
+            logger.error(f"Failed to initialize global state: {e}")
+            # Set fallback values to prevent further errors
+            if cls._global_config is None:
+                cls._global_config = GlobalConfig()
+            if cls._global_task_queue is None:
+                cls._global_task_queue = {
+                    "completion_tokens_queue": queue.Queue(),
+                    "all_tokens_queue": queue.Queue(),
+                }
+            if cls._lock is None:
+                # final fallback: use simple object as lock
+                cls._lock = SimpleLock()
 
     @classmethod
     def get_global_config(cls) -> GlobalConfig:
@@ -110,7 +181,10 @@ class GlobalStateManager:
     @classmethod
     def set_start_time(cls, start_time: float) -> None:
         """Set the test start time."""
-        with cls._lock:
+        if cls._lock is None:
+            cls.initialize_global_state()
+        assert cls._lock is not None
+        with cls._lock:  # type: ignore
             cls._start_time = start_time
 
     @classmethod
@@ -124,7 +198,10 @@ class GlobalStateManager:
         """Get a cached bound logger for the given task id (reduces bind overhead)."""
         if not task_id:
             return logger
-        with cls._lock:
+        if cls._lock is None:
+            cls.initialize_global_state()
+        assert cls._lock is not None
+        with cls._lock:  # type: ignore
             if task_id not in cls._logger_cache:
                 cls._logger_cache[task_id] = logger.bind(task_id=task_id)
             return cls._logger_cache[task_id]
@@ -137,7 +214,10 @@ class GlobalStateManager:
         """Build and cache SSL context once per process."""
         if cls._ssl_context is not None:
             return
-        with cls._lock:
+        if cls._lock is None:
+            cls.initialize_global_state()
+        assert cls._lock is not None
+        with cls._lock:  # type: ignore
             if cls._ssl_context is not None:
                 return
             try:

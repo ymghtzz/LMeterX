@@ -10,6 +10,11 @@ import subprocess  # nosec B404
 import tempfile
 import threading
 
+from config.multiprocess import (
+    get_cpu_count,
+    get_process_count,
+    should_enable_multiprocess,
+)
 from model.task import Task
 from utils.common import mask_sensitive_command
 from utils.logger import logger
@@ -53,6 +58,20 @@ class LocustRunner:
         task_logger = logger.bind(task_id=task.id)
         try:
             cmd = self._build_locust_command(task)
+
+            # Verify locustfile exists before executing
+            locustfile_path = cmd[2]  # The -f argument value
+            if not os.path.exists(locustfile_path):
+                error_msg = f"Locustfile not found at path: {locustfile_path}"
+                task_logger.error(error_msg)
+                return {
+                    "status": "FAILED",
+                    "stdout": "",
+                    "stderr": error_msg,
+                    "return_code": -1,
+                    "locust_result": {},
+                }
+
             masked_cmd = mask_sensitive_command(cmd)
             task_logger.info(
                 f"Task {task.id}, Executing Locust command: {' '.join(masked_cmd)}"
@@ -129,6 +148,7 @@ class LocustRunner:
         Returns:
             list: A list of command-line arguments for the subprocess.
         """
+        # Fix the locustfile path - it should be in st_engine/engine/ directory
         locustfile_path = os.path.join(self.base_dir, "engine", "locustfile.py")
         command = [
             "locust",
@@ -161,6 +181,22 @@ class LocustRunner:
             "--task-id",
             task.id,
         ]
+
+        # Add multi-process support if enabled and more than 1 process is configured
+        cpu_count = get_cpu_count()
+        concurrent_users = int(task.concurrent_users)
+        process_count = get_process_count(concurrent_users, cpu_count)
+
+        if (
+            should_enable_multiprocess(concurrent_users, cpu_count)
+            and process_count > 1
+        ):
+            command.extend(["--processes", str(process_count)])
+            task_logger = logger.bind(task_id=task.id)
+            task_logger.info(
+                f"Enabling multi-process mode with {process_count} processes "
+                f"(CPU cores: {cpu_count}, concurrent users: {concurrent_users})"
+            )
 
         # Add custom request payload if specified
         if task.request_payload:

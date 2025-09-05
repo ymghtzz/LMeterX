@@ -219,7 +219,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   useEffect(() => {
     if (autoSyncSpawnRate && isFormReady) {
       if (concurrentUsers && typeof concurrentUsers === 'number') {
-        form.setFieldsValue({ spawn_rate: concurrentUsers });
+        const spawnRateValue = Math.min(concurrentUsers, 100);
+        form.setFieldsValue({ spawn_rate: spawnRateValue });
       }
     }
   }, [concurrentUsers, autoSyncSpawnRate, form, isFormReady]);
@@ -228,7 +229,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const handleConcurrentUsersChange = (value: number) => {
     setConcurrentUsers(value);
     if (autoSyncSpawnRate && value) {
-      form.setFieldsValue({ spawn_rate: value });
+      const spawnRateValue = Math.min(value, 100);
+      form.setFieldsValue({ spawn_rate: spawnRateValue });
     }
   };
 
@@ -1785,7 +1787,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           >
             <InputNumber
               min={1}
-              max={1000}
+              max={100}
               style={{ width: '100%' }}
               placeholder='1'
               onChange={handleSpawnRateChange}

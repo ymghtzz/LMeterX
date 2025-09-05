@@ -10,13 +10,13 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from service.task_service import TaskService
-from utils.config import (
+from config.business import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
     TASK_STATUS_FAILED_REQUESTS,
     TASK_STATUS_STOPPED,
 )
+from service.task_service import TaskService
 
 
 class TestFileCleanup(unittest.TestCase):

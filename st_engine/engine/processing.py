@@ -11,16 +11,15 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from locust import events
 
-from engine.core import ConfigManager, FieldMapping, GlobalConfig, StreamMetrics
-from utils.config import (
+from config.base import (
     DEFAULT_API_PATH,
     DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     HTTP_OK,
     MAX_OUTPUT_LENGTH,
-    METRIC_TTOC,
-    METRIC_TTT,
 )
+from config.business import METRIC_TTOC, METRIC_TTT
+from engine.core import ConfigManager, FieldMapping, GlobalConfig, StreamMetrics
 from utils.logger import logger
 
 
@@ -115,42 +114,53 @@ class EventManager:
     @staticmethod
     def fire_failure_event(
         name: str = "failure",
-        response_time: float = 0,
+        response_time: float = 0.0,
         response_length: int = 0,
         exception: Optional[Exception] = None,
     ) -> None:
         """Fire failure events with proper Locust event format."""
         # Enhanced safety checks for all parameters
         try:
-            safe_response_time = (
+            response_time = (
                 float(response_time)
                 if isinstance(response_time, (int, float)) and response_time >= 0
                 else 0.0
             )
         except Exception:
-            safe_response_time = 0.0
+            response_time = 0.0
 
         try:
-            safe_response_length = (
+            response_length = (
                 int(response_length)
                 if isinstance(response_length, (int, float)) and response_length >= 0
                 else 0
             )
         except Exception:
-            safe_response_length = 0
+            response_length = 0
 
-        safe_name = str(name) if name is not None else "failure"
-        safe_exception = exception or Exception("Request failed")
+        exception_info = exception or Exception("Request failed")
 
         try:
-            # Some Locust versions prefer integer ms for response_time
-            events.request.fire(
-                request_type="POST",
-                name=safe_name,
-                response_time=int(safe_response_time),
-                response_length=int(safe_response_length),
-                exception=safe_exception,
-            )
+            # Use the correct Locust event API based on version
+            if hasattr(events, "request_failure"):
+                # Legacy Locust version
+                events.request_failure.fire(
+                    request_type="POST",
+                    name=name,
+                    response_time=int(response_time),
+                    response_length=int(response_length),
+                    exception=exception_info,
+                )
+            else:
+                # Modern Locust version
+                events.request.fire(
+                    request_type="POST",
+                    name=name,
+                    response_time=int(response_time),
+                    response_length=int(response_length),
+                    exception=exception_info,
+                    success=False,
+                )
         except Exception as e:
             # Never crash on metrics emission
             logger.warning(f"Failed to fire failure event: {e}")
@@ -162,34 +172,46 @@ class EventManager:
         """Fire metric events."""
         # Enhanced safety checks for all parameters
         try:
-            safe_response_time = (
+            response_time = (
                 float(response_time)
                 if isinstance(response_time, (int, float)) and response_time >= 0
                 else 0.0
             )
         except Exception:
-            safe_response_time = 0.0
+            response_time = 0.0
 
         try:
-            safe_response_length = (
+            response_length = (
                 int(response_length)
                 if isinstance(response_length, (int, float)) and response_length >= 0
                 else 0
             )
         except Exception:
-            safe_response_length = 0
+            response_length = 0
 
-        safe_name = str(name) if name is not None else "metric"
+        name = str(name) if name is not None else "metric"
 
         try:
-            events.request.fire(
-                request_type="metric",
-                name=safe_name,
-                response_time=int(safe_response_time),
-                response_length=int(safe_response_length),
-            )
+            # Use the correct Locust event API based on version
+            if hasattr(events, "request_success"):
+                # Legacy Locust version
+                events.request_success.fire(
+                    request_type="metric",
+                    name=name,
+                    response_time=int(response_time),
+                    response_length=int(response_length),
+                )
+            else:
+                # Modern Locust version
+                events.request.fire(
+                    request_type="metric",
+                    name=name,
+                    response_time=int(response_time),
+                    response_length=int(response_length),
+                    success=True,
+                )
         except Exception as e:
-            logger.warning(f"Failed to fire metric event '{safe_name}': {e}")
+            logger.warning(f"Failed to fire metric event '{name}': {e}")
 
 
 # === STREAM PROCESSING ===
@@ -869,6 +891,9 @@ class StreamHandler:
                                 },
                             )
                             has_failed = True
+                            # Fix: mark response as failed
+                            if hasattr(response, "failure"):
+                                response.failure(error_msg)
                             return "", ""
 
                         metrics = StreamProcessor.process_chunk(

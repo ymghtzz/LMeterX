@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import tiktoken
 
-from utils.config import (
+from config.base import (
     DEFAULT_TOKEN_RATIO,
     IMAGES_DIR,
     MAX_QUEUE_SIZE,
@@ -95,7 +95,7 @@ def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
                 else:
                     safe_dict[key] = mask_sensitive_data(value)
         except Exception as e:
-            logger.warning(f"Error masking sensitive data: {str(e)}")
+            logger.warning("Error masking sensitive data: %s" % str(e))
             return data
         return safe_dict
     elif isinstance(data, list):
@@ -128,7 +128,7 @@ def mask_sensitive_command(command_list: list) -> list:
             safe_list.append(new_item)
         return safe_list
     except Exception as e:
-        logger.warning(f"Error masking sensitive command: {str(e)}")
+        logger.warning("Error masking sensitive command: %s" % str(e))
         return command_list
 
 
@@ -544,7 +544,7 @@ def _drain_queue(q: queue.Queue) -> List[int]:
 
 def calculate_custom_metrics(
     task_id: str, global_task_queue: Dict[str, queue.Queue], exc_time: float
-) -> Dict[str, float]:
+) -> Dict[str, Union[int, float]]:
     """Calculates custom performance metrics.
 
     Args:
@@ -560,11 +560,8 @@ def calculate_custom_metrics(
     # Initialize metrics
     metrics = {
         "reqs_num": 0,
-        "req_throughput": 0.0,
-        "completion_tps": 0.0,
-        "total_tps": 0.0,
-        "avg_total_tokens_per_req": 0.0,
-        "avg_completion_tokens_per_req": 0.0,
+        "completion_tokens": 0,
+        "all_tokens": 0,
     }
 
     try:
@@ -574,31 +571,13 @@ def calculate_custom_metrics(
         )
         completion_tokens = sum(completion_tokens_list)
         metrics["reqs_num"] = len(completion_tokens_list)
+        metrics["completion_tokens"] = completion_tokens
 
         # Process all tokens
         all_tokens_list = _drain_queue(global_task_queue["all_tokens_queue"])
         all_tokens = sum(all_tokens_list)
+        metrics["all_tokens"] = all_tokens
 
-        # Calculate throughput metrics
-        if exc_time and exc_time > 0:
-            metrics["completion_tps"] = completion_tokens / exc_time
-            metrics["total_tps"] = all_tokens / exc_time
-            metrics["req_throughput"] = metrics["reqs_num"] / exc_time
-        else:
-            task_logger.warning(
-                f"Invalid execution time ({exc_time}s), throughput metrics set to 0"
-            )
-
-        # Calculate average tokens per request
-        if completion_tokens_list:
-            metrics["avg_completion_tokens_per_req"] = completion_tokens / len(
-                completion_tokens_list
-            )
-
-        if all_tokens_list:
-            metrics["avg_total_tokens_per_req"] = all_tokens / len(all_tokens_list)
-
-        # task_logger.info(f"Custom metrics calculated: {metrics}")
         return metrics
 
     except Exception as e:
@@ -624,7 +603,16 @@ def get_locust_stats(task_id: str, environment_stats) -> List[Dict[str, Any]]:
 
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Collect all response times for percentile calculation (currently unused)
+        # all_response_times: List[float] = []
+
         for name, endpoint in environment_stats.entries.items():
+            # Skip the aggregated entry that Locust automatically creates to avoid duplication
+            if name == ("Aggregated", None) or (
+                hasattr(name, "__iter__") and name[0] == "Aggregated"
+            ):
+                continue
+
             raw_params = {
                 "task_id": task_id,
                 "metric_type": endpoint.name,

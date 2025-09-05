@@ -12,7 +12,7 @@ import ssl
 import sys
 import tempfile
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import urllib3
 from gevent import queue
@@ -21,6 +21,14 @@ from urllib3.exceptions import InsecureRequestWarning
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from config.base import (
+    DEFAULT_API_PATH,
+    DEFAULT_PROMPT,
+    DEFAULT_TIMEOUT,
+    DEFAULT_WAIT_TIME_MAX,
+    DEFAULT_WAIT_TIME_MIN,
+)
 
 # Local imports after path setup
 from engine.core import (  # noqa: E402
@@ -32,13 +40,6 @@ from engine.core import (  # noqa: E402
 )
 from engine.processing import ErrorHandler, RequestHandler, StreamHandler  # noqa: E402
 from utils.common import count_tokens, mask_sensitive_data  # noqa: E402
-from utils.config import (  # noqa: E402
-    DEFAULT_API_PATH,
-    DEFAULT_PROMPT,
-    DEFAULT_TIMEOUT,
-    DEFAULT_WAIT_TIME_MAX,
-    DEFAULT_WAIT_TIME_MIN,
-)
 from utils.logger import logger  # noqa: E402
 
 # Disable the specific InsecureRequestWarning from urllib3
@@ -47,6 +48,7 @@ urllib3.disable_warnings(InsecureRequestWarning)
 # === SIGNAL HANDLING ===
 # Flag to track if we're already in shutdown process
 _shutdown_in_progress = False
+custom_metrics_aggregated: Dict[str, Any] = {}
 
 
 def graceful_signal_handler(signum, frame):
@@ -60,12 +62,77 @@ def graceful_signal_handler(signum, frame):
     task_logger = GlobalStateManager.get_task_logger(task_id)
 
     if _shutdown_in_progress:
-        task_logger.debug(
-            f"Received signal {signum} during shutdown process. Ignoring to prevent duplicate shutdown."
-        )
         return
 
     _shutdown_in_progress = True
+
+    # For worker processes, ensure metrics are sent before exit
+    try:
+        try:
+            from locust.runners import WorkerRunner
+
+            WorkerRunner = WorkerRunner
+        except ImportError:
+            WorkerRunner = None
+
+        # Check if this is a worker process
+        if hasattr(frame, "f_globals") and "environment" in frame.f_globals:
+            env = frame.f_globals["environment"]
+            is_worker = False
+            if WorkerRunner is not None:
+                is_worker = hasattr(env, "runner") and isinstance(
+                    env.runner, WorkerRunner
+                )
+            else:
+                is_worker = hasattr(env, "runner") and "WorkerRunner" in str(
+                    type(env.runner)
+                )
+
+            if is_worker:
+                task_logger.debug(
+                    f"Worker process {os.getpid()} received signal {signum}, ensuring metrics are sent..."
+                )
+
+                # Send metrics to Master immediately
+                try:
+                    from utils.common import calculate_custom_metrics
+
+                    global_task_queue = GlobalStateManager.get_global_task_queue()
+                    start_time = GlobalStateManager.get_start_time()
+                    end_time = time.time()
+                    execution_time = (end_time - start_time) if start_time else 0
+
+                    custom_metrics = calculate_custom_metrics(
+                        task_id, global_task_queue, execution_time
+                    )
+
+                    # Send directly to Master
+                    if hasattr(env, "runner") and hasattr(env.runner, "send_message"):
+                        # Send metrics
+                        env.runner.send_message("worker_custom_metrics", custom_metrics)
+                        task_logger.debug(
+                            f"Emergency metrics sent to master: {custom_metrics}"
+                        )
+
+                        # Send confirmation
+                        env.runner.send_message(
+                            "worker_metrics_sent", {"pid": os.getpid()}
+                        )
+                        task_logger.debug(f"Emergency confirmation sent to master")
+
+                        # Wait a short time to ensure message is sent
+                        import time
+
+                        time.sleep(0.5)
+                    else:
+                        task_logger.warning(
+                            "Cannot send metrics to master, runner not available"
+                        )
+
+                except Exception as e:
+                    task_logger.error(f"Failed to send emergency metrics: {e}")
+    except Exception as e:
+        task_logger.warning(f"Error in graceful signal handler: {e}")
 
     # Let the default signal handler proceed, but our flag will prevent duplicate User.stop() calls
     # Restore the default signal handler and re-raise the signal
@@ -74,8 +141,7 @@ def graceful_signal_handler(signum, frame):
 
 
 # === GLOBAL STATE ===
-# Initialize global state using the state manager
-GlobalStateManager.initialize_global_state()
+# Global state will be initialized when needed, not at module import time
 
 
 def get_global_config() -> GlobalConfig:
@@ -173,7 +239,6 @@ def on_locust_init(environment, **kwargs):
     try:
         signal.signal(signal.SIGTERM, graceful_signal_handler)
         signal.signal(signal.SIGINT, graceful_signal_handler)
-        task_logger.debug("Custom signal handlers registered successfully.")
     except Exception as e:
         task_logger.warning(f"Failed to register custom signal handlers: {e}")
 
@@ -223,7 +288,6 @@ def on_locust_init(environment, **kwargs):
 
         environment.global_config = global_config
         masked_config = mask_sensitive_data(global_config.__dict__)
-        # task_logger.info(f"Locust initialization complete. Config: {masked_config}")
         GlobalStateManager.set_start_time(time.time())
 
         # Build SSL context once per process if needed
@@ -237,51 +301,350 @@ def on_locust_init(environment, **kwargs):
         raise
 
 
-@events.test_stop.add_listener
-def on_test_stop(environment, **kwargs):
-    """Calculate final metrics and save results."""
-    global _shutdown_in_progress
-    _shutdown_in_progress = True  # Mark that we're in shutdown process
-
-    global_config = get_global_config()
-    global_task_queue = get_global_task_queue()
-    start_time = GlobalStateManager.get_start_time()
-
-    task_id = global_config.task_id
-    task_logger = GlobalStateManager.get_task_logger(task_id)
-    end_time = time.time()
-
-    execution_time = (end_time - start_time) if start_time else 0
-    if execution_time <= 0:
-        task_logger.warning(
-            "Start time was not recorded; cannot calculate execution time."
-        )
-
+@events.test_start.add_listener
+def on_test_start(environment, **kwargs):
+    """Register message handlers when test starts"""
     try:
-        from utils.common import calculate_custom_metrics, get_locust_stats
+        # Check if this is a worker process
+        from locust.runners import WorkerRunner
 
-        custom_metrics = calculate_custom_metrics(
-            task_id, global_task_queue, execution_time
-        )
-        locust_stats = get_locust_stats(task_id, environment.stats)
+        is_worker = isinstance(environment.runner, WorkerRunner)
 
-        locust_result = {
-            "custom_metrics": custom_metrics,
-            "locust_stats": locust_stats,
-        }
+        if is_worker:
+            # Worker process: register handler to respond to Master requests
+            task_logger = GlobalStateManager.get_task_logger(
+                os.environ.get("TASK_ID", "unknown")
+            )
+            task_logger.debug(
+                f"Worker process {os.getpid()} started, registered message handlers"
+            )
 
-        # Save results to temporary file
-        result_file = os.path.join(
-            tempfile.gettempdir(), "locust_result", task_id, "result.json"
-        )
-        result_dir = os.path.dirname(result_file)
-        os.makedirs(result_dir, exist_ok=True)
+            # Register worker message handler
+            def on_master_msg(environment, msg, **_):
+                if msg.type == "request_metrics":
+                    # Send metrics immediately when Master requests
+                    try:
+                        from utils.common import calculate_custom_metrics
 
-        with open(result_file, "w") as f:
-            json.dump(locust_result, f, indent=4)
+                        global_task_queue = GlobalStateManager.get_global_task_queue()
+                        start_time = GlobalStateManager.get_start_time()
+                        end_time = time.time()
+                        execution_time = (end_time - start_time) if start_time else 0
+
+                        custom_metrics = calculate_custom_metrics(
+                            os.environ.get("TASK_ID", "unknown"),
+                            global_task_queue,
+                            execution_time,
+                        )
+
+                        # Add PID to metrics for proper identification
+                        custom_metrics["pid"] = os.getpid()
+
+                        environment.runner.send_message(
+                            "worker_custom_metrics", custom_metrics
+                        )
+                        task_logger.debug(
+                            f"Metrics sent in response to master request: {custom_metrics}"
+                        )
+
+                    except Exception as e:
+                        task_logger.error(
+                            f"Failed to send metrics in response to master request: {e}"
+                        )
+
+            environment.runner.register_message("request_metrics", on_master_msg)
+        else:
+            # Master process: register handler to receive Worker messages
+            task_logger = GlobalStateManager.get_task_logger(
+                os.environ.get("TASK_ID", "unknown")
+            )
+            task_logger.debug(
+                f"Master process {os.getpid()} started, registering message handlers"
+            )
+
+            # Initialize message storage lists
+            environment.worker_metrics_list = []
+            environment.worker_confirmations = set()
+            environment.incremental_metrics_list = []
+            environment.worker_metrics_received = set()  # Track received Worker PIDs
+
+            # Register Master message handler
+            def on_worker_msg(environment, msg, **_):
+                if msg.type == "worker_custom_metrics":
+                    # Check if we've already received metrics from this Worker
+                    worker_pid = msg.data.get("pid", "unknown")
+                    if worker_pid not in environment.worker_metrics_received:
+                        environment.worker_metrics_received.add(worker_pid)
+                        environment.worker_metrics_list.append(msg.data)
+                        task_logger.debug(
+                            f"Master received worker metrics from PID {worker_pid}: {msg.data}"
+                        )
+                    else:
+                        task_logger.warning(
+                            f"Duplicate metrics received from worker PID {worker_pid}"
+                        )
+                elif msg.type == "worker_metrics_sent":
+                    worker_pid = msg.data.get("pid", "unknown")
+                    environment.worker_confirmations.add(worker_pid)
+                    task_logger.debug(
+                        f"Master received confirmation from worker {worker_pid}"
+                    )
+                elif msg.type == "worker_incremental_metrics":
+                    environment.incremental_metrics_list.append(msg.data)
+
+            try:
+                environment.runner.register_message(
+                    "worker_custom_metrics", on_worker_msg
+                )
+                environment.runner.register_message(
+                    "worker_metrics_sent", on_worker_msg
+                )
+                environment.runner.register_message(
+                    "worker_incremental_metrics", on_worker_msg
+                )
+                task_logger.debug("Master message handlers registered successfully")
+            except Exception as e:
+                task_logger.error(f"Failed to register master message handlers: {e}")
 
     except Exception as e:
-        task_logger.error(f"Failed to save locust results: {e}", exc_info=True)
+        # Ignore errors, don't affect test execution
+        task_logger = GlobalStateManager.get_task_logger(
+            os.environ.get("TASK_ID", "unknown")
+        )
+        task_logger.warning(f"Error in on_test_start: {e}")
+
+
+@events.test_stop.add_listener
+def on_test_stop(environment, **kwargs):
+    """Handle metrics aggregation when test stops"""
+    global_config = get_global_config()
+    task_id = global_config.task_id
+    task_logger = GlobalStateManager.get_task_logger(task_id)
+    start_time = GlobalStateManager.get_start_time()
+    end_time = time.time()
+    execution_time = max(end_time - start_time, 0.001)  # avoid division by zero
+    from utils.common import calculate_custom_metrics, get_locust_stats
+
+    # Check if this is a worker process
+    is_worker = False
+    try:
+        from locust.runners import WorkerRunner
+
+        is_worker = isinstance(environment.runner, WorkerRunner)
+    except ImportError:
+        is_worker = "WorkerRunner" in str(type(environment.runner))
+
+    # Check if this is a multi-process mode
+    is_multiprocess = False
+    worker_count = 0
+    try:
+        worker_count = getattr(environment.runner, "worker_count", 0)
+        if worker_count > 0:
+            has_workers_attr = hasattr(environment.runner, "workers")
+            has_worker_runner = hasattr(environment.runner, "_worker_connections")
+            if has_workers_attr or has_worker_runner:
+                is_multiprocess = True
+                task_logger.debug(
+                    f"Detected multi-process mode: worker_count={worker_count}, has_workers={has_workers_attr}, has_worker_runner={has_worker_runner}"
+                )
+            else:
+                is_multiprocess = worker_count > 1
+                task_logger.debug(
+                    f"Ambiguous case: worker_count={worker_count}, assuming {'multi-process' if is_multiprocess else 'single-process'} mode"
+                )
+        else:
+            is_multiprocess = False
+            task_logger.debug("Detected single process mode: worker_count=0")
+    except Exception as e:
+        task_logger.warning(f"Error detecting multi-process mode: {e}")
+        is_multiprocess = False
+
+    task_logger.debug(
+        f"Process type: {'Worker' if is_worker else 'Master'}, "
+        f"Multi-process: {is_multiprocess}, Worker count: {worker_count}"
+    )
+
+    # === WORKER PROCESS LOGIC ===
+    if is_worker:
+        # Worker process: collect basic metrics only
+        try:
+            global_task_queue = get_global_task_queue()
+
+            # Get basic metrics without TPS
+            worker_metrics = calculate_custom_metrics(
+                task_id, global_task_queue, execution_time
+            )
+            worker_metrics["pid"] = os.getpid()
+
+            task_logger.debug(
+                f"Worker {os.getpid()} calculated metrics: {worker_metrics}"
+            )
+
+            # Send basic metrics to Master
+            try:
+                for attempt in range(3):
+                    try:
+                        environment.runner.send_message(
+                            "worker_custom_metrics", worker_metrics
+                        )
+                        task_logger.debug(
+                            f"Worker {os.getpid()} sent metrics to master (attempt {attempt + 1})"
+                        )
+
+                        # Send confirmation message
+                        environment.runner.send_message(
+                            "worker_metrics_sent", {"pid": os.getpid()}
+                        )
+                        task_logger.debug(
+                            f"Worker {os.getpid()} sent confirmation (attempt {attempt + 1})"
+                        )
+
+                        import gevent
+
+                        gevent.sleep(0.5)
+                        break
+                    except Exception as e:
+                        task_logger.warning(
+                            f"Worker {os.getpid()} failed to send metrics (attempt {attempt + 1}): {e}"
+                        )
+                        if attempt < 2:
+                            import gevent
+
+                            gevent.sleep(1)
+                        else:
+                            raise
+            except Exception as e:
+                task_logger.error(
+                    f"Worker {os.getpid()} failed to send metrics after all attempts: {e}"
+                )
+
+            # Wait for Master processing
+            import gevent
+
+            gevent.sleep(3)
+
+        except Exception as e:
+            task_logger.error(f"Worker {os.getpid()} failed to send metrics: {e}")
+        return
+
+    # === MASTER PROCESS LOGIC ===
+    # Master process: aggregate basic metrics and calculate TPS
+    worker_metrics_list = getattr(environment, "worker_metrics_list", [])
+    worker_confirmations = getattr(environment, "worker_confirmations", set())
+
+    # Wait for Worker metrics in multi-process mode
+    if is_multiprocess and worker_count > 0:
+        import gevent
+
+        max_wait_time = 10
+        wait_time = 0
+
+        # Actively request Worker metrics
+        try:
+            if hasattr(environment.runner, "send_message"):
+                task_logger.debug("Actively requesting metrics from all workers...")
+                environment.runner.send_message(
+                    "request_metrics", {"request": "all_metrics"}
+                )
+                gevent.sleep(1)
+        except Exception as e:
+            task_logger.warning(f"Failed to actively request worker metrics: {e}")
+
+        while len(worker_metrics_list) < worker_count and wait_time < max_wait_time:
+            gevent.sleep(0.5)
+            wait_time += 0.5
+            task_logger.debug(
+                f"Waiting for worker metrics... ({len(worker_metrics_list)}/{worker_count}) after {wait_time}s"
+            )
+
+        if len(worker_metrics_list) < worker_count:
+            task_logger.warning(
+                f"Only received {len(worker_metrics_list)} worker metrics out of {worker_count} expected workers"
+            )
+
+    # Aggregate basic metrics
+    total_reqs = 0
+    total_comp_tokens = 0
+    total_all_tokens = 0
+
+    if is_multiprocess:
+        # Multi-process mode: aggregate from worker metrics
+        if worker_metrics_list:
+            task_logger.debug(
+                f"Multi-process mode: aggregating {len(worker_metrics_list)} worker metrics"
+            )
+
+            processed_pids = set()
+            for wm in worker_metrics_list:
+                pid = wm.get("pid")
+                if pid not in processed_pids:
+                    processed_pids.add(pid)
+                    total_reqs += wm.get("reqs_num", 0)
+                    total_comp_tokens += wm.get("completion_tokens", 0)
+                    total_all_tokens += wm.get("all_tokens", 0)
+                    task_logger.debug(f"Aggregated worker metrics from PID {pid}: {wm}")
+
+            task_logger.debug(
+                f"Multi-process mode: aggregated {len(processed_pids)} unique worker metrics"
+            )
+        else:
+            # Fallback: use Master's local metrics
+            task_logger.warning(
+                "No worker metrics received, falling back to master local metrics"
+            )
+            global_task_queue = get_global_task_queue()
+            master_metrics = calculate_custom_metrics(
+                task_id, global_task_queue, execution_time
+            )
+            total_reqs = master_metrics["reqs_num"]
+            total_comp_tokens = master_metrics["completion_tokens"]
+            total_all_tokens = master_metrics["all_tokens"]
+    else:
+        # Single-process mode: use Master's local metrics
+        task_logger.debug("Single process mode: using master local metrics")
+        global_task_queue = get_global_task_queue()
+        master_metrics = calculate_custom_metrics(
+            task_id, global_task_queue, execution_time
+        )
+        total_reqs = master_metrics["reqs_num"]
+        total_comp_tokens = master_metrics["completion_tokens"]
+        total_all_tokens = master_metrics["all_tokens"]
+
+    # Calculate final TPS metrics using aggregated data and total execution time
+    custom_metrics = {
+        "reqs_num": total_reqs,
+        "req_throughput": total_reqs / execution_time if execution_time > 0 else 0,
+        "completion_tps": (
+            total_comp_tokens / execution_time if execution_time > 0 else 0
+        ),
+        "total_tps": total_all_tokens / execution_time if execution_time > 0 else 0,
+        "avg_completion_tokens_per_req": (
+            total_comp_tokens / total_reqs if total_reqs > 0 else 0
+        ),
+        "avg_total_tokens_per_req": (
+            total_all_tokens / total_reqs if total_reqs > 0 else 0
+        ),
+    }
+
+    # Get Locust standard statistics
+    locust_stats = get_locust_stats(task_id, environment.stats)
+
+    # Save results
+    result_file = os.path.join(
+        tempfile.gettempdir(), "locust_result", task_id, "result.json"
+    )
+    os.makedirs(os.path.dirname(result_file), exist_ok=True)
+    with open(result_file, "w") as f:
+        json.dump(
+            {
+                "custom_metrics": custom_metrics,
+                "locust_stats": locust_stats,
+            },
+            f,
+            indent=4,
+        )
+
+    task_logger.debug(f"Final aggregated metrics: {custom_metrics}")
 
 
 # === MAIN USER CLASS ===
@@ -355,8 +718,6 @@ class LLMTestUser(FastHttpUser):
             # only set insecure when you want to skip server certificate verification
             if hasattr(self.client, "insecure"):
                 self.client.insecure = True
-
-            self.task_logger.debug("SSL settings configured for FastHttpUser")
 
         except Exception as e:
             self.task_logger.warning(f"Failed to configure SSL settings: {e}")
@@ -460,6 +821,11 @@ class LLMTestUser(FastHttpUser):
             ):
                 global_task_queue["all_tokens_queue"].put(int(total_tokens))
 
+            # REMOVED: incremental_metrics sending logic
+            # This was causing the inconsistency between worker metrics and incremental metrics
+            # In multi-process mode, we now rely solely on worker metrics calculated via calculate_custom_metrics()
+            # In single-process mode, we rely on master's local metrics calculated via calculate_custom_metrics()
+
         except Exception as e:
             self.task_logger.error(f"Failed to count tokens: {e}", exc_info=True)
 
@@ -475,7 +841,6 @@ class LLMTestUser(FastHttpUser):
         base_request_kwargs, user_prompt = self.request_handler.prepare_request_kwargs(
             prompt_data
         )
-        self.task_logger.debug(f"base_request_kwargs: {base_request_kwargs}")
         if not base_request_kwargs:
             self.task_logger.error(
                 "Failed to generate request arguments. Skipping task."
@@ -546,16 +911,10 @@ class LLMTestUser(FastHttpUser):
 
         # If we're already in shutdown process, return gracefully
         if _shutdown_in_progress:
-            self.task_logger.debug(
-                "User stop called during shutdown process. Skipping to prevent duplicate stop."
-            )
             return
 
         # Check if user is already in stopping state
         if hasattr(self, "_state") and self._state == "stopping":
-            self.task_logger.debug(
-                "User is already in stopping state. Skipping duplicate stop attempt."
-            )
             return
 
         try:
@@ -565,10 +924,6 @@ class LLMTestUser(FastHttpUser):
             # Handle the specific "stopping state" exception
             error_msg = str(e).lower()
             if "stopping" in error_msg or "unexpected state" in error_msg:
-                self.task_logger.debug(
-                    f"Caught expected 'stopping state' exception during User.stop(): {e}. "
-                    "This is normal when process receives multiple stop signals."
-                )
                 # Mark as stopped to prevent further attempts
                 if hasattr(self, "_state"):
                     self._state = "stopped"

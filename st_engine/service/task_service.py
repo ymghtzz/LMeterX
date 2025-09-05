@@ -9,12 +9,11 @@ import subprocess  # nosec B404
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from engine.runner import LocustRunner
-from model.task import Task
-from service.result_service import ResultService
-from utils.config import UPLOAD_FOLDER  # Add import for upload folder path
-from utils.config import (
+from config.base import (  # Add import for upload folder path
     ST_ENGINE_DIR,
+    UPLOAD_FOLDER,
+)
+from config.business import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
     TASK_STATUS_FAILED_REQUESTS,
@@ -23,6 +22,9 @@ from utils.config import (
     TASK_STATUS_STOPPED,
     TASK_STATUS_STOPPING,
 )
+from engine.runner import LocustRunner
+from model.task import Task
+from service.result_service import ResultService
 from utils.logger import add_task_log_sink, logger, remove_task_log_sink
 
 
@@ -328,11 +330,18 @@ class TaskService:
         handler_id = None
         task_logger = logger.bind(task_id=task.id)
         try:
+            # Add task log sink first
             handler_id = add_task_log_sink(task.id)
-            task_logger.info(f"Starting processing pipeline for task {task.id}.")
+
+            # Update task status to running
             self.update_task_status(session, task, TASK_STATUS_RUNNING)
 
+            # Start the task execution
             run_result = self.start_task(task)
+            task_logger.info(
+                f"Task execution completed for task {task.id}, result status: {run_result.get('status', 'unknown')}"
+            )
+
             run_status = run_result.get("status")
             locust_result = run_result.get("locust_result", {})
 
@@ -352,8 +361,12 @@ class TaskService:
                 self.update_task_status(session, task, TASK_STATUS_COMPLETED)
                 if locust_result:
                     # Always insert results first, regardless of outcome
+                    task_logger.info(f"Inserting locust results for task {task.id}")
                     self.result_service.insert_locust_results(
                         session, locust_result, task.id
+                    )
+                    task_logger.info(
+                        f"Locust results inserted successfully for task {task.id}"
                     )
                 else:
                     error_message = (
@@ -369,6 +382,9 @@ class TaskService:
                 )
                 if locust_result:
                     # Insert results even when there are failures
+                    task_logger.info(
+                        f"Inserting locust results for failed requests task {task.id}"
+                    )
                     self.result_service.insert_locust_results(
                         session, locust_result, task.id
                     )
@@ -376,8 +392,9 @@ class TaskService:
                     # Get failure count from aggregated stats
                     total_failures = 0
                     aggregated_stats = None
-                    for stats_entry in locust_result.get("stats", []):
-                        if stats_entry.get("name") == "Aggregated":
+                    # Look for aggregated stats in the locust_stats list
+                    for stats_entry in locust_result.get("locust_stats", []):
+                        if stats_entry.get("metric_type") == "Aggregated":
                             aggregated_stats = stats_entry
                             break
 
@@ -400,6 +417,8 @@ class TaskService:
                 stderr_details = run_result.get("stderr", "No stderr.")
                 error_message = f"Task {task.id} execution failed (Locust exit code: {return_code}). Details: {stderr_details}"
                 task_logger.error(f"Task execution failed.")
+                task_logger.error(f"Return code: {return_code}")
+                task_logger.error(f"Stderr: {stderr_details}")
                 self.update_task_status(
                     session, task, TASK_STATUS_FAILED, error_message
                 )
@@ -409,14 +428,36 @@ class TaskService:
                 stderr_details = run_result.get("stderr", "No stderr.")
                 error_message = f"Task {task.id} returned unexpected status '{run_status}' (return code: {return_code}). Details: {stderr_details}"
                 task_logger.error(f"Unexpected runner status: {run_status}")
+                task_logger.error(f"Return code: {return_code}")
+                task_logger.error(f"Stderr: {stderr_details}")
                 self.update_task_status(
                     session, task, TASK_STATUS_FAILED, error_message
                 )
 
         except Exception as e:
             error_message = f"An unexpected error occurred in the pipeline: {e}"
-            task_logger.exception(f"Pipeline failed with an unexpected error.")
-            self.update_task_status(session, task, TASK_STATUS_FAILED, error_message)
+            task_logger.exception(f"Pipeline failed with an unexpected error: {e}")
+            # Log the full traceback for debugging
+            import traceback
+
+            task_logger.error(f"Full traceback: {traceback.format_exc()}")
+
+            # Ensure the task status is updated even if there's an exception
+            try:
+                self.update_task_status(
+                    session, task, TASK_STATUS_FAILED, error_message
+                )
+                task_logger.info(
+                    f"Task {task.id} status updated to FAILED after exception"
+                )
+            except Exception as status_update_error:
+                task_logger.error(
+                    f"Failed to update task status after pipeline error: {status_update_error}"
+                )
+                # Also log to the system logger in case task logger is broken
+                logger.error(
+                    f"Critical: Failed to update status for task {task.id}: {status_update_error}"
+                )
         finally:
             if handler_id is not None:
                 remove_task_log_sink(handler_id)
