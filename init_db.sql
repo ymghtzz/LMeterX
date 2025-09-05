@@ -16,7 +16,7 @@ CREATE TABLE `tasks` (
   `api_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT '/chat/completions' COMMENT 'API path',
   `request_payload` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Custom request payload for non-chat completions APIs',
   `field_mapping` json DEFAULT NULL COMMENT 'Field mapping configuration for custom APIs',
-  `model` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `model` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `system_prompt` longtext COLLATE utf8mb4_unicode_ci,
   `test_data` longtext COLLATE utf8mb4_unicode_ci,
   `stream_mode` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'True',

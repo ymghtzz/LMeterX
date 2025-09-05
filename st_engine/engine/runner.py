@@ -367,9 +367,6 @@ class LocustRunner:
             with open(result_file, "r") as f:
                 result_data = json.load(f)
 
-            task_logger.info(
-                f"Successfully loaded Locust result file from {result_file}"
-            )
             return result_data
 
         except json.JSONDecodeError:

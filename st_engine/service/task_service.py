@@ -382,9 +382,6 @@ class TaskService:
                 )
                 if locust_result:
                     # Insert results even when there are failures
-                    task_logger.info(
-                        f"Inserting locust results for failed requests task {task.id}"
-                    )
                     self.result_service.insert_locust_results(
                         session, locust_result, task.id
                     )

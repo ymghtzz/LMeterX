@@ -307,6 +307,8 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     """
     task_id = str(uuid.uuid4())
     logger.info("Creating task '%s' with ID: %s" % (body.name, task_id))
+    if body.model and len(body.model) > 255:
+        return ErrorResponse.bad_request("Model name must be less than 255 characters")
 
     cert_file, key_file = _get_cert_config(body)
 
