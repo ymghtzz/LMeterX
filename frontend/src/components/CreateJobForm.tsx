@@ -818,6 +818,20 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'key']}
                       style={{ flex: 1, minWidth: '140px' }}
+                      rules={[
+                        {
+                          required: true,
+                          message: t(
+                            'components.createJobForm.headerNameRequired'
+                          ),
+                        },
+                        {
+                          max: 100,
+                          message: t(
+                            'components.createJobForm.headerNameLengthLimit'
+                          ),
+                        },
+                      ]}
                     >
                       <Input
                         placeholder={
@@ -828,6 +842,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                               )
                         }
                         disabled={isFixed}
+                        maxLength={100}
                         style={
                           isFixed
                             ? {
@@ -841,8 +856,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'value']}
                       style={{ flex: 2 }}
-                      rules={
-                        isAuth
+                      rules={[
+                        {
+                          max: 1000,
+                          message: t(
+                            'components.createJobForm.headerValueLengthLimit'
+                          ),
+                        },
+                        ...(isAuth
                           ? [
                               {
                                 required: false,
@@ -850,8 +871,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                                   'Please enter API key (include Bearer prefix if required)',
                               },
                             ]
-                          : []
-                      }
+                          : []),
+                      ]}
                     >
                       <Input
                         placeholder={
@@ -862,6 +883,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                               )
                         }
                         disabled={isFixed}
+                        maxLength={1000}
                         style={
                           isFixed
                             ? {
@@ -926,22 +948,46 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'key']}
                       style={{ flex: 1, minWidth: '140px' }}
+                      rules={[
+                        {
+                          required: true,
+                          message: t(
+                            'components.createJobForm.cookieNameRequired'
+                          ),
+                        },
+                        {
+                          max: 100,
+                          message: t(
+                            'components.createJobForm.cookieNameLengthLimit'
+                          ),
+                        },
+                      ]}
                     >
                       <Input
                         placeholder={t(
                           'components.createJobForm.cookieNamePlaceholder'
                         )}
+                        maxLength={100}
                       />
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'value']}
                       style={{ flex: 2 }}
+                      rules={[
+                        {
+                          max: 1000,
+                          message: t(
+                            'components.createJobForm.cookieValueLengthLimit'
+                          ),
+                        },
+                      ]}
                     >
                       <Input
                         placeholder={t(
                           'components.createJobForm.cookieValuePlaceholder'
                         )}
+                        maxLength={1000}
                       />
                     </Form.Item>
                     <MinusCircleOutlined
@@ -1130,11 +1176,30 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 required: true,
                 message: t('components.createJobForm.pleaseEnterTaskName'),
               },
+              {
+                min: 1,
+                max: 100,
+                message: t('components.createJobForm.taskNameLengthLimit'),
+              },
+              {
+                validator: (_, value) => {
+                  if (!value || !value.trim()) {
+                    return Promise.reject(
+                      new Error(
+                        t('components.createJobForm.taskNameCannotBeEmpty')
+                      )
+                    );
+                  }
+                  return Promise.resolve();
+                },
+              },
             ]}
             normalize={value => value?.trim() || ''}
           >
             <Input
               placeholder={t('components.createJobForm.taskNamePlaceholder')}
+              maxLength={100}
+              showCount
             />
           </Form.Item>
         </Col>
@@ -1166,6 +1231,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     message: t('components.createJobForm.pleaseEnterApiUrl'),
                   },
                   {
+                    min: 1,
+                    max: 255,
+                    message: t('components.createJobForm.apiUrlLengthLimit'),
+                  },
+                  {
                     validator: (_, value) => {
                       if (!value?.trim()) return Promise.resolve();
 
@@ -1194,7 +1264,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
                       try {
                         const url = new URL(trimmedValue);
-                        // Additional validation: ensure hostname is present
                         if (!url.hostname || url.hostname.length === 0) {
                           return Promise.reject(
                             new Error(
@@ -1218,6 +1287,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 <Input
                   style={{ width: '70%' }}
                   placeholder='https://your-api-domain.com'
+                  maxLength={255}
                 />
               </Form.Item>
               <Form.Item
@@ -1228,12 +1298,35 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     required: true,
                     message: t('components.createJobForm.pleaseEnterApiPath'),
                   },
+                  {
+                    min: 1,
+                    max: 255,
+                    message: t('components.createJobForm.apiPathLengthLimit'),
+                  },
+                  {
+                    validator: (_, value) => {
+                      if (!value?.trim()) return Promise.resolve();
+
+                      const trimmedValue = value.trim();
+                      if (!trimmedValue.startsWith('/')) {
+                        return Promise.reject(
+                          new Error(
+                            t(
+                              'components.createJobForm.apiPathMustStartWithSlash'
+                            )
+                          )
+                        );
+                      }
+                      return Promise.resolve();
+                    },
+                  },
                 ]}
                 normalize={value => value?.trim() || ''}
               >
                 <Input
                   style={{ width: '30%' }}
                   placeholder='/chat/completions'
+                  maxLength={255}
                 />
               </Form.Item>
             </div>
@@ -1255,13 +1348,17 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             }
             rules={[
               {
-                required: true,
-                message: t('components.createJobForm.pleaseEnterModelName'),
+                max: 255,
+                message: t('components.createJobForm.modelNameLengthLimit'),
               },
             ]}
             normalize={value => value?.trim() || ''}
           >
-            <Input placeholder='e.g. gpt-4, claude-3, internlm3-latest' />
+            <Input
+              placeholder='e.g. gpt-4, claude-3, internlm3-latest'
+              maxLength={255}
+              showCount
+            />
           </Form.Item>
         </Col>
       </Row>
@@ -1359,6 +1456,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 ),
               },
               {
+                max: 50000,
+                message: t(
+                  'components.createJobForm.requestPayloadLengthLimit'
+                ),
+              },
+              {
                 validator: (_, value) => {
                   if (!value) return Promise.resolve();
                   try {
@@ -1378,6 +1481,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             <TextArea
               rows={3}
               placeholder='{"model":"your-model-name","messages": [{"role": "user","content":"Hi"}],"stream": true}'
+              maxLength={50000}
+              showCount
             />
           </Form.Item>
         </Col>
@@ -1404,6 +1509,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       </Tooltip>
                     </span>
                   }
+                  rules={[
+                    {
+                      max: 10000,
+                      message: t(
+                        'components.createJobForm.systemPromptLengthLimit'
+                      ),
+                    },
+                  ]}
                 >
                   <TextArea
                     rows={2}
@@ -1531,10 +1644,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       }
                       rules={[
                         {
-                          required:
-                            inputType === 'default' && isChatCompletionsApi,
+                          type: 'number',
+                          min: 0,
+                          max: 1,
                           message: t(
-                            'components.createJobForm.pleaseSelectDatasetType'
+                            'components.createJobForm.chatTypeRangeLimit'
                           ),
                         },
                       ]}
@@ -1722,6 +1836,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 required: true,
                 message: t('components.createJobForm.pleaseEnterTestDuration'),
               },
+              {
+                type: 'number',
+                min: 1,
+                max: 172800,
+                message: t('components.createJobForm.durationRangeLimit'),
+              },
             ]}
           >
             <InputNumber
@@ -1753,6 +1873,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   'components.createJobForm.pleaseEnterConcurrentUsers'
                 ),
               },
+              {
+                type: 'number',
+                min: 1,
+                max: 5000,
+                message: t(
+                  'components.createJobForm.concurrentUsersRangeLimit'
+                ),
+              },
             ]}
           >
             <InputNumber
@@ -1782,6 +1910,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               {
                 required: true,
                 message: t('components.createJobForm.pleaseEnterSpawnRate'),
+              },
+              {
+                type: 'number',
+                min: 1,
+                max: 100,
+                message: t('components.createJobForm.spawnRateRangeLimit'),
               },
             ]}
           >

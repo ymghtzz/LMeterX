@@ -16,7 +16,18 @@ from config.base import (
     DEFAULT_PROMPT,
     DEFAULT_TIMEOUT,
     HTTP_OK,
+    JSON_BUFFER_MAX_SIZE,
     MAX_OUTPUT_LENGTH,
+    MULTIPROCESS_CHUNK_TIMEOUT_THRESHOLD,
+    MULTIPROCESS_MAX_RETRIES,
+    MULTIPROCESS_RETRY_DELAY_MAX,
+    STREAM_ADAPTIVE_TIMEOUT_ENABLED,
+    STREAM_BUFFER_SIZE,
+    STREAM_CHUNK_TIMEOUT_THRESHOLD,
+    STREAM_DEBUG_ENABLED,
+    STREAM_MAX_RETRIES,
+    STREAM_RETRY_DELAY_BASE,
+    STREAM_RETRY_DELAY_MAX,
 )
 from config.business import METRIC_TTOC, METRIC_TTT
 from engine.core import ConfigManager, FieldMapping, GlobalConfig, StreamMetrics
@@ -340,6 +351,31 @@ class StreamProcessor:
                     # task_logger.info(f"Stream end, response: {chunk_str}")
                     return metrics
 
+                # Extract usage information if present
+                if "usage" in chunk_data and isinstance(chunk_data["usage"], dict):
+                    usage = chunk_data["usage"]
+                    usage_tokens: Dict[str, Optional[int]] = {
+                        "prompt_tokens": None,
+                        "completion_tokens": None,
+                        "total_tokens": None,
+                    }
+
+                    # Extract token counts with flexible field names
+                    for key, value in usage.items():
+                        if isinstance(value, (int, float)):
+                            if "prompt" in key.lower():
+                                usage_tokens["prompt_tokens"] = int(value)
+                            elif "completion" in key.lower():
+                                usage_tokens["completion_tokens"] = int(value)
+                            elif "total" in key.lower():
+                                usage_tokens["total_tokens"] = int(value)
+
+                    # Update metrics with usage information (overwrite with latest)
+                    metrics.usage_tokens = usage_tokens
+                    task_logger.debug(
+                        f"Updated usage tokens from stream: {usage_tokens}"
+                    )
+
                 content_chunk = (
                     StreamProcessor.get_field_value(chunk_data, field_mapping.content)
                     if field_mapping.content
@@ -360,14 +396,12 @@ class StreamProcessor:
                     return metrics
                 content_chunk = chunk_str
 
-        except (json.JSONDecodeError, IndexError, KeyError):
-            task_logger.error(f"Error processing chunk: {chunk_str}")
-            EventManager.fire_failure_event(
-                name="failure",
-                response_time=0,
-                response_length=0,
-                exception=Exception(f"Error processing chunk: {chunk_str}"),
+        except (json.JSONDecodeError, IndexError, KeyError) as e:
+            # Improved error handling - don't crash on parse errors, just log and continue
+            task_logger.debug(
+                f"Chunk processing error (continuing): {e} | Chunk: {chunk_str[:100]}..."
             )
+            # Don't fire failure events for parsing errors as they may be incomplete chunks
             return metrics
 
         # Process content tokens with enhanced safety checks
@@ -505,7 +539,7 @@ class StreamProcessor:
     def check_chunk_error(
         chunk: bytes, field_mapping: FieldMapping, task_logger
     ) -> Optional[str]:
-        """Check streaming chunk for errors."""
+        """Check streaming chunk for errors with improved JSON handling."""
         try:
             if not chunk or not isinstance(chunk, bytes):
                 return None
@@ -537,9 +571,12 @@ class StreamProcessor:
                     error_result = ErrorHandler.check_json_error(chunk_json)
                     return error_result
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    task_logger.error(
-                        f"Failed to parse chunk as JSON: {e} | Chunk content: {chunk_content} if chunk_content else 'No content'"
+                    # Improved error logging with better context
+                    task_logger.debug(
+                        f"JSON parsing failed (likely incomplete chunk): {e} | "
+                        f"Chunk preview: {chunk_content[:200] if chunk_content else 'No content'}..."
                     )
+                    # Don't treat JSON parsing errors as fatal - they might be incomplete chunks
                     return None
 
             return None
@@ -805,6 +842,95 @@ class StreamHandler:
         """
         self.config = config
         self.task_logger = task_logger
+        self._is_multiprocess = self._detect_multiprocess_environment()
+        self._adaptive_config = self._get_adaptive_config()
+
+    def _detect_multiprocess_environment(self) -> bool:
+        """Detect if running in multi-process environment."""
+        try:
+            import os
+
+            # Check environment variables that indicate multi-process mode
+            if os.environ.get("LOCUST_PROCESSES"):
+                return True
+
+            # Check if there are multiple Python processes with similar command lines
+            import psutil
+
+            current_pid = os.getpid()
+            current_cmdline = " ".join(psutil.Process(current_pid).cmdline())
+
+            locust_processes = 0
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                try:
+                    if (
+                        proc.info["cmdline"]
+                        and "locust" in " ".join(proc.info["cmdline"]).lower()
+                    ):
+                        locust_processes += 1
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            return locust_processes > 1
+        except Exception:
+            # If detection fails, assume single process for safety
+            return False
+
+    @staticmethod
+    def _detect_multiprocess_static() -> bool:
+        """Static method to detect if running in multi-process environment."""
+        try:
+            import os
+
+            # Check environment variables that indicate multi-process mode
+            if os.environ.get("LOCUST_PROCESSES"):
+                return True
+
+            # Simple heuristic: check for multiple locust processes
+            try:
+                import psutil
+
+                locust_processes = 0
+                for proc in psutil.process_iter(["cmdline"]):
+                    try:
+                        cmdline = proc.info["cmdline"]
+                        if cmdline and any(
+                            "locust" in str(arg).lower() for arg in cmdline
+                        ):
+                            locust_processes += 1
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+                return locust_processes > 1
+            except ImportError:
+                # psutil not available, use fallback
+                return False
+        except Exception:
+            return False
+
+    def _get_adaptive_config(self) -> Dict[str, Any]:
+        """Get adaptive configuration based on environment."""
+        if not STREAM_ADAPTIVE_TIMEOUT_ENABLED:
+            return {
+                "max_retries": STREAM_MAX_RETRIES,
+                "timeout_threshold": STREAM_CHUNK_TIMEOUT_THRESHOLD,
+                "retry_delay_max": STREAM_RETRY_DELAY_MAX,
+            }
+
+        if self._is_multiprocess:
+            self.task_logger.debug(
+                "Multi-process environment detected, using extended timeouts"
+            )
+            return {
+                "max_retries": MULTIPROCESS_MAX_RETRIES,
+                "timeout_threshold": MULTIPROCESS_CHUNK_TIMEOUT_THRESHOLD,
+                "retry_delay_max": MULTIPROCESS_RETRY_DELAY_MAX,
+            }
+        else:
+            return {
+                "max_retries": STREAM_MAX_RETRIES,
+                "timeout_threshold": STREAM_CHUNK_TIMEOUT_THRESHOLD,
+                "retry_delay_max": STREAM_RETRY_DELAY_MAX,
+            }
 
     @staticmethod
     def _iter_stream_lines(response) -> Any:
@@ -847,9 +973,262 @@ class StreamHandler:
             if buffer:
                 yield buffer.strip()
 
+    @staticmethod
+    def _iter_stream_chunks_with_json_buffer(
+        response, field_mapping: FieldMapping, task_logger
+    ) -> Any:
+        """Improved streaming iterator with JSON buffer handling for SSE streams."""
+
+        class JsonBufferManager:
+            def __init__(self):
+                self.buffer = ""
+                self.stats = {
+                    "incomplete_chunks": 0,
+                    "buffer_overflows": 0,
+                    "successful_parses": 0,
+                }
+
+            def process_sse_line(self, line_str: str) -> Any:
+                """Process a single SSE line and manage JSON buffer with enhanced error handling."""
+                if not line_str:
+                    return
+
+                # Handle SSE data lines
+                if line_str.startswith(field_mapping.stream_prefix):
+                    json_content = line_str[len(field_mapping.stream_prefix) :].strip()
+
+                    # Check for stop condition
+                    if json_content == field_mapping.stop_flag:
+                        yield json_content.encode("utf-8", errors="ignore")
+                        return
+
+                    # Try to parse as complete JSON first
+                    if json_content and field_mapping.data_format == "json":
+                        if StreamHandler._is_complete_json(json_content):
+                            # Complete JSON found, flush any previous buffer and yield this
+                            if self.buffer.strip() and StreamHandler._is_complete_json(
+                                self.buffer
+                            ):
+                                self.stats["successful_parses"] += 1
+                                yield self.buffer.encode("utf-8", errors="ignore")
+                            self.buffer = ""
+                            self.stats["successful_parses"] += 1
+                            yield json_content.encode("utf-8", errors="ignore")
+                        else:
+                            # Incomplete JSON, add to buffer with size check
+                            if (
+                                len(self.buffer) + len(json_content)
+                                > JSON_BUFFER_MAX_SIZE
+                            ):
+                                # Buffer overflow protection
+                                self.stats["buffer_overflows"] += 1
+                                if STREAM_DEBUG_ENABLED:
+                                    task_logger.warning(
+                                        f"JSON buffer overflow, discarding old data. Stats: {self.stats}"
+                                    )
+                                self.buffer = (
+                                    json_content  # Start fresh with current content
+                                )
+                            else:
+                                self.buffer += json_content
+
+                            self.stats["incomplete_chunks"] += 1
+
+                            # Check if buffer now contains complete JSON
+                            if StreamHandler._is_complete_json(self.buffer):
+                                self.stats["successful_parses"] += 1
+                                yield self.buffer.encode("utf-8", errors="ignore")
+                                self.buffer = ""
+                    else:
+                        # Non-JSON data or empty content
+                        yield json_content.encode("utf-8", errors="ignore")
+                else:
+                    # Non-data lines (like event types), yield as-is
+                    yield line_str.encode("utf-8", errors="ignore")
+
+            def flush_remaining(self) -> Any:
+                """Flush any remaining complete JSON in buffer."""
+                if self.buffer.strip() and StreamHandler._is_complete_json(self.buffer):
+                    self.stats["successful_parses"] += 1
+                    yield self.buffer.encode("utf-8", errors="ignore")
+                elif self.buffer.strip():
+                    # Log incomplete JSON for debugging but don't crash
+                    if STREAM_DEBUG_ENABLED:
+                        task_logger.debug(
+                            f"Discarding incomplete JSON buffer (length: {len(self.buffer)}): {self.buffer[:100]}..."
+                        )
+                        task_logger.debug(f"Buffer manager stats: {self.stats}")
+                    else:
+                        task_logger.debug(
+                            f"Discarding incomplete JSON buffer (length: {len(self.buffer)})"
+                        )
+
+        buffer_manager = JsonBufferManager()
+
+        # Handle requests.Response with iter_lines
+        if hasattr(response, "iter_lines") and callable(response.iter_lines):
+            for line in response.iter_lines():
+                if line is None:
+                    continue
+
+                try:
+                    line_str = (
+                        line.decode("utf-8", errors="replace")
+                        if isinstance(line, bytes)
+                        else str(line)
+                    )
+                    yield from buffer_manager.process_sse_line(line_str)
+                except Exception as e:
+                    task_logger.warning(f"Error processing SSE line: {e}")
+                    continue
+
+            # Flush any remaining complete JSON in buffer
+            yield from buffer_manager.flush_remaining()
+            return
+
+        # Handle FastHttp's Response with stream attribute
+        stream_obj = getattr(response, "stream", None)
+        if stream_obj is None:
+            # Fallback: no streaming iterator available
+            text = getattr(response, "text", "") or ""
+            if text:
+                for part in text.split("\n"):
+                    yield from buffer_manager.process_sse_line(part)
+
+                # Flush any remaining complete JSON in buffer
+                yield from buffer_manager.flush_remaining()
+            return
+
+        # Custom buffer handling for FastHttp stream with adaptive configuration
+        buffer = b""
+        retry_count = 0
+        # Detect multi-process environment for adaptive configuration
+        is_multiprocess = StreamHandler._detect_multiprocess_static()
+        if is_multiprocess and STREAM_ADAPTIVE_TIMEOUT_ENABLED:
+            max_retries = MULTIPROCESS_MAX_RETRIES
+            timeout_threshold = MULTIPROCESS_CHUNK_TIMEOUT_THRESHOLD
+            max_retry_delay = MULTIPROCESS_RETRY_DELAY_MAX
+        else:
+            max_retries = STREAM_MAX_RETRIES
+            timeout_threshold = STREAM_CHUNK_TIMEOUT_THRESHOLD
+            max_retry_delay = STREAM_RETRY_DELAY_MAX
+        last_successful_chunk_time = time.time()
+
+        try:
+            while True:
+                try:
+                    chunk = stream_obj.read(STREAM_BUFFER_SIZE)
+                    if not chunk:
+                        # End of stream reached
+                        break
+
+                    # Reset retry count on successful read
+                    retry_count = 0
+                    last_successful_chunk_time = time.time()
+                    buffer += chunk
+
+                    # Process complete lines
+                    while b"\n" in buffer:
+                        line, buffer = buffer.split(b"\n", 1)
+                        if line:
+                            try:
+                                line_str = line.decode(
+                                    "utf-8", errors="replace"
+                                ).strip()
+                                yield from buffer_manager.process_sse_line(line_str)
+                            except Exception as e:
+                                task_logger.debug(
+                                    f"Error processing buffered line: {e}"
+                                )
+                                continue
+
+                except Exception as read_error:
+                    error_msg = str(read_error)
+                    current_time = time.time()
+
+                    # Check if this is a timeout or incomplete response
+                    if (
+                        "timed out" in error_msg.lower()
+                        or "incomplete" in error_msg.lower()
+                    ):
+                        retry_count += 1
+
+                        # Calculate how long since last successful chunk
+                        time_since_last_chunk = (
+                            current_time - last_successful_chunk_time
+                        )
+
+                        if (
+                            retry_count <= max_retries
+                            and time_since_last_chunk < timeout_threshold
+                        ):
+                            task_logger.debug(
+                                f"Stream read error (attempt {retry_count}/{max_retries}): {error_msg}. "
+                                f"Retrying after {retry_count}s delay..."
+                            )
+
+                            # Brief exponential backoff
+                            time.sleep(
+                                min(
+                                    retry_count * STREAM_RETRY_DELAY_BASE,
+                                    max_retry_delay,
+                                )
+                            )
+                            continue
+                        else:
+                            # Max retries exceeded or timeout threshold reached
+                            task_logger.warning(
+                                f"Stream read failed after {retry_count} retries or timeout "
+                                f"({time_since_last_chunk:.1f}s since last chunk): {error_msg}"
+                            )
+                            break
+                    else:
+                        # Non-retryable error
+                        task_logger.warning(f"Non-retryable stream error: {error_msg}")
+                        break
+
+        except Exception as e:
+            task_logger.warning(f"Error in stream iteration: {e}")
+        finally:
+            # Handle remaining data in buffers with enhanced processing
+            if buffer:
+                try:
+                    remaining_str = buffer.decode("utf-8", errors="replace").strip()
+                    if remaining_str:
+                        # Try to process remaining data as complete lines
+                        for line in remaining_str.split("\n"):
+                            line = line.strip()
+                            if line:
+                                try:
+                                    yield from buffer_manager.process_sse_line(line)
+                                except Exception as e:
+                                    task_logger.debug(
+                                        f"Error processing remaining line: {e}"
+                                    )
+                except Exception as e:
+                    task_logger.debug(f"Error processing remaining buffer: {e}")
+
+            # Always flush remaining complete JSON in buffer
+            try:
+                yield from buffer_manager.flush_remaining()
+            except Exception as e:
+                task_logger.debug(f"Error flushing buffer manager: {e}")
+
+    @staticmethod
+    def _is_complete_json(json_str: str) -> bool:
+        """Check if a string contains complete, valid JSON."""
+        if not json_str or not json_str.strip():
+            return False
+
+        try:
+            json.loads(json_str)
+            return True
+        except (json.JSONDecodeError, ValueError):
+            return False
+
     def handle_stream_request(
         self, client, base_request_kwargs: Dict[str, Any], start_time: float
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, str, Dict[str, Optional[int]]]:
         """Handle streaming API request with comprehensive metrics collection."""
         metrics = StreamMetrics()
         request_kwargs = {**base_request_kwargs, "stream": True}
@@ -860,17 +1239,28 @@ class StreamHandler:
         has_failed = False
         actual_request_start_time = 0.0
         request_name = base_request_kwargs.get("name", "failure")
+        usage_tokens: Dict[str, Optional[int]] = {
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
 
         try:
             actual_request_start_time = time.time()
             with client.post(self.config.api_path, **request_kwargs) as response:
                 if self._handle_response_error(response, start_time, request_name):
                     has_failed = True
-                    return "", ""
+                    return "", "", usage_tokens
 
                 try:
-                    # Process as streaming response
-                    for chunk in self._iter_stream_lines(response):
+                    # Process as streaming response with improved JSON buffering
+                    chunks_processed = 0
+                    last_valid_usage = None
+
+                    for chunk in self._iter_stream_chunks_with_json_buffer(
+                        response, field_mapping, self.task_logger
+                    ):
+                        chunks_processed += 1
                         # self.task_logger.info(f"chunk: {chunk}")
                         error_msg = StreamProcessor.check_chunk_error(
                             chunk, field_mapping, self.task_logger
@@ -894,8 +1284,21 @@ class StreamHandler:
                             # Fix: mark response as failed
                             if hasattr(response, "failure"):
                                 response.failure(error_msg)
-                            return "", ""
+                            # Return partial results if available
+                            if metrics.usage_tokens or last_valid_usage:
+                                final_usage = (
+                                    metrics.usage_tokens
+                                    or last_valid_usage
+                                    or usage_tokens
+                                )
+                                return (
+                                    metrics.reasoning_content,
+                                    metrics.model_output,
+                                    final_usage,
+                                )
+                            return "", "", usage_tokens
 
+                        old_usage = metrics.usage_tokens
                         metrics = StreamProcessor.process_chunk(
                             chunk,
                             field_mapping,
@@ -903,6 +1306,21 @@ class StreamHandler:
                             metrics,
                             self.task_logger,
                         )
+
+                        # Keep track of the latest valid usage tokens
+                        if metrics.usage_tokens:
+                            last_valid_usage = metrics.usage_tokens
+                        elif old_usage:
+                            last_valid_usage = old_usage
+
+                    self.task_logger.debug(
+                        f"Processed {chunks_processed} chunks successfully"
+                    )
+
+                    # Use the best available usage information
+                    final_usage_tokens = (
+                        metrics.usage_tokens or last_valid_usage or usage_tokens
+                    )
 
                     # Only mark as success if no failures occurred
                     if not has_failed:
@@ -954,10 +1372,28 @@ class StreamHandler:
                                 f"Error calculating streaming metrics: {e}"
                             )
                             response.success()  # Still mark as success since we got response
+                    else:
+                        # Mark as partial success if we have some data
+                        if chunks_processed > 0 and (
+                            metrics.model_output or metrics.reasoning_content
+                        ):
+                            self.task_logger.warning(
+                                f"Partial stream processing success: {chunks_processed} chunks processed"
+                            )
+                            # Don't mark as complete failure if we got partial data
+                            if hasattr(response, "success"):
+                                response.success()
 
                 except OSError as e:
                     self._handle_stream_error(e, response, start_time, request_name)
                     has_failed = True
+                    # Return partial results if available
+                    if metrics.usage_tokens:
+                        return (
+                            metrics.reasoning_content,
+                            metrics.model_output,
+                            metrics.usage_tokens,
+                        )
                 except (json.JSONDecodeError, ValueError) as e:
                     response_time = (time.time() - start_time) * 1000
                     ErrorHandler.handle_general_exception(
@@ -967,6 +1403,13 @@ class StreamHandler:
                         response_time,
                     )
                     has_failed = True
+                    # Return partial results if available
+                    if metrics.usage_tokens:
+                        return (
+                            metrics.reasoning_content,
+                            metrics.model_output,
+                            metrics.usage_tokens,
+                        )
 
         except (ConnectionError, TimeoutError) as e:
             response_time = (time.time() - start_time) * 1000
@@ -995,7 +1438,21 @@ class StreamHandler:
             )
             has_failed = True
 
-        return metrics.reasoning_content, metrics.model_output
+        # Ensure we always return the correct type (never None)
+        return_usage: Dict[str, Optional[int]] = (
+            usage_tokens  # Default to initialized value
+        )
+
+        if "final_usage_tokens" in locals() and final_usage_tokens:
+            return_usage = final_usage_tokens
+        elif metrics.usage_tokens:
+            return_usage = metrics.usage_tokens
+
+        return (
+            metrics.reasoning_content,
+            metrics.model_output,
+            return_usage,
+        )
 
     def _handle_stream_error(
         self, e: OSError, response, start_time: float, request_name: str

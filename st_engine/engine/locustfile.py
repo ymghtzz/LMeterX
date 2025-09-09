@@ -453,10 +453,10 @@ def on_test_stop(environment, **kwargs):
 
     except Exception as e:
         task_logger.error(
-            "Failed to calculate execution time: %s" % str(e), exc_info=True
+            f"Failed to calculate execution time: {str(e)}", exc_info=True
         )
         execution_time = 60.0
-        raise RuntimeError("Failed to calculate execution time: %s" % str(e))
+        raise RuntimeError(f"Failed to calculate execution time: {str(e)}")
 
     from utils.common import calculate_custom_metrics, get_locust_stats
 
@@ -572,30 +572,62 @@ def on_test_stop(environment, **kwargs):
     if is_multiprocess and worker_count > 0:
         import gevent
 
-        max_wait_time = 10
+        max_wait_time = 15  # Increased wait time for better reliability
         wait_time = 0
+        request_attempts = 0
+        max_request_attempts = 3
 
-        # Actively request Worker metrics
-        try:
-            if hasattr(environment.runner, "send_message"):
-                task_logger.debug("Actively requesting metrics from all workers...")
-                environment.runner.send_message(
-                    "request_metrics", {"request": "all_metrics"}
+        # Multiple attempts to request Worker metrics for better reliability
+        while (
+            request_attempts < max_request_attempts
+            and len(worker_metrics_list) < worker_count
+        ):
+            try:
+                if hasattr(environment.runner, "send_message"):
+                    task_logger.debug(
+                        f"Requesting metrics from workers (attempt {request_attempts + 1})..."
+                    )
+                    environment.runner.send_message(
+                        "request_metrics", {"request": "all_metrics"}
+                    )
+                    gevent.sleep(2)  # Give more time for workers to respond
+                    request_attempts += 1
+            except Exception as e:
+                task_logger.warning(
+                    f"Failed to request worker metrics (attempt {request_attempts + 1}): {e}"
                 )
+                request_attempts += 1
                 gevent.sleep(1)
-        except Exception as e:
-            task_logger.warning(f"Failed to actively request worker metrics: {e}")
 
+        # Wait for worker responses with progressive timeout
         while len(worker_metrics_list) < worker_count and wait_time < max_wait_time:
             gevent.sleep(0.5)
             wait_time += 0.5
-            task_logger.debug(
-                f"Waiting for worker metrics... ({len(worker_metrics_list)}/{worker_count}) after {wait_time}s"
-            )
 
+            # Log progress every 2 seconds
+            if wait_time % 2 == 0:
+                task_logger.debug(
+                    f"Waiting for worker metrics... ({len(worker_metrics_list)}/{worker_count}) after {wait_time}s"
+                )
+
+        # Final status check
         if len(worker_metrics_list) < worker_count:
             task_logger.warning(
-                f"Only received {len(worker_metrics_list)} worker metrics out of {worker_count} expected workers"
+                f"Only received {len(worker_metrics_list)} worker metrics out of {worker_count} expected workers after {max_wait_time}s"
+            )
+
+            # Try to get partial metrics from available workers
+            if len(worker_metrics_list) > 0:
+                task_logger.info(
+                    f"Proceeding with metrics from {len(worker_metrics_list)} available workers"
+                )
+            else:
+                task_logger.error(
+                    "No worker metrics received, falling back to master metrics only"
+                )
+        else:
+            task_logger.info(
+                f"Successfully collected metrics from all {worker_count} workers"
             )
 
     # Aggregate basic metrics
@@ -820,11 +852,24 @@ class LLMTestUser(FastHttpUser):
             completion_tokens = 0
             total_tokens = 0
 
-            # Fallback: manual counting if completion_tokens and total_tokens are missing
-            if usage_tokens and isinstance(usage_tokens, dict):
+            # Check if we have valid usage_tokens with required fields
+            if (
+                usage_tokens
+                and isinstance(usage_tokens, dict)
+                and usage_tokens.get("completion_tokens") is not None
+                and usage_tokens.get("total_tokens") is not None
+            ):
+                # Use tokens directly from API response (preferred for both streaming and non-streaming)
                 completion_tokens = usage_tokens.get("completion_tokens", 0) or 0
                 total_tokens = usage_tokens.get("total_tokens", 0) or 0
+                self.task_logger.debug(
+                    f"Using API-provided usage tokens: completion={completion_tokens}, total={total_tokens}"
+                )
             else:
+                # Fallback: manual counting if usage_tokens are missing or incomplete
+                self.task_logger.debug(
+                    "API usage tokens unavailable or incomplete, falling back to manual token counting"
+                )
                 system_tokens = (
                     count_tokens(system_prompt, model_name) if system_prompt else 0
                 )
@@ -896,7 +941,7 @@ class LLMTestUser(FastHttpUser):
         )
         try:
             if global_config.stream_mode:
-                reasoning_content, model_output = (
+                reasoning_content, model_output, usage_tokens = (
                     self.stream_handler.handle_stream_request(
                         self.client, base_request_kwargs, start_time
                     )

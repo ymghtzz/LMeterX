@@ -9,3 +9,4 @@ pydantic_settings
 greenlet
 fastapi
 uvicorn
+psutil>=5.9.0

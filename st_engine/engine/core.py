@@ -43,6 +43,8 @@ class StreamMetrics:
     first_thinking_token_time: Optional[float] = None
     model_output: str = ""
     reasoning_content: str = ""
+    # Usage information from streaming response
+    usage_tokens: Optional[Dict[str, Optional[int]]] = field(default=None)
 
 
 @dataclass
