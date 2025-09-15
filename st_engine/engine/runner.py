@@ -439,10 +439,6 @@ class LocustRunner:
         if task.api_path:
             command.extend(["--api_path", task.api_path])
 
-        # Add system prompt if specified
-        if task.system_prompt:
-            command.extend(["--system_prompt", task.system_prompt])
-
         # Add test_data if specified
         if task.test_data:
             command.extend(["--test_data", task.test_data])

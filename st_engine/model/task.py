@@ -153,9 +153,6 @@ class TaskCreateReq(BaseModel):
     cert_config: Optional[CertConfig] = Field(
         default=None, description="Certificate configuration"
     )
-    system_prompt: Optional[str] = Field(
-        default="", description="System prompt for the model"
-    )
     request_payload: Optional[str] = Field(
         default="", description="Custom request payload for non-chat APIs (JSON string)"
     )
@@ -217,7 +214,7 @@ class Task(Base):
     status = Column(String(32), nullable=False)
     target_host = Column(String(255), nullable=False)
     model = Column(String(100), nullable=True)
-    system_prompt = Column(Text, nullable=True)
+
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)

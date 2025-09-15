@@ -11,12 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import orjson
 from locust import events
 
-from config.base import (
-    DEFAULT_API_PATH,
-    DEFAULT_PROMPT,
-    DEFAULT_TIMEOUT,
-    HTTP_OK,
-)
+from config.base import DEFAULT_API_PATH, DEFAULT_PROMPT, DEFAULT_TIMEOUT, HTTP_OK
 from config.business import METRIC_TTOC, METRIC_TTT
 from engine.core import ConfigManager, FieldMapping, GlobalConfig, StreamMetrics
 from utils.logger import logger
@@ -480,12 +475,22 @@ class RequestHandler:
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Handle API requests with user-provided payload."""
         try:
-            if not self.config.request_payload:
-                self.task_logger.error("No request payload provided for API endpoint")
-                return None, None
+            # Ensure request_payload is available - generate default if empty
+            request_payload = self.config.request_payload
+            if not request_payload or not request_payload.strip():
+                # Generate default payload
+                default_payload = {
+                    "model": self.config.model_name or "your-model-name",
+                    "stream": self.config.stream_mode,
+                    "messages": [{"role": "user", "content": "Hi"}],
+                }
+                request_payload = orjson.dumps(default_payload).decode("utf-8")
+                self.task_logger.info(
+                    "Generated default request payload as none was provided"
+                )
 
             try:
-                payload = orjson.loads(str(self.config.request_payload))
+                payload = orjson.loads(str(request_payload))
             except orjson.JSONDecodeError as e:
                 self.task_logger.error(f"Invalid JSON in request payload: {e}")
                 return None, None
@@ -549,12 +554,8 @@ class RequestHandler:
     ) -> None:
         """Handle chat/completions API payload with image support."""
         try:
-            # Build system message if configured
+            # Build messages list
             messages: List[Dict[str, Any]] = []
-            if self.config.system_prompt:
-                messages.append(
-                    {"role": "system", "content": self.config.system_prompt}
-                )
 
             # Check for image data in prompt_data
             image_base64 = prompt_data.get("image_base64", "")

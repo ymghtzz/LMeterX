@@ -17,7 +17,6 @@ CREATE TABLE `tasks` (
   `request_payload` longtext COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Custom request payload for non-chat completions APIs',
   `field_mapping` json DEFAULT NULL COMMENT 'Field mapping configuration for custom APIs',
   `model` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `system_prompt` longtext COLLATE utf8mb4_unicode_ci,
   `test_data` longtext COLLATE utf8mb4_unicode_ci,
   `stream_mode` varchar(20) COLLATE utf8mb4_unicode_ci DEFAULT 'True',
   `concurrent_users` int(11) DEFAULT '1',

@@ -28,7 +28,6 @@ export interface BenchmarkJob {
   concurrency?: number;
   chat_type?: number;
   stream_mode?: boolean;
-  system_prompt?: string;
   headers?: Array<{
     key: string;
     value: string;

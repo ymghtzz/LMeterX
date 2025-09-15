@@ -212,7 +212,6 @@ async def get_tasks_svc(
                 "headers": "",
                 "cookies": "",
                 "cert_config": "",
-                "system_prompt": task.system_prompt or "",
                 "test_data": task.test_data or "",
                 "created_at": task.created_at.isoformat() if task.created_at else None,
                 "updated_at": task.updated_at.isoformat() if task.updated_at else None,
@@ -330,6 +329,17 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
     # Use test_data as provided (should be absolute path from upload service)
     test_data = body.test_data or ""
 
+    # Ensure request_payload is never empty - auto-generate if needed
+    request_payload = body.request_payload
+    if not request_payload or not request_payload.strip():
+        # Generate default payload
+        default_payload = {
+            "model": body.model or "your-model-name",
+            "stream": body.stream_mode,
+            "messages": [{"role": "user", "content": "Hi"}],
+        }
+        request_payload = json.dumps(default_payload)
+
     db = request.state.db
     try:
         # Convert field_mapping to JSON string if provided
@@ -352,11 +362,10 @@ async def create_task_svc(request: Request, body: TaskCreateReq):
             cookies=cookies_json,
             status="created",
             error_message="",
-            system_prompt=body.system_prompt,
             cert_file=cert_file,
             key_file=key_file,
             api_path=body.api_path,
-            request_payload=body.request_payload,
+            request_payload=request_payload,
             field_mapping=field_mapping_json,
             test_data=test_data,
         )
@@ -503,7 +512,6 @@ async def get_task_svc(request: Request, task_id: str):
             "headers": headers_list,
             "cookies": cookies_list,
             "cert_config": {"cert_file": task.cert_file, "key_file": task.key_file},
-            "system_prompt": task.system_prompt or "",
             "api_path": task.api_path,
             "request_payload": task.request_payload,
             "field_mapping": field_mapping_dict,
@@ -793,29 +801,27 @@ def _prepare_cookies_from_headers(body: TaskCreateReq) -> Dict[str, str]:
 
 def _prepare_request_payload(body: TaskCreateReq) -> Dict:
     """Prepare request payload based on API path and configuration."""
-    if body.api_path == "/chat/completions":
-        # Use the traditional chat completions format
-        messages = [
-            {
-                "role": "user",
-                "content": "Hi",
-            }
-        ]
 
-        return {
-            "model": body.model,
+    # If request_payload is empty or None, generate default
+    if not body.request_payload or not body.request_payload.strip():
+        # Generate default payload for any API
+        default_payload = {
+            "model": body.model or "your-model-name",
             "stream": body.stream_mode,
-            "messages": messages,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Hi",
+                }
+            ],
         }
-    else:
-        # Use custom request payload
-        if body.request_payload:
-            try:
-                return json.loads(body.request_payload)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in request payload: {str(e)}")
-        else:
-            raise ValueError("Request payload is required for custom API endpoints")
+        return default_payload
+
+    # Use provided request_payload
+    try:
+        return json.loads(body.request_payload)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in request payload: {str(e)}")
 
 
 def _validate_certificate_files(

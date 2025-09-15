@@ -168,10 +168,7 @@ def init_parser(parser):
         help="The unique identifier for the test task.",
     )
     parser.add_argument(
-        "--api_path",
-        type=str,
-        default=DEFAULT_API_PATH,
-        help="API path for the request.",
+        "--api_path", type=str, default="/chat/completions", help="API path to test."
     )
     parser.add_argument(
         "--headers", type=str, default="", help="Request headers in JSON format."
@@ -185,9 +182,7 @@ def init_parser(parser):
     parser.add_argument(
         "--model_name", type=str, default="", help="Name of the model to test."
     )
-    parser.add_argument(
-        "--system_prompt", type=str, default="", help="System prompt to use."
-    )
+
     parser.add_argument(
         "--stream_mode",
         type=str,
@@ -257,7 +252,6 @@ def on_locust_init(environment, **kwargs):
         global_config.api_path = options.api_path
         global_config.request_payload = options.request_payload
         global_config.model_name = options.model_name
-        global_config.system_prompt = options.system_prompt
         global_config.user_prompt = options.user_prompt
         global_config.stream_mode = str(options.stream_mode).lower() in ("true", "1")
         global_config.chat_type = int(options.chat_type)
@@ -848,8 +842,6 @@ class LLMTestUser(FastHttpUser):
 
         try:
             model_name = global_config.model_name or ""
-            system_prompt = global_config.system_prompt or ""
-
             user_prompt = user_prompt or ""
             reasoning_content = reasoning_content or ""
             content = content or ""
@@ -857,7 +849,6 @@ class LLMTestUser(FastHttpUser):
             # Initialize token variables
             completion_tokens = 0
             total_tokens = 0
-            system_tokens = 0
             user_tokens = 0
             reasoning_tokens = 0
             output_tokens = 0
@@ -874,9 +865,6 @@ class LLMTestUser(FastHttpUser):
                 total_tokens = usage.get("total_tokens", 0) or 0
             else:
                 # Fallback: manual counting if usage are missing or incomplete
-                system_tokens = (
-                    count_tokens(system_prompt, model_name) if system_prompt else 0
-                )
                 user_tokens = (
                     count_tokens(user_prompt, model_name) if user_prompt else 0
                 )
@@ -888,7 +876,7 @@ class LLMTestUser(FastHttpUser):
                 output_tokens = count_tokens(content, model_name) if content else 0
 
                 completion_tokens = reasoning_tokens + output_tokens
-                total_tokens = system_tokens + user_tokens + completion_tokens
+                total_tokens = user_tokens + completion_tokens
 
             # Ensure integer and log - only if tokens are not None and positive
             if (
@@ -946,7 +934,7 @@ class LLMTestUser(FastHttpUser):
                     )
                 )
                 # self.task_logger.debug(f"reasoning_content: {reasoning_content}")
-                self.task_logger.debug(f"content: {content}")
+                # self.task_logger.debug(f"content: {content}")
             else:
                 reasoning_content, content, usage = (
                     self.stream_handler.handle_non_stream_request(

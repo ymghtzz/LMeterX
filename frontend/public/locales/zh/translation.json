@@ -364,7 +364,7 @@
       "requestMethodTooltip": "API调用的HTTP请求方法",
       "responseMode": "响应模式",
       "responseModeTooltip": "选择流式和非流式响应模式",
-      "requestPayload": "请求参数(补充)",
+      "requestPayload": "请求参数",
       "requestPayloadTooltip": "可选择补充除模型名称、流式模式之外的API的请求参数，若没有可填写{}。请在此处使用简单的测试prompt快速调试，后续可通过选择数据集进行压测。",
       "systemPrompt": "系统提示词",
       "systemPromptTooltip": "将与每个请求一起发送的系统级指令",

@@ -955,7 +955,8 @@ const TaskResults: React.FC = () => {
                   item.metric_type !== 'completion_tokens_per_second' &&
                   item.metric_type !== 'token_metrics' &&
                   (results.length <= 1 ||
-                    item.metric_type !== 'chat_completions')
+                    (item.metric_type !== 'chat_completions' &&
+                      item.metric_type !== 'custom_api'))
               )}
               columns={columns}
               rowKey='metric_type'

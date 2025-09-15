@@ -48,6 +48,57 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
         self.assertEqual(field_mapping.stream_prefix, "data:")
         self.assertEqual(field_mapping.stop_flag, "[DONE]")
 
+    def test_empty_request_payload_handling(self):
+        """Test handling of empty request_payload"""
+        from engine.processing import RequestHandler
+
+        # Test with empty request_payload
+        config_with_empty_payload = GlobalConfig()
+        config_with_empty_payload.task_id = "test_task"
+        config_with_empty_payload.api_path = "/custom/api"
+        config_with_empty_payload.request_payload = ""  # Empty payload
+        config_with_empty_payload.model_name = "test-model"
+        config_with_empty_payload.stream_mode = True
+
+        handler = RequestHandler(config_with_empty_payload, self.task_logger)
+        result, user_prompt = handler.prepare_request_kwargs(None)
+
+        # Should generate default payload and not return None
+        self.assertIsNotNone(result)
+        self.assertIn("json", result)
+
+        payload = result["json"]
+        self.assertEqual(payload["model"], "test-model")
+        self.assertEqual(payload["stream"], True)
+        self.assertIn("messages", payload)
+        self.assertEqual(len(payload["messages"]), 1)
+        self.assertEqual(payload["messages"][0]["role"], "user")
+        self.assertEqual(payload["messages"][0]["content"], "Hi")
+
+    def test_none_request_payload_handling(self):
+        """Test handling of None request_payload"""
+        from engine.processing import RequestHandler
+
+        # Test with None request_payload
+        config_with_none_payload = GlobalConfig()
+        config_with_none_payload.task_id = "test_task"
+        config_with_none_payload.api_path = "/custom/api"
+        config_with_none_payload.request_payload = None  # None payload
+        config_with_none_payload.model_name = "another-model"
+        config_with_none_payload.stream_mode = False
+
+        handler = RequestHandler(config_with_none_payload, self.task_logger)
+        result, user_prompt = handler.prepare_request_kwargs(None)
+
+        # Should generate default payload and not return None
+        self.assertIsNotNone(result)
+        self.assertIn("json", result)
+
+        payload = result["json"]
+        self.assertEqual(payload["model"], "another-model")
+        self.assertEqual(payload["stream"], False)
+        self.assertIn("messages", payload)
+
     def test_field_mapping_with_nested_field(self):
         """Test field mapping with nested field configuration"""
         # Set nested field mapping

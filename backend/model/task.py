@@ -186,11 +186,6 @@ class TaskCreateReq(BaseModel):
     cert_config: Optional[CertConfig] = Field(
         default=None, description="Certificate configuration"
     )
-    system_prompt: Optional[str] = Field(
-        default="",
-        max_length=10000,
-        description="System prompt for the model (max 10000 chars)",
-    )
     request_payload: Optional[str] = Field(
         default="",
         max_length=50000,
@@ -242,24 +237,38 @@ class TaskCreateReq(BaseModel):
             raise ValueError("Model name length cannot exceed 255 characters")
         return v.strip() if v else ""
 
-    @validator("system_prompt")
-    def validate_system_prompt(cls, v):
-        if v and len(v) > 10000:
-            raise ValueError("System prompt length cannot exceed 10000 characters")
-        return v
-
     @validator("request_payload")
-    def validate_request_payload(cls, v):
-        if v and len(v) > 50000:
-            raise ValueError("Request payload length cannot exceed 50000 characters")
-        if v and v.strip():
-            try:
-                import json
+    def validate_request_payload(cls, v, values):
+        """Ensure request_payload is never empty - auto-generate if needed"""
+        # If request_payload is empty, generate default payload
+        if not v or not v.strip():
+            model = values.get("model", "your-model-name")
+            stream_mode = values.get("stream_mode", True)
 
-                json.loads(v)
-            except json.JSONDecodeError:
-                raise ValueError("Request payload must be a valid JSON format")
-        return v
+            # Generate default payload for chat/completions API
+            default_payload = {
+                "model": model,
+                "stream": stream_mode,
+                "messages": [{"role": "user", "content": "Hi"}],
+            }
+
+            import json
+
+            return json.dumps(default_payload)
+
+        # Validate length
+        if len(v) > 50000:
+            raise ValueError("Request payload length cannot exceed 50000 characters")
+
+        # Validate JSON format
+        try:
+            import json
+
+            json.loads(v.strip())
+        except json.JSONDecodeError:
+            raise ValueError("Request payload must be a valid JSON format")
+
+        return v.strip()
 
     @validator("headers")
     def validate_headers(cls, v):
@@ -449,7 +458,6 @@ class Task(Base):
     status = Column(String(32), nullable=False)
     target_host = Column(String(255), nullable=False)
     model = Column(String(100), nullable=True)
-    system_prompt = Column(Text, nullable=True)
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)

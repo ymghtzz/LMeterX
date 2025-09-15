@@ -59,7 +59,6 @@ class GlobalConfig:
     cookies: Optional[Dict[str, str]] = None
     request_payload: Optional[str] = None
     model_name: Optional[str] = None
-    system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     stream_mode: bool = True
     chat_type: int = 0
