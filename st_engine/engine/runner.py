@@ -15,12 +15,13 @@ from typing import List, Optional
 
 import psutil
 
+from config.base import LOCUST_STOP_TIMEOUT, LOCUST_WAIT_TIMEOUT_BUFFER
 from config.multiprocess import (
     get_cpu_count,
     get_process_count,
     should_enable_multiprocess,
 )
-from engine.multiprocess_manager import (
+from engine.process_manager import (
     allocate_master_port,
     cleanup_all_locust_processes,
     cleanup_task_resources,
@@ -253,7 +254,12 @@ class LocustRunner:
                         try:
                             proc_info = proc.info
                             cmdline = proc_info.get("cmdline", [])
-                            if any("locust" in str(arg).lower() for arg in cmdline):
+                            # Ensure cmdline is not None and is iterable
+                            if cmdline is None:
+                                cmdline = []
+                            if isinstance(cmdline, (list, tuple)) and any(
+                                "locust" in str(arg).lower() for arg in cmdline
+                            ):
                                 # Check if this process is related to our task
                                 if str(task.id) in str(cmdline):
                                     remaining_processes.append(proc.pid)
@@ -388,7 +394,7 @@ class LocustRunner:
             "--headless",
             "--only-summary",
             "--stop-timeout",
-            "99",
+            str(LOCUST_STOP_TIMEOUT),
             "--api_path",
             task.api_path or "/chat/completions",
             "--headers",
@@ -515,10 +521,9 @@ class LocustRunner:
         stdout_thread.start()
         stderr_thread.start()
 
-        # Calculate a generous timeout for the process to complete.
-        # This includes the task duration, Locust's own stop timeout, and an extra buffer.
-        locust_stop_timeout_config = 99
-        wait_timeout_total = task_duration_seconds + locust_stop_timeout_config + 30
+        wait_timeout_total = (
+            task_duration_seconds + LOCUST_STOP_TIMEOUT + LOCUST_WAIT_TIMEOUT_BUFFER
+        )
 
         try:
             process.wait(timeout=wait_timeout_total)

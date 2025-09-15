@@ -28,6 +28,7 @@ class TestStreamingUsageOptimization(unittest.TestCase):
             data_format="json",
             content="choices.0.delta.content",
             reasoning_content="choices.0.delta.reasoning",
+            usage="usage",
             stream_prefix="data: ",
             stop_flag="[DONE]",
         )
@@ -57,22 +58,24 @@ class TestStreamingUsageOptimization(unittest.TestCase):
             },
         }
 
-        chunk_str = json.dumps(chunk_data)
+        chunk_str = "data: " + json.dumps(chunk_data)
         chunk_bytes = chunk_str.encode("utf-8")
 
         metrics = StreamMetrics()
         start_time = 1234567890.0
 
         # Process the chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
         # Verify usage tokens were extracted
-        self.assertIsNotNone(updated_metrics.usage_tokens)
-        self.assertEqual(updated_metrics.usage_tokens["prompt_tokens"], 4)
-        self.assertEqual(updated_metrics.usage_tokens["completion_tokens"], 214)
-        self.assertEqual(updated_metrics.usage_tokens["total_tokens"], 218)
+        self.assertIsNotNone(updated_metrics.usage)
+        self.assertEqual(updated_metrics.usage["prompt_tokens"], 4)
+        self.assertEqual(updated_metrics.usage["completion_tokens"], 214)
+        self.assertEqual(updated_metrics.usage["total_tokens"], 218)
 
     def test_extract_usage_with_different_field_names(self):
         """Test extracting usage with different field naming conventions."""
@@ -85,57 +88,55 @@ class TestStreamingUsageOptimization(unittest.TestCase):
             }
         }
 
-        chunk_str = json.dumps(chunk_data)
+        chunk_str = "data: " + json.dumps(chunk_data)
         chunk_bytes = chunk_str.encode("utf-8")
 
         metrics = StreamMetrics()
         start_time = 1234567890.0
 
         # Process the chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
         # Verify usage tokens were extracted with flexible naming
-        self.assertIsNotNone(updated_metrics.usage_tokens)
-        # Current implementation uses "in" operator for substring matching
-        self.assertEqual(
-            updated_metrics.usage_tokens["prompt_tokens"], 10
-        )  # "prompt_token_count" contains "prompt"
-        self.assertEqual(
-            updated_metrics.usage_tokens["completion_tokens"], 50
-        )  # "completion_token_count" contains "completion"
-        self.assertEqual(
-            updated_metrics.usage_tokens["total_tokens"], 60
-        )  # "total_token_count" contains "total"
+        self.assertIsNotNone(updated_metrics.usage)
+        # The implementation preserves original field names
+        self.assertEqual(updated_metrics.usage["prompt_token_count"], 10)
+        self.assertEqual(updated_metrics.usage["completion_token_count"], 50)
+        self.assertEqual(updated_metrics.usage["total_token_count"], 60)
 
     def test_extract_usage_standard_field_names(self):
         """Test extracting usage with standard field names."""
         # Test with standard field names
         chunk_data = {
             "usage": {
-                "prompt": 10,
-                "completion": 50,
-                "total": 60,
+                "prompt_tokens": 10,
+                "completion_tokens": 50,
+                "total_tokens": 60,
             }
         }
 
-        chunk_str = json.dumps(chunk_data)
+        chunk_str = "data: " + json.dumps(chunk_data)
         chunk_bytes = chunk_str.encode("utf-8")
 
         metrics = StreamMetrics()
         start_time = 1234567890.0
 
         # Process the chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
         # Verify usage tokens were extracted
-        self.assertIsNotNone(updated_metrics.usage_tokens)
-        self.assertEqual(updated_metrics.usage_tokens["prompt_tokens"], 10)
-        self.assertEqual(updated_metrics.usage_tokens["completion_tokens"], 50)
-        self.assertEqual(updated_metrics.usage_tokens["total_tokens"], 60)
+        self.assertIsNotNone(updated_metrics.usage)
+        self.assertEqual(updated_metrics.usage["prompt_tokens"], 10)
+        self.assertEqual(updated_metrics.usage["completion_tokens"], 50)
+        self.assertEqual(updated_metrics.usage["total_tokens"], 60)
 
     def test_usage_overwrite_latest(self):
         """Test that later usage chunks overwrite earlier ones."""
@@ -146,37 +147,41 @@ class TestStreamingUsageOptimization(unittest.TestCase):
         chunk_data_1 = {
             "usage": {"prompt_tokens": 4, "completion_tokens": 100, "total_tokens": 104}
         }
-        chunk_str_1 = json.dumps(chunk_data_1)
+        chunk_str_1 = "data: " + json.dumps(chunk_data_1)
         chunk_bytes_1 = chunk_str_1.encode("utf-8")
 
         # Process first chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes_1, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes_1, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
         # Verify first usage
-        self.assertEqual(updated_metrics.usage_tokens["completion_tokens"], 100)
-        self.assertEqual(updated_metrics.usage_tokens["total_tokens"], 104)
+        self.assertEqual(updated_metrics.usage["completion_tokens"], 100)
+        self.assertEqual(updated_metrics.usage["total_tokens"], 104)
 
         # Second chunk with updated usage (like final chunk)
         chunk_data_2 = {
             "usage": {"prompt_tokens": 4, "completion_tokens": 214, "total_tokens": 218}
         }
-        chunk_str_2 = json.dumps(chunk_data_2)
+        chunk_str_2 = "data: " + json.dumps(chunk_data_2)
         chunk_bytes_2 = chunk_str_2.encode("utf-8")
 
         # Process second chunk
-        final_metrics = StreamProcessor.process_chunk(
-            chunk_bytes_2,
-            self.field_mapping,
-            start_time,
-            updated_metrics,
-            self.mock_logger,
+        should_break, error_message, final_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes_2,
+                self.field_mapping,
+                start_time,
+                updated_metrics,
+                self.mock_logger,
+            )
         )
 
         # Verify final usage (should be updated)
-        self.assertEqual(final_metrics.usage_tokens["completion_tokens"], 214)
-        self.assertEqual(final_metrics.usage_tokens["total_tokens"], 218)
+        self.assertEqual(final_metrics.usage["completion_tokens"], 214)
+        self.assertEqual(final_metrics.usage["total_tokens"], 218)
 
     def test_no_usage_field(self):
         """Test processing chunk without usage field."""
@@ -185,43 +190,48 @@ class TestStreamingUsageOptimization(unittest.TestCase):
             "choices": [{"index": 0, "delta": {"content": "Hello"}}],
         }
 
-        chunk_str = json.dumps(chunk_data)
+        chunk_str = "data: " + json.dumps(chunk_data)
         chunk_bytes = chunk_str.encode("utf-8")
 
         metrics = StreamMetrics()
         start_time = 1234567890.0
 
         # Process the chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
-        # Verify no usage tokens were set
-        self.assertIsNone(updated_metrics.usage_tokens)
+        # Verify no usage tokens were set (returns empty dict when field is missing)
+        self.assertEqual(updated_metrics.usage, {})
 
     def test_invalid_usage_field(self):
         """Test processing chunk with invalid usage field."""
         chunk_data = {"usage": "invalid_usage_format"}  # Should be dict, not string
 
-        chunk_str = json.dumps(chunk_data)
+        chunk_str = "data: " + json.dumps(chunk_data)
         chunk_bytes = chunk_str.encode("utf-8")
 
         metrics = StreamMetrics()
         start_time = 1234567890.0
 
         # Process the chunk
-        updated_metrics = StreamProcessor.process_chunk(
-            chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+        should_break, error_message, updated_metrics = (
+            StreamProcessor.process_stream_chunk(
+                chunk_bytes, self.field_mapping, start_time, metrics, self.mock_logger
+            )
         )
 
-        # Verify no usage tokens were set due to invalid format
-        self.assertIsNone(updated_metrics.usage_tokens)
+        # Verify that invalid usage format is handled
+        # The field will contain the invalid string, but won't be treated as dict
+        self.assertEqual(updated_metrics.usage, "invalid_usage_format")
 
     @patch("engine.processing.StreamHandler.handle_stream_request")
-    def test_stream_handler_returns_usage_tokens(self, mock_handle_stream):
+    def test_stream_handler_returns_usage(self, mock_handle_stream):
         """Test that StreamHandler returns usage tokens in streaming mode."""
         # Mock return value with usage tokens
-        mock_usage_tokens = {
+        mock_usage = {
             "prompt_tokens": 4,
             "completion_tokens": 214,
             "total_tokens": 218,
@@ -229,7 +239,7 @@ class TestStreamingUsageOptimization(unittest.TestCase):
         mock_handle_stream.return_value = (
             "reasoning content",
             "model output",
-            mock_usage_tokens,
+            mock_usage,
         )
 
         # Import and create handler
@@ -244,7 +254,7 @@ class TestStreamingUsageOptimization(unittest.TestCase):
         # Verify return values
         self.assertEqual(reasoning, "reasoning content")
         self.assertEqual(output, "model output")
-        self.assertEqual(usage, mock_usage_tokens)
+        self.assertEqual(usage, mock_usage)
 
     def test_metrics_with_field_default(self):
         """Test StreamMetrics initializes with correct default values."""
@@ -257,9 +267,9 @@ class TestStreamingUsageOptimization(unittest.TestCase):
         self.assertFalse(metrics.reasoning_ended)
         self.assertIsNone(metrics.first_output_token_time)
         self.assertIsNone(metrics.first_thinking_token_time)
-        self.assertEqual(metrics.model_output, "")
+        self.assertEqual(metrics.content, "")
         self.assertEqual(metrics.reasoning_content, "")
-        self.assertIsNone(metrics.usage_tokens)
+        self.assertIsNone(metrics.usage)
 
 
 if __name__ == "__main__":

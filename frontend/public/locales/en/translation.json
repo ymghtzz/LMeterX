@@ -417,6 +417,8 @@
       "contentFieldPathTooltip": "Dot-notation path to the main content in each JSON chunk (e.g., choices.0.delta.content)",
       "reasoningFieldPath": "Reasoning Field Path",
       "reasoningFieldPathTooltip": "Dot-notation path to reasoning content in JSON (optional, for models that support reasoning)",
+      "usageFieldPath": "Usage Field Path",
+      "usageFieldPathTooltip": "Dot-notation path to token usage statistics in the response (e.g., usage)",
       "streamTerminationConfiguration": "Stream Termination Configuration",
       "endLinePrefix": "End Line Prefix",
       "endLinePrefixTooltip": "Prefix for lines that contain stream termination signals (usually same as stream prefix)",

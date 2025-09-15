@@ -47,6 +47,7 @@ import {
 } from '@/api/services';
 import { useI18n } from '@/hooks/useI18n';
 import { BenchmarkJob } from '@/types/benchmark';
+import { CHAT_COMPLETIONS_FIELD_MAPPING } from '@/utils/constants';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -81,18 +82,15 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   // Add state to track upload loading
   const [uploading, setUploading] = useState(false);
 
-  // Get default field_mapping based on API path
-  const getDefaultFieldMapping = (apiPath: string) => {
+  // Get default field_mapping based on API path and stream mode
+  const getDefaultFieldMapping = (apiPath: string, streamMode?: boolean) => {
     if (apiPath === '/chat/completions') {
+      const isStreamMode = streamMode !== false; // Default to streaming if not specified
       return {
         prompt: 'messages.0.content',
-        stream_prefix: 'data:',
-        data_format: 'json',
-        content: 'choices.0.delta.content',
-        reasoning_content: 'choices.0.delta.reasoning_content',
-        end_prefix: 'data:',
-        stop_flag: '[DONE]',
-        end_condition: '',
+        ...(isStreamMode
+          ? CHAT_COMPLETIONS_FIELD_MAPPING.STREAMING
+          : CHAT_COMPLETIONS_FIELD_MAPPING.NON_STREAMING),
       };
     }
     // For non-chat/completions APIs, return empty values (only show placeholders)
@@ -102,9 +100,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       data_format: 'json',
       content: '',
       reasoning_content: '',
+      usage: '',
       end_prefix: '',
       stop_flag: '',
-      end_condition: '',
+      end_field: '',
     };
   };
 
@@ -210,7 +209,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     if (isFormReady && !isCopyMode && !initialData) {
       const currentApiPath =
         form.getFieldValue('api_path') || '/chat/completions';
-      const defaultFieldMapping = getDefaultFieldMapping(currentApiPath);
+      const currentStreamMode = form.getFieldValue('stream_mode');
+      const defaultFieldMapping = getDefaultFieldMapping(
+        currentApiPath,
+        currentStreamMode
+      );
       form.setFieldsValue({ field_mapping: defaultFieldMapping });
     }
   }, [isFormReady, isCopyMode, initialData, form]);
@@ -328,9 +331,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         data_format: 'json',
         content: '',
         reasoning_content: '',
+        usage: '',
         end_prefix: '',
         stop_flag: '',
-        end_condition: '',
+        end_field: '',
       };
       dataToFill.request_payload = originalRequestPayload;
 
@@ -1348,11 +1352,28 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             }
             rules={[
               {
+                required: true,
+                message: t('components.createJobForm.pleaseEnterModelName'),
+              },
+              {
                 max: 255,
                 message: t('components.createJobForm.modelNameLengthLimit'),
               },
+              {
+                validator: (_, value) => {
+                  if (!value || !value.trim()) {
+                    return Promise.reject(
+                      new Error(
+                        t('components.createJobForm.modelNameCannotBeEmpty')
+                      )
+                    );
+                  }
+                  return Promise.resolve();
+                },
+              },
             ]}
             normalize={value => value?.trim() || ''}
+            required
           >
             <Input
               placeholder='e.g. gpt-4, claude-3, internlm3-latest'
@@ -2074,55 +2095,87 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   getFieldValue(['field_mapping', 'data_format']) || 'json';
                 return (
                   dataFormat === 'json' && (
-                    <Row gutter={24}>
-                      <Col span={12}>
-                        <Form.Item
-                          name={['field_mapping', 'content']}
-                          label={
-                            <span>
-                              {t('components.createJobForm.contentFieldPath')}
-                              <Tooltip
-                                title={t(
-                                  'components.createJobForm.contentFieldPathTooltip'
-                                )}
-                              >
-                                <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                              </Tooltip>
-                            </span>
-                          }
-                          rules={[
-                            {
-                              required: dataFormat === 'json',
-                              message: t(
-                                'components.createJobForm.pleaseSpecifyContentFieldPath'
-                              ),
-                            },
-                          ]}
-                        >
-                          <Input placeholder='choices.0.delta.content' />
-                        </Form.Item>
-                      </Col>
+                    <>
+                      <Row gutter={24}>
+                        <Col span={12}>
+                          <Form.Item
+                            name={['field_mapping', 'content']}
+                            label={
+                              <span>
+                                {t('components.createJobForm.contentFieldPath')}
+                                <Tooltip
+                                  title={t(
+                                    'components.createJobForm.contentFieldPathTooltip'
+                                  )}
+                                >
+                                  <InfoCircleOutlined
+                                    style={{ marginLeft: 5 }}
+                                  />
+                                </Tooltip>
+                              </span>
+                            }
+                            rules={[
+                              {
+                                required: dataFormat === 'json',
+                                message: t(
+                                  'components.createJobForm.pleaseSpecifyContentFieldPath'
+                                ),
+                              },
+                            ]}
+                          >
+                            <Input placeholder='choices.0.delta.content' />
+                          </Form.Item>
+                        </Col>
 
-                      <Col span={12}>
-                        <Form.Item
-                          name={['field_mapping', 'reasoning_content']}
-                          label={
-                            <span>
-                              {t('components.createJobForm.reasoningFieldPath')}
-                              <Tooltip
-                                title={t(
-                                  'components.createJobForm.reasoningFieldPathTooltip'
+                        <Col span={12}>
+                          <Form.Item
+                            name={['field_mapping', 'reasoning_content']}
+                            label={
+                              <span>
+                                {t(
+                                  'components.createJobForm.reasoningFieldPath'
                                 )}
-                              >
-                                <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                              </Tooltip>
-                            </span>
-                          }
-                        >
-                          <Input placeholder='choices.0.delta.reasoning_content' />
-                        </Form.Item>
-                      </Col>
-                    </Row>
+                                <Tooltip
+                                  title={t(
+                                    'components.createJobForm.reasoningFieldPathTooltip'
+                                  )}
+                                >
+                                  <InfoCircleOutlined
+                                    style={{ marginLeft: 5 }}
+                                  />
+                                </Tooltip>
+                              </span>
+                            }
+                          >
+                            <Input placeholder='choices.0.delta.reasoning_content' />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+
+                      <Row gutter={24} style={{ marginTop: 16 }}>
+                        <Col span={12}>
+                          <Form.Item
+                            name={['field_mapping', 'usage']}
+                            label={
+                              <span>
+                                {t('components.createJobForm.usageFieldPath')}
+                                <Tooltip
+                                  title={t(
+                                    'components.createJobForm.usageFieldPathTooltip'
+                                  )}
+                                >
+                                  <InfoCircleOutlined
+                                    style={{ marginLeft: 5 }}
+                                  />
+                                </Tooltip>
+                              </span>
+                            }
+                          >
+                            <Input placeholder='usage' />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    </>
                   )
                 );
               }}
@@ -2172,7 +2225,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
               <Col span={8}>
                 <Form.Item
-                  name={['field_mapping', 'end_condition']}
+                  name={['field_mapping', 'end_field']}
                   label={
                     <span>
                       {t('components.createJobForm.endFieldPath')}
@@ -2282,6 +2335,28 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 }
               >
                 <Input placeholder='choices.0.message.reasoning_content' />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={24} style={{ marginTop: 16 }}>
+            <Col span={12}>
+              <Form.Item
+                name={['field_mapping', 'usage']}
+                label={
+                  <span>
+                    {t('components.createJobForm.usageFieldPath')}
+                    <Tooltip
+                      title={t(
+                        'components.createJobForm.usageFieldPathTooltip'
+                      )}
+                    >
+                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                    </Tooltip>
+                  </span>
+                }
+              >
+                <Input placeholder='usage' />
               </Form.Item>
             </Col>
           </Row>
@@ -2406,12 +2481,22 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           model: '',
           system_prompt: '',
           request_payload: '',
-          field_mapping: getDefaultFieldMapping('/chat/completions'),
+          field_mapping: getDefaultFieldMapping('/chat/completions', true),
         }}
         onFinish={handleSubmit}
         onValuesChange={changedValues => {
           if ('stream_mode' in changedValues) {
             setStreamMode(changedValues.stream_mode);
+            // Update field_mapping default values when stream mode changes (but not in copy mode)
+            if (!isCopyMode) {
+              const currentApiPath =
+                form.getFieldValue('api_path') || '/chat/completions';
+              const newFieldMapping = getDefaultFieldMapping(
+                currentApiPath,
+                changedValues.stream_mode
+              );
+              form.setFieldsValue({ field_mapping: newFieldMapping });
+            }
           }
           if ('concurrent_users' in changedValues) {
             setConcurrentUsers(changedValues.concurrent_users);
@@ -2420,8 +2505,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             handleApiPathChange(changedValues.api_path);
             // Update field_mapping default values when API path changes (but not in copy mode)
             if (!isCopyMode) {
+              const currentStreamMode = form.getFieldValue('stream_mode');
               const newFieldMapping = getDefaultFieldMapping(
-                changedValues.api_path
+                changedValues.api_path,
+                currentStreamMode
               );
               form.setFieldsValue({ field_mapping: newFieldMapping });
             }

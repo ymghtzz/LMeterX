@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Set
 from locust import events
 
 from engine.core import GlobalStateManager
-from engine.multiprocess_manager import get_multiprocess_manager
+from engine.process_manager import get_multiprocess_manager
 from utils.logger import logger
 
 

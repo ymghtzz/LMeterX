@@ -32,6 +32,7 @@ services:
       - DB_USER=root
       - DB_PASSWORD=lmeterx123
       - DB_NAME=lmeterx
+      - LOG_LEVEL=INFO
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
@@ -58,6 +59,7 @@ services:
       DB_USER: root
       DB_PASSWORD: lmeterx123
       DB_NAME: lmeterx
+      LOG_LEVEL: INFO
       # Multi-process configuration
       ENABLE_MULTIPROCESS: auto
       LOCUST_CPU_CORES: 4.0

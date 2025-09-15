@@ -22,7 +22,7 @@ from config.business import (
     TASK_STATUS_STOPPED,
     TASK_STATUS_STOPPING,
 )
-from engine.multiprocess_manager import (
+from engine.process_manager import (
     cleanup_all_locust_processes,
     cleanup_task_resources,
     force_cleanup_orphaned_processes,
@@ -253,7 +253,7 @@ class TaskService:
 
                         # If pgrep succeeds, the process exists and is now an orphan.
                         task_logger.warning(
-                            f"Found orphaned locust process for task {task.id} in '{task.status}' state. "
+                            f"Something went wrong with engine service."
                             f"Terminating it and marking task as FAILED."
                         )
                         try:

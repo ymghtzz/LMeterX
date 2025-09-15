@@ -576,12 +576,13 @@ def calculate_custom_metrics(
         completion_tokens = sum(completion_tokens_list)
         metrics["reqs_num"] = len(completion_tokens_list)
         metrics["completion_tokens"] = completion_tokens
+        task_logger.debug(f"Completion tokens: {completion_tokens}")
 
         # Process all tokens
         all_tokens_list = _drain_queue(global_task_queue["all_tokens_queue"])
         all_tokens = sum(all_tokens_list)
         metrics["all_tokens"] = all_tokens
-
+        task_logger.debug(f"All tokens: {all_tokens}")
         return metrics
 
     except Exception as e:

@@ -74,14 +74,20 @@ class MultiprocessManager:
                     cmdline = proc_info.get("cmdline", [])
                     process_name = proc_info.get("name", "")
 
+                    # Ensure cmdline is not None and is iterable
+                    if cmdline is None:
+                        cmdline = []
+
                     # Enhanced Locust process detection
                     is_locust_process = (
                         # Direct Locust command
-                        any("locust" in str(arg).lower() for arg in cmdline)
+                        isinstance(cmdline, (list, tuple))
+                        and any("locust" in str(arg).lower() for arg in cmdline)
                         or
                         # Python process running Locust
                         (
                             process_name.lower() in ["python", "python3"]
+                            and isinstance(cmdline, (list, tuple))
                             and any(
                                 "/locust" in str(arg) or "locustfile" in str(arg)
                                 for arg in cmdline
@@ -98,7 +104,7 @@ class MultiprocessManager:
                         ):
                             locust_processes.append(proc_info["pid"])
                             logger.debug(
-                                f"Found Locust process {proc_info['pid']}: {' '.join(cmdline[:3])}"
+                                f"Found Locust process {proc_info['pid']}: {' '.join(cmdline[:3]) if cmdline else 'no cmdline'}"
                             )
 
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -353,6 +359,10 @@ class MultiprocessManager:
                     cmdline = proc_info.get("cmdline", [])
                     create_time = proc_info.get("create_time", 0)
 
+                    # Ensure cmdline is not None and is iterable
+                    if cmdline is None:
+                        cmdline = []
+
                     # Check if this is a Locust process
                     if not self._is_locust_process(proc):
                         continue
@@ -424,8 +434,16 @@ class MultiprocessManager:
             cmdline = process.cmdline()
             name = process.name()
 
-            return any("locust" in str(arg).lower() for arg in cmdline) or (
+            # Ensure cmdline is not None and is iterable
+            if cmdline is None:
+                cmdline = []
+
+            return (
+                isinstance(cmdline, (list, tuple))
+                and any("locust" in str(arg).lower() for arg in cmdline)
+            ) or (
                 name.lower() in ["python", "python3"]
+                and isinstance(cmdline, (list, tuple))
                 and any(
                     "/locust" in str(arg) or "locustfile" in str(arg) for arg in cmdline
                 )

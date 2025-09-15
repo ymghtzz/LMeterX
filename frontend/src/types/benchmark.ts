@@ -19,7 +19,7 @@ export interface BenchmarkJob {
     reasoning_content?: string;
     end_prefix?: string;
     stop_flag?: string;
-    end_condition?: string;
+    end_field?: string;
   };
   concurrent_users?: number;
   spawn_rate?: number;

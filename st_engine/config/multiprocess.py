@@ -27,7 +27,7 @@ class MultiprocessingConfig:
                 "cpu_cores": os.environ.get("LOCUST_CPU_CORES", ""),
                 "processes": os.environ.get("LOCUST_PROCESSES", ""),
                 "multiprocess_threshold": int(
-                    os.environ.get("MULTIPROCESS_THRESHOLD", "1000")
+                    os.environ.get("MULTIPROCESS_THRESHOLD", "600")
                 ),
                 "min_users_per_process": int(
                     os.environ.get("MIN_USERS_PER_PROCESS", "500")
@@ -253,11 +253,11 @@ DEFAULT_PROCESS_COUNT = get_cpu_count() if DEFAULT_ENABLE_MULTIPROCESS else 1
 
 # Performance tuning parameters, clearer names
 MULTIPROCESS_THRESHOLD = int(
-    os.environ.get("MULTIPROCESS_THRESHOLD", "1000")
+    os.environ.get("MULTIPROCESS_THRESHOLD", "600")
 )  # Min users to enable multiprocess (must be > 1000)
 
 MIN_USERS_PER_PROCESS = int(
-    os.environ.get("MIN_USERS_PER_PROCESS", "100")
+    os.environ.get("MIN_USERS_PER_PROCESS", "500")
 )  # Min users each process should handle
 
 
