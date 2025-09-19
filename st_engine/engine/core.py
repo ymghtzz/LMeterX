@@ -41,10 +41,8 @@ class StreamMetrics:
     reasoning_ended: bool = False
     first_output_token_time: Optional[float] = None
     first_thinking_token_time: Optional[float] = None
-    content: str = ""
+    model_output: str = ""
     reasoning_content: str = ""
-    # Usage information from streaming response
-    usage: Optional[Dict[str, Optional[int]]] = field(default=None)
 
 
 @dataclass
@@ -59,6 +57,7 @@ class GlobalConfig:
     cookies: Optional[Dict[str, str]] = None
     request_payload: Optional[str] = None
     model_name: Optional[str] = None
+    system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     stream_mode: bool = True
     chat_type: int = 0
@@ -78,11 +77,10 @@ class FieldMapping:
     data_format: str = "json"
     stop_flag: str = "[DONE]"
     end_prefix: str = ""
-    end_field: str = ""
+    end_condition: str = ""
     content: str = ""
     reasoning_content: str = ""
     prompt: str = ""
-    usage: str = ""
 
 
 # === GLOBAL STATE MANAGEMENT ===
@@ -308,11 +306,10 @@ class ConfigManager:
                 data_format=mapping_dict.get("data_format", "json"),
                 stop_flag=mapping_dict.get("stop_flag", "[DONE]"),
                 end_prefix=mapping_dict.get("end_prefix", ""),
-                end_field=mapping_dict.get("end_field", ""),
+                end_condition=mapping_dict.get("end_condition", ""),
                 content=mapping_dict.get("content", ""),
                 reasoning_content=mapping_dict.get("reasoning_content", ""),
                 prompt=mapping_dict.get("prompt", ""),
-                usage=mapping_dict.get("usage", ""),
             )
         except (json.JSONDecodeError, TypeError):
             return FieldMapping()

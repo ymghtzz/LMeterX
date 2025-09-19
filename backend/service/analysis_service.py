@@ -67,7 +67,7 @@ async def analyze_tasks_svc(
         try:
             ai_config = await get_ai_service_config_internal_svc(request)
         except HTTPException as e:
-            error_msg = "Failed to get AI service configuration."
+            error_msg = "Failed to get AI service configuration. %s" % str(e)
             logger.error(error_msg, exc_info=True)
             return AnalysisResponse(
                 task_ids=task_ids,
@@ -201,8 +201,9 @@ async def analyze_tasks_svc(
 
     except Exception as e:
         # Handle other exceptions - only log error, don't update database
-        error_message = (
-            f"Analysis failed for tasks {analysis_request.task_ids}: {str(e)}"
+        error_message = "Analysis failed for tasks %s: %s" % (
+            analysis_request.task_ids,
+            str(e),
         )
         logger.error(error_message, exc_info=True)
         return AnalysisResponse(
@@ -268,7 +269,7 @@ async def get_analysis_svc(request: Request, task_id: str) -> GetAnalysisRespons
         )
 
     except Exception as e:
-        error_msg = f"Failed to retrieve analysis for task {task_id}: {str(e)}"
+        error_msg = "Failed to retrieve analysis for task %s: %s" % (task_id, str(e))
         logger.error(error_msg, exc_info=True)
         return GetAnalysisResponse(
             data=None,
@@ -322,18 +323,18 @@ async def _call_ai_service(
             model_info_str = json.dumps(model_info, ensure_ascii=False, indent=2)
             prompt = prompt_template.format(model_info=model_info_str)
         except (TypeError, ValueError) as e:
-            error_msg = f"Failed to serialize model_info: {str(e)}"
+            error_msg = "Failed to serialize model_info: %s" % str(e)
             logger.error(error_msg)
             # Try fallback serialization
             try:
                 model_info_str = str(model_info)
                 prompt = prompt_template.format(model_info=model_info_str)
             except Exception as fallback_error:
-                logger.error(f"Fallback serialization failed: {str(fallback_error)}")
-                raise Exception(f"Failed to serialize model_info: {str(e)}")
+                logger.error("Fallback serialization failed: %s" % str(fallback_error))
+                raise Exception("Failed to serialize model_info: %s" % str(e))
         except Exception as format_error:
-            error_msg = f"Failed to format prompt: {str(format_error)}"
-            logger.error(f"Prompt formatting error: {error_msg}")
+            error_msg = "Failed to format prompt: %s" % str(format_error)
+            logger.error("Prompt formatting error: %s" % error_msg)
             raise Exception(error_msg)
     else:
         error_msg = "model_info is required for task analysis"
@@ -372,22 +373,22 @@ async def _call_ai_service(
             raise Exception(error_msg)
 
     except httpx.TimeoutException as e:
-        error_msg = f"AI service request timeout: {str(e)}"
-        logger.error(f"AI service timeout error: {error_msg}")
+        error_msg = "AI service request timeout: %s" % str(e)
+        logger.error("AI service timeout error: %s" % error_msg)
         raise Exception(error_msg)
     except httpx.ConnectError as e:
-        error_msg = f"AI service connection error: {str(e)}"
-        logger.error(f"AI service connection error: {error_msg}")
+        error_msg = "AI service connection error: %s" % str(e)
+        logger.error("AI service connection error: %s" % error_msg)
         raise Exception(error_msg)
     except httpx.HTTPStatusError as e:
-        error_msg = f"AI service HTTP error: {e.response.status_code} - {str(e)}"
-        logger.error(f"AI service HTTP error: {error_msg}")
+        error_msg = "AI service HTTP error: %s - %s" % (e.response.status_code, str(e))
+        logger.error("AI service HTTP error: %s" % error_msg)
         raise Exception(error_msg)
     except httpx.RequestError as e:
-        error_msg = f"AI service request failed: {str(e)}"
-        logger.error(f"AI service request error: {error_msg}")
+        error_msg = "AI service request failed: %s" % str(e)
+        logger.error("AI service request error: %s" % error_msg)
         raise Exception(error_msg)
     except Exception as e:
-        error_msg = f"AI service call failed: {str(e)}"
-        logger.error(f"AI service general error: {error_msg}")
+        error_msg = "AI service call failed: %s" % str(e)
+        logger.error("AI service general error: %s" % error_msg)
         raise Exception(error_msg)

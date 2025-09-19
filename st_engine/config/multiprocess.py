@@ -27,10 +27,10 @@ class MultiprocessingConfig:
                 "cpu_cores": os.environ.get("LOCUST_CPU_CORES", ""),
                 "processes": os.environ.get("LOCUST_PROCESSES", ""),
                 "multiprocess_threshold": int(
-                    os.environ.get("MULTIPROCESS_THRESHOLD", "600")
+                    os.environ.get("MULTIPROCESS_THRESHOLD", "50")
                 ),
                 "min_users_per_process": int(
-                    os.environ.get("MIN_USERS_PER_PROCESS", "500")
+                    os.environ.get("MIN_USERS_PER_PROCESS", "50")
                 ),
                 "force_single_process": os.environ.get(
                     "FORCE_SINGLE_PROCESS", "false"
@@ -185,25 +185,10 @@ class MultiprocessingConfig:
 
         # Calculate optimal process count based on concurrent users
         min_users_per_process = self.config["min_users_per_process"]
-
-        # Maximum process count: min(CPU cores, 8) to ensure each process can get dedicated CPU
-        max_processes = min(cpu_count, 8)
-
-        # Calculate based on user count - ensure at least min_users_per_process per process
         max_processes_by_users = max(1, concurrent_users // min_users_per_process)
 
-        # Final process count: ensure we don't exceed limits
-        process_count = min(max_processes, max_processes_by_users)
-
-        # Ensure even distribution of users across processes
-        if process_count > 1:
-            # Adjust to ensure relatively even user distribution
-            users_per_process = concurrent_users // process_count
-            if users_per_process < min_users_per_process:
-                # Reduce process count to maintain minimum users per process
-                process_count = max(1, concurrent_users // min_users_per_process)
-
-        return process_count
+        # Use the minimum of CPU count and user-based limit
+        return min(cpu_count, max_processes_by_users)
 
 
 # Global configuration instance
@@ -253,11 +238,11 @@ DEFAULT_PROCESS_COUNT = get_cpu_count() if DEFAULT_ENABLE_MULTIPROCESS else 1
 
 # Performance tuning parameters, clearer names
 MULTIPROCESS_THRESHOLD = int(
-    os.environ.get("MULTIPROCESS_THRESHOLD", "600")
+    os.environ.get("MULTIPROCESS_THRESHOLD", "50")
 )  # Min users to enable multiprocess (must be > 1000)
 
 MIN_USERS_PER_PROCESS = int(
-    os.environ.get("MIN_USERS_PER_PROCESS", "500")
+    os.environ.get("MIN_USERS_PER_PROCESS", "50")
 )  # Min users each process should handle
 
 

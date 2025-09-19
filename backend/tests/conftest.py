@@ -61,6 +61,7 @@ def sample_task_data():
         "chat_type": 1,
         "stream_mode": True,
         "headers": [],
+        "system_prompt": "You are a helpful assistant",
     }
 
 

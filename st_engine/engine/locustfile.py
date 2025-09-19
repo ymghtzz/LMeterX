@@ -33,17 +33,16 @@ from config.base import (
 )
 
 # Local imports after path setup
-from engine.core import (
+from engine.core import (  # noqa: E402
     CertificateManager,
     ConfigManager,
     GlobalConfig,
     GlobalStateManager,
     ValidationManager,
 )
-from engine.processing import ErrorHandler, RequestHandler, StreamHandler
-from utils.common import mask_sensitive_data
-from utils.logger import logger
-from utils.token_counter import count_tokens
+from engine.processing import ErrorHandler, RequestHandler, StreamHandler  # noqa: E402
+from utils.common import count_tokens, mask_sensitive_data  # noqa: E402
+from utils.logger import logger  # noqa: E402
 
 # Disable the specific InsecureRequestWarning from urllib3
 urllib3.disable_warnings(InsecureRequestWarning)
@@ -168,7 +167,10 @@ def init_parser(parser):
         help="The unique identifier for the test task.",
     )
     parser.add_argument(
-        "--api_path", type=str, default="/chat/completions", help="API path to test."
+        "--api_path",
+        type=str,
+        default=DEFAULT_API_PATH,
+        help="API path for the request.",
     )
     parser.add_argument(
         "--headers", type=str, default="", help="Request headers in JSON format."
@@ -182,7 +184,9 @@ def init_parser(parser):
     parser.add_argument(
         "--model_name", type=str, default="", help="Name of the model to test."
     )
-
+    parser.add_argument(
+        "--system_prompt", type=str, default="", help="System prompt to use."
+    )
     parser.add_argument(
         "--stream_mode",
         type=str,
@@ -252,6 +256,7 @@ def on_locust_init(environment, **kwargs):
         global_config.api_path = options.api_path
         global_config.request_payload = options.request_payload
         global_config.model_name = options.model_name
+        global_config.system_prompt = options.system_prompt
         global_config.user_prompt = options.user_prompt
         global_config.stream_mode = str(options.stream_mode).lower() in ("true", "1")
         global_config.chat_type = int(options.chat_type)
@@ -429,9 +434,6 @@ def on_test_stop(environment, **kwargs):
     start_time = GlobalStateManager.get_start_time()
     end_time = time.time()
 
-    task_logger.debug(f"Start time: {start_time}")
-    task_logger.debug(f"End time: {end_time}")
-    task_logger.debug(f"Execution time: {end_time - start_time}")
     try:
         if start_time is not None and end_time is not None:
             execution_time = max(end_time - start_time, 0.001)
@@ -451,10 +453,10 @@ def on_test_stop(environment, **kwargs):
 
     except Exception as e:
         task_logger.error(
-            f"Failed to calculate execution time: {str(e)}", exc_info=True
+            "Failed to calculate execution time: %s" % str(e), exc_info=True
         )
         execution_time = 60.0
-        raise RuntimeError(f"Failed to calculate execution time: {str(e)}")
+        raise RuntimeError("Failed to calculate execution time: %s" % str(e))
 
     from utils.common import calculate_custom_metrics, get_locust_stats
 
@@ -570,62 +572,30 @@ def on_test_stop(environment, **kwargs):
     if is_multiprocess and worker_count > 0:
         import gevent
 
-        max_wait_time = 15  # Increased wait time for better reliability
+        max_wait_time = 10
         wait_time = 0
-        request_attempts = 0
-        max_request_attempts = 3
 
-        # Multiple attempts to request Worker metrics for better reliability
-        while (
-            request_attempts < max_request_attempts
-            and len(worker_metrics_list) < worker_count
-        ):
-            try:
-                if hasattr(environment.runner, "send_message"):
-                    task_logger.debug(
-                        f"Requesting metrics from workers (attempt {request_attempts + 1})..."
-                    )
-                    environment.runner.send_message(
-                        "request_metrics", {"request": "all_metrics"}
-                    )
-                    gevent.sleep(2)  # Give more time for workers to respond
-                    request_attempts += 1
-            except Exception as e:
-                task_logger.warning(
-                    f"Failed to request worker metrics (attempt {request_attempts + 1}): {e}"
+        # Actively request Worker metrics
+        try:
+            if hasattr(environment.runner, "send_message"):
+                task_logger.debug("Actively requesting metrics from all workers...")
+                environment.runner.send_message(
+                    "request_metrics", {"request": "all_metrics"}
                 )
-                request_attempts += 1
                 gevent.sleep(1)
+        except Exception as e:
+            task_logger.warning(f"Failed to actively request worker metrics: {e}")
 
-        # Wait for worker responses with progressive timeout
         while len(worker_metrics_list) < worker_count and wait_time < max_wait_time:
             gevent.sleep(0.5)
             wait_time += 0.5
-
-            # Log progress every 2 seconds
-            if wait_time % 2 == 0:
-                task_logger.debug(
-                    f"Waiting for worker metrics... ({len(worker_metrics_list)}/{worker_count}) after {wait_time}s"
-                )
-
-        # Final status check
-        if len(worker_metrics_list) < worker_count:
-            task_logger.warning(
-                f"Only received {len(worker_metrics_list)} worker metrics out of {worker_count} expected workers after {max_wait_time}s"
+            task_logger.debug(
+                f"Waiting for worker metrics... ({len(worker_metrics_list)}/{worker_count}) after {wait_time}s"
             )
 
-            # Try to get partial metrics from available workers
-            if len(worker_metrics_list) > 0:
-                task_logger.debug(
-                    f"Proceeding with metrics from {len(worker_metrics_list)} available workers"
-                )
-            else:
-                task_logger.error(
-                    "No worker metrics received, falling back to master metrics only"
-                )
-        else:
-            task_logger.debug(
-                f"Successfully collected metrics from all {worker_count} workers"
+        if len(worker_metrics_list) < worker_count:
+            task_logger.warning(
+                f"Only received {len(worker_metrics_list)} worker metrics out of {worker_count} expected workers"
             )
 
     # Aggregate basic metrics
@@ -675,9 +645,7 @@ def on_test_stop(environment, **kwargs):
         total_reqs = master_metrics["reqs_num"]
         total_comp_tokens = master_metrics["completion_tokens"]
         total_all_tokens = master_metrics["all_tokens"]
-    task_logger.debug(f"Total reqs: {total_reqs}")
-    task_logger.debug(f"Total comp tokens: {total_comp_tokens}")
-    task_logger.debug(f"Total all tokens: {total_all_tokens}")
+
     # Calculate final TPS metrics using aggregated data and total execution time
     custom_metrics = {
         "reqs_num": total_reqs,
@@ -693,7 +661,7 @@ def on_test_stop(environment, **kwargs):
             total_all_tokens / total_reqs if total_reqs > 0 else 0
         ),
     }
-    task_logger.debug(f"Custom metrics: {custom_metrics}")
+
     # Get Locust standard statistics
     locust_stats = get_locust_stats(task_id, environment.stats)
 
@@ -723,7 +691,7 @@ class LLMTestUser(FastHttpUser):
     # Align FastHttp timeouts with previous requests timeout
     connection_timeout = DEFAULT_TIMEOUT
     network_timeout = DEFAULT_TIMEOUT
-    socket_timeout = DEFAULT_TIMEOUT * 2
+
     # Class-level shared instances to reduce memory usage
     _shared_request_handler = None
     _shared_stream_handler = None
@@ -833,8 +801,8 @@ class LLMTestUser(FastHttpUser):
         self,
         user_prompt: str,
         reasoning_content: str,
-        content: str,
-        usage: Optional[Dict[str, Optional[int]]] = None,
+        model_output: str,
+        usage_tokens: Optional[Dict[str, Optional[int]]] = None,
     ) -> None:
         """Calculate and log token counts for the completed request."""
         global_config = get_global_config()
@@ -842,29 +810,24 @@ class LLMTestUser(FastHttpUser):
 
         try:
             model_name = global_config.model_name or ""
+            system_prompt = global_config.system_prompt or ""
+
             user_prompt = user_prompt or ""
             reasoning_content = reasoning_content or ""
-            content = content or ""
+            model_output = model_output or ""
 
-            # Initialize token variables
+            # Prefer usage_tokens if available and valid
             completion_tokens = 0
             total_tokens = 0
-            user_tokens = 0
-            reasoning_tokens = 0
-            output_tokens = 0
 
-            # Check if we have valid usage with required fields
-            if (
-                usage
-                and isinstance(usage, dict)
-                and usage.get("completion_tokens") is not None
-                and usage.get("total_tokens") is not None
-            ):
-                # Use tokens directly from API response (preferred for both streaming and non-streaming)
-                completion_tokens = usage.get("completion_tokens", 0) or 0
-                total_tokens = usage.get("total_tokens", 0) or 0
+            # Fallback: manual counting if completion_tokens and total_tokens are missing
+            if usage_tokens and isinstance(usage_tokens, dict):
+                completion_tokens = usage_tokens.get("completion_tokens", 0) or 0
+                total_tokens = usage_tokens.get("total_tokens", 0) or 0
             else:
-                # Fallback: manual counting if usage are missing or incomplete
+                system_tokens = (
+                    count_tokens(system_prompt, model_name) if system_prompt else 0
+                )
                 user_tokens = (
                     count_tokens(user_prompt, model_name) if user_prompt else 0
                 )
@@ -873,10 +836,12 @@ class LLMTestUser(FastHttpUser):
                     if reasoning_content
                     else 0
                 )
-                output_tokens = count_tokens(content, model_name) if content else 0
+                output_tokens = (
+                    count_tokens(model_output, model_name) if model_output else 0
+                )
 
                 completion_tokens = reasoning_tokens + output_tokens
-                total_tokens = user_tokens + completion_tokens
+                total_tokens = system_tokens + user_tokens + completion_tokens
 
             # Ensure integer and log - only if tokens are not None and positive
             if (
@@ -891,9 +856,12 @@ class LLMTestUser(FastHttpUser):
                 and total_tokens > 0
             ):
                 global_task_queue["all_tokens_queue"].put(int(total_tokens))
-            self.task_logger.debug(
-                f"_log_token_counts, completion_tokens: {completion_tokens}, total_tokens: {total_tokens}"
-            )
+
+            # REMOVED: incremental_metrics sending logic
+            # This was causing the inconsistency between worker metrics and incremental metrics
+            # In multi-process mode, we now rely solely on worker metrics calculated via calculate_custom_metrics()
+            # In single-process mode, we rely on master's local metrics calculated via calculate_custom_metrics()
+
         except Exception as e:
             self.task_logger.error(f"Failed to count tokens: {e}", exc_info=True)
 
@@ -915,12 +883,12 @@ class LLMTestUser(FastHttpUser):
             )
             return
 
+        # fix: remove request-level cert config, because it's already configured at session level
+        # original code: if global_config.cert_config: base_request_kwargs["cert"] = global_config.cert_config
+
         start_time = time.time()
-        reasoning_content, content = "", ""
-        usage: Dict[str, Optional[int]] = {
-            "completion_tokens": None,
-            "total_tokens": None,
-        }
+        reasoning_content, model_output = "", ""
+        usage_tokens = None
         request_name = (
             base_request_kwargs.get("name", "failure")
             if base_request_kwargs
@@ -928,15 +896,13 @@ class LLMTestUser(FastHttpUser):
         )
         try:
             if global_config.stream_mode:
-                reasoning_content, content, usage = (
+                reasoning_content, model_output = (
                     self.stream_handler.handle_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
                 )
-                # self.task_logger.debug(f"reasoning_content: {reasoning_content}")
-                # self.task_logger.debug(f"content: {content}")
             else:
-                reasoning_content, content, usage = (
+                reasoning_content, model_output, usage_tokens = (
                     self.stream_handler.handle_non_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
@@ -967,8 +933,10 @@ class LLMTestUser(FastHttpUser):
                 },
             )
 
-        if reasoning_content or content or usage:
-            self._log_token_counts(user_prompt or "", reasoning_content, content, usage)
+        if reasoning_content or model_output or usage_tokens:
+            self._log_token_counts(
+                user_prompt or "", reasoning_content, model_output, usage_tokens
+            )
 
     def stop(self, force=False):
         """

@@ -1,13 +1,6 @@
 <div align="center">
   <img src="docs/images/logo.png" alt="LMeterX Logo" width="400"/>
   <p>
-    <a href="https://github.com/MigoXLab/LMeterX/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MigoXLab/LMeterX" alt="License"></a>
-    <a href="https://github.com/MigoXLab/LMeterX/stargazers"><img src="https://img.shields.io/github/stars/MigoXLab/LMeterX" alt="GitHub stars"></a>
-  <a href="https://github.com/MigoXLab/LMeterX/network/members"><img src="https://img.shields.io/github/forks/MigoXLab/LMeterX" alt="GitHub forks"></a>
-  <a href="https://github.com/MigoXLab/LMeterX/issues"><img src="https://img.shields.io/github/issues/MigoXLab/LMeterX" alt="GitHub issues"></a>
-    <a href="https://deepwiki.com/MigoXLab/LMeterX"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
-  </p>
-  <p>
     <strong>简体中文</strong> |
     <a href="README.md">English</a>
   </p>
@@ -17,8 +10,7 @@
 
 ## 📋 项目简介
 
-LMeterX 是一个专业的大语言模型性能测试平台，支持应用于基于大模型推理框架（如 LiteLLM、vLLM、TensorRT-LLM、LMDeploy 等）的模型推理服务，同时也支持对 Azure OpenAI、AWS Bedrock、Google Vertex AI 等主流云服务进行性能测试。通过直观的 Web 界面，可以轻松创建和管理测试任务，实时监控测试过程，并获得详细的性能分析报告，为模型部署和性能优化提供可靠的数据支撑。
-
+LMeterX 是一个专业的大语言模型性能测试平台，支持对 LLM 服务进行全面的负载测试。通过直观的 Web 界面，用户可以轻松创建和管理测试任务，实时监控测试过程，并获得详细的性能分析报告，为模型部署和性能优化提供可靠的数据支撑。
 
 <div align="center">
   <img src="docs/images/images.gif" alt="LMeterX Demo" width="700"/>
@@ -26,7 +18,6 @@ LMeterX 是一个专业的大语言模型性能测试平台，支持应用于基
 
 ## ✨ 核心特性
 
-- **通用框架支持** - 兼容主流推理框架（vLLM、LiteLLM、TensorRT-LLM）和云服务（Azure、AWS、Google Cloud）
 - **全模型兼容** - 支持 GPT、Claude、Llama 等主流大模型，一键发起压测
 - **高负载压测** - 模拟高并发请求，精准探测模型性能极限
 - **多场景覆盖** - 支持流式/非流式、文本/多模态/自定义数据集<sup>![NEW](https://img.shields.io/badge/NEW-00C851?style=flat&labelColor=transparent)</sup>
@@ -69,17 +60,11 @@ curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.s
 
 ### 使用指南
 
-1. **访问界面**: 打开 http://localhost:8080
-2. **创建任务**: 导航至 测试任务 → 创建任务，配置LLM API请求信息、测试数据以及请求响应字段映射
-   **2.1 基础信息**: 对于 `/chat/completions` API只需要配置API路径、模型以及响应模式即可，也支持在请求参数中补充完整payload
-   **2.2 数据负载**: 根据需要选择内置的纯文本数据集/多模态数据集，也支持自定义JSONL数据或文件等
-   **2.3 字段映射**: 配置payload中prompt对应字段路径，以及响应数据中对应模型输出的content、reasoning_content字段路径、usage字段路径等，此字段映射对于使用数据集更新请求参数和正确解析流式/非流式响应至关重要
-1. **API测试**: 在 测试任务 → 创建任务，点击基础信息面板的"测试"按钮，快速测试API连通性
-   **注意**: 为快速得到API响应，建议使用简单的prompt测试API连通性
-1. **实时监控**: 导航至 测试任务 → 日志/监控中心，查看全链路测试日志，排查异常
-2. **结果分析**: 导航至 测试任务 → 结果，查看详细性能结果，导出报告
-3. **结果对比**: 导航至 模型擂台，选择多个模型或版本进行多维度性能对比
-4. **AI分析**: 在 测试任务 → 结果/模型擂台，配置AI分析服务后，支持对单个/多个任务进行智能性能评估
+1. **访问界面** - 打开 http://localhost:8080
+2. **创建任务** - 配置API地址、模型参数、测试类型
+3. **实时监控** - 查看测试日志和性能指标
+4. **结果分析** - 查看详细性能结果，导出报告
+5. **AI分析** - 配置AI服务后，获得智能性能评估
 
 ## 🔧 配置说明
 
@@ -138,7 +123,6 @@ LMeterX/
 
 ### 规划中
 - [ ] CLI 命令行工具
-- [ ] 支持 `/v1/embedding` 和 `/v1/rerank` 接口压测
 
 ## 📚 相关文档
 

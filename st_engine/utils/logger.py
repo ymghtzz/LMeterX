@@ -6,14 +6,9 @@ Copyright (c) 2025, All Rights Reserved.
 import os
 import sys
 
-from dotenv import load_dotenv
 from loguru import logger
 
 from config.base import LOG_DIR, LOG_TASK_DIR
-
-load_dotenv()
-# Get log level from environment variable, default to INFO
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 # --- Logger Configuration ---
 
@@ -38,7 +33,7 @@ logger.add(
     retention="10 days",  # Retains log files for 10 days.
     compression="zip",  # Compresses rotated log files.
     encoding="utf-8",  # Sets the file encoding.
-    level=LOG_LEVEL,  # Minimum log level to be written to the file.
+    level="INFO",  # Minimum log level to be written to the file.
     backtrace=False,  # Do not show the full stack trace.
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level} | {file}:{line} | {message}",
     filter=is_system_log,  # Only log records without 'task_id'
@@ -48,7 +43,7 @@ logger.add(
 # Configure the console logger.
 logger.add(
     sys.stdout,
-    level=LOG_LEVEL,
+    level="INFO",
     format="<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | <level>{level: <8}</level> | <cyan>{file}:{line}</cyan> | <level>{message}</level>",
 )
 

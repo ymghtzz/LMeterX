@@ -31,8 +31,6 @@ _token_count_cache: Dict[Tuple[str, str], int] = {}
 _token_count_cache_order: List[Tuple[str, str]] = []
 _token_count_cache_lock = threading.Lock()
 
-from gevent import queue as gevent_queue
-
 
 # === DATA CLASSES ===
 class PromptData:
@@ -97,7 +95,7 @@ def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
                 else:
                     safe_dict[key] = mask_sensitive_data(value)
         except Exception as e:
-            logger.warning(f"Error masking sensitive data: {str(e)}")
+            logger.warning("Error masking sensitive data: %s" % str(e))
             return data
         return safe_dict
     elif isinstance(data, list):
@@ -130,7 +128,7 @@ def mask_sensitive_command(command_list: list) -> list:
             safe_list.append(new_item)
         return safe_list
     except Exception as e:
-        logger.warning(f"Error masking sensitive command: {str(e)}")
+        logger.warning("Error masking sensitive command: %s" % str(e))
         return command_list
 
 
@@ -529,13 +527,13 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
 
 
 # === METRICS PROCESSING ===
-def _drain_queue(q: Union[queue.Queue, gevent_queue.Queue]) -> List[int]:
+def _drain_queue(q: queue.Queue) -> List[int]:
     """Safely drain all items from a queue."""
     items = []
     while not q.empty():
         try:
             items.append(q.get_nowait())
-        except (queue.Empty, gevent_queue.Empty):
+        except queue.Empty:
             break
         except Exception as e:
             # Be defensive: different queue implementations may raise different exceptions
@@ -545,10 +543,8 @@ def _drain_queue(q: Union[queue.Queue, gevent_queue.Queue]) -> List[int]:
 
 
 def calculate_custom_metrics(
-    task_id: str,
-    global_task_queue: Dict[str, Union[queue.Queue, gevent_queue.Queue]],
-    exc_time: float,
-) -> Dict[str, int]:
+    task_id: str, global_task_queue: Dict[str, queue.Queue], exc_time: float
+) -> Dict[str, Union[int, float]]:
     """Calculates custom performance metrics.
 
     Args:
@@ -576,13 +572,12 @@ def calculate_custom_metrics(
         completion_tokens = sum(completion_tokens_list)
         metrics["reqs_num"] = len(completion_tokens_list)
         metrics["completion_tokens"] = completion_tokens
-        task_logger.debug(f"Completion tokens: {completion_tokens}")
 
         # Process all tokens
         all_tokens_list = _drain_queue(global_task_queue["all_tokens_queue"])
         all_tokens = sum(all_tokens_list)
         metrics["all_tokens"] = all_tokens
-        task_logger.debug(f"All tokens: {all_tokens}")
+
         return metrics
 
     except Exception as e:
