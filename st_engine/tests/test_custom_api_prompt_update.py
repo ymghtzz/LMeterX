@@ -4,8 +4,7 @@ Test custom API prompt update functionality
 
 import json
 import unittest
-from queue import Queue
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 # Import core components without locust dependencies
 from engine.core import ConfigManager, GlobalConfig
@@ -50,7 +49,7 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
 
     def test_empty_request_payload_handling(self):
         """Test handling of empty request_payload"""
-        from engine.processing import RequestHandler
+        from engine.request_processor import PayloadBuilder
 
         # Test with empty request_payload
         config_with_empty_payload = GlobalConfig()
@@ -60,7 +59,7 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
         config_with_empty_payload.model_name = "test-model"
         config_with_empty_payload.stream_mode = True
 
-        handler = RequestHandler(config_with_empty_payload, self.task_logger)
+        handler = PayloadBuilder(config_with_empty_payload, self.task_logger)
         result, user_prompt = handler.prepare_request_kwargs(None)
 
         # Should generate default payload and not return None
@@ -77,7 +76,7 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
 
     def test_none_request_payload_handling(self):
         """Test handling of None request_payload"""
-        from engine.processing import RequestHandler
+        from request_processor import PayloadBuilder
 
         # Test with None request_payload
         config_with_none_payload = GlobalConfig()
@@ -87,7 +86,7 @@ class TestCustomApiPromptUpdate(unittest.TestCase):
         config_with_none_payload.model_name = "another-model"
         config_with_none_payload.stream_mode = False
 
-        handler = RequestHandler(config_with_none_payload, self.task_logger)
+        handler = PayloadBuilder(config_with_none_payload, self.task_logger)
         result, user_prompt = handler.prepare_request_kwargs(None)
 
         # Should generate default payload and not return None

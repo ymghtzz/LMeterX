@@ -1,18 +1,13 @@
 """
 Author: Charm
 Copyright (c) 2025, All Rights Reserved.
-
-Enhanced multiprocess manager for robust Locust process management.
-Fixes worker registration conflicts and ensures complete process cleanup.
 """
 
 import os
-import signal
-import subprocess
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 
 import psutil
 
@@ -103,24 +98,17 @@ class MultiprocessManager:
                             and proc_info["pid"] != os.getpid()
                         ):
                             locust_processes.append(proc_info["pid"])
-                            logger.debug(
-                                f"Found Locust process {proc_info['pid']}: {' '.join(cmdline[:3]) if cmdline else 'no cmdline'}"
-                            )
 
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
 
             if locust_processes:
-                logger.info(
-                    f"Found {len(locust_processes)} existing Locust processes to cleanup"
-                )
 
                 # Terminate processes gracefully first
                 for pid in locust_processes:
                     try:
                         process = psutil.Process(pid)
                         process.terminate()
-                        logger.debug(f"Sent SIGTERM to Locust process {pid}")
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         continue
 
@@ -133,15 +121,10 @@ class MultiprocessManager:
                         process = psutil.Process(pid)
                         if process.is_running():
                             process.kill()
-                            logger.debug(f"Force killed Locust process {pid}")
                             terminated_count += 1
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         terminated_count += 1  # Already terminated
                         continue
-
-                logger.info(f"Cleaned up {terminated_count} Locust processes")
-            else:
-                logger.debug("No existing Locust processes found")
 
         except Exception as e:
             logger.error(f"Error during Locust process cleanup: {e}")
@@ -195,11 +178,6 @@ class MultiprocessManager:
             all_pids = [master_pid] + worker_pids
             self._monitor.register_process_group(f"locust_task_{task_id}", all_pids)
 
-            logger.info(
-                f"Registered Locust process group for task {task_id}: "
-                f"master={master_pid}, workers={worker_pids}, port={port}"
-            )
-
     def terminate_process_group(self, task_id: str, timeout: float = 15.0) -> bool:
         """
         Terminate all processes in a group with enhanced cleanup.
@@ -225,10 +203,6 @@ class MultiprocessManager:
             if process_group.worker_pids:
                 all_pids.extend(process_group.worker_pids)
 
-            logger.info(
-                f"Terminating Locust process group for task {task_id}: {all_pids}"
-            )
-
             success = True
             terminated_pids = []
 
@@ -237,7 +211,6 @@ class MultiprocessManager:
                 try:
                     process = psutil.Process(pid)
                     process.terminate()
-                    logger.debug(f"Sent SIGTERM to process {pid}")
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     terminated_pids.append(pid)
                     continue
@@ -275,7 +248,6 @@ class MultiprocessManager:
                         process.kill()
                         process.wait(timeout=5.0)
                         terminated_pids.append(pid)
-                        logger.debug(f"Force killed process {pid}")
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         terminated_pids.append(pid)
                     except psutil.TimeoutExpired:
@@ -292,11 +264,6 @@ class MultiprocessManager:
 
             # Unregister from process monitor
             self._monitor.unregister_process_group(f"locust_task_{task_id}")
-
-            logger.info(
-                f"Terminated {len(terminated_pids)}/{len(all_pids)} processes for task {task_id}"
-            )
-
             return success
 
     def cleanup_task(self, task_id: str) -> None:
@@ -311,8 +278,6 @@ class MultiprocessManager:
 
                 # Remove from tracking
                 del self._process_groups[task_id]
-
-                logger.debug(f"Cleaned up resources for task {task_id}")
 
     def get_process_group_status(self, task_id: str) -> Optional[LocustProcessGroup]:
         """Get status of a process group."""
@@ -382,9 +347,6 @@ class MultiprocessManager:
                     # Check if process is old enough to be considered orphaned (> 5 minutes)
                     process_age = time.time() - create_time
                     if process_age < 300:  # Less than 5 minutes old
-                        logger.debug(
-                            f"Skipping recent Locust process {pid} (age: {process_age:.1f}s)"
-                        )
                         continue
 
                     # Check if process appears to be associated with any active task
@@ -422,9 +384,6 @@ class MultiprocessManager:
 
         except Exception as e:
             logger.error(f"Error during orphaned process cleanup: {e}")
-
-        if orphaned_count > 0:
-            logger.info(f"Cleaned up {orphaned_count} orphaned Locust processes")
 
         return orphaned_count
 

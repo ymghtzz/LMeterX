@@ -3,28 +3,25 @@ Author: Charm
 Copyright (c) 2025, All Rights Reserved.
 """
 
-import hashlib
 import logging
-import threading
+import re
 from abc import ABC, abstractmethod
 from functools import lru_cache
-from typing import Any, Optional, Union
+from typing import Any, List, Optional
+
+tiktoken: Optional[Any] = None
 
 try:
     import tiktoken
 except ImportError:
-    tiktoken = None  # type: ignore
-
-try:
-    from transformers import AutoTokenizer
-except ImportError:
-    AutoTokenizer = None  # type: ignore
+    pass
 
 logger = logging.getLogger(__name__)
 
 
 TOKENIZER_CACHE_SIZE = 16  # Cache size for tokenizer instances
-DEFAULT_TOKEN_RATIO = 4  # Estimate: 1 token ≈ 4 bytes UTF-8
+DEFAULT_TOKEN_RATIO_EN = 4  # Estimate: 1 token ≈ 4 bytes UTF-8
+DEFAULT_TOKEN_RATIO_CN = 3  # Estimate: 1 token ≈ 3 bytes UTF-8
 
 
 class TokenCounter(ABC):
@@ -41,12 +38,24 @@ class TokenCounter(ABC):
             return len(self.encode(text))
         except Exception as e:
             logger.warning(f"Tokenization failed: {e}, falling back to estimation")
-            return max(
-                1, len(text.encode("utf-8", errors="ignore")) // DEFAULT_TOKEN_RATIO
-            )
+            return self._fallback_token_estimate(text)
+
+    def _fallback_token_estimate(self, text: str) -> int:
+        """Fallback: Based on UTF-8 bytes + mixed estimation of English and Chinese"""
+        if not text:
+            return 0
+        utf8_bytes = len(text.encode("utf-8", errors="ignore"))
+        chinese_chars = len([c for c in text if "\u4e00" <= c <= "\u9fff"])
+        # Chinese characters are estimated to be 3 bytes/token, others are estimated to be 4 bytes/token
+        est_tokens = chinese_chars + max(
+            0, (utf8_bytes - chinese_chars * 3) // DEFAULT_TOKEN_RATIO_EN
+        )
+        return max(1, int(est_tokens))
 
 
 class TikTokenCounter(TokenCounter):
+    """TikTokenCounter: Use tiktoken for token counting"""
+
     def __init__(self, model_name: str):
         if tiktoken is None:
             raise ValueError("tiktoken not installed. Please run: pip install tiktoken")
@@ -59,83 +68,81 @@ class TikTokenCounter(TokenCounter):
         return self.encoding.encode(text)
 
 
-class TransformersTokenCounter(TokenCounter):
-    def __init__(self, model_name: str):
-        if AutoTokenizer is None:
-            raise ValueError(
-                "transformers not installed. Please run: pip install transformers"
-            )
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_name, trust_remote_code=True
-        )
-
-    def encode(self, text: str) -> list[int]:
-        return self.tokenizer.encode(text, add_special_tokens=False)
-
-
 class RuleBasedTokenCounter(TokenCounter):
-    """Lightweight rule-based estimation, for fallback"""
+    """
+    Lightweight rule-based token counter (for fallback when tiktoken fails)
+    Do not implement precise encode, only provide reasonable estimation of count_tokens.
+    """
 
-    def encode(self, text: str) -> list[int]:
-        # Simple tokenization (English space + Chinese characters)
-        import re
+    # Precompiled regex for performance
 
-        tokens = re.findall(r"\w+|[^\w\s]", text, re.UNICODE)
-        return list(range(len(tokens)))  # Only return length
+    _TOKENIZER_REGEX = re.compile(r"[\w]+|[^\w\s]", re.UNICODE)
+
+    def encode(self, text: str) -> List[int]:
+        """
+        Rule-based does not provide real token IDs, only for interface compatibility.
+        Returning an empty list or throwing NotImplementedError is more reasonable, but for compatibility, a simple implementation is retained.
+        """
+        # Return virtual token IDs (only length is meaningful)
+        tokens = self._tokenize(text)
+        return list(range(len(tokens)))
 
     def count_tokens(self, text: str) -> int:
-        if not text:
+        """Efficient token estimation based on rules"""
+        if not text or not text.strip():
             return 0
-        # More reasonable mixed estimation
-        utf8_len = len(text.encode("utf-8"))
-        chinese_chars = len([c for c in text if "\u4e00" <= c <= "\u9fff"])
-        other_chars = len(text) - chinese_chars
-        # Chinese: 2~3 bytes per token, English: 4 bytes per token
-        est_tokens = (chinese_chars * 1.5) + (other_chars / 4)
-        return int(max(1, round(est_tokens)))
+
+        tokens = self._tokenize(text)
+        return len(tokens)
+
+    def _tokenize(self, text: str) -> List[str]:
+        """Simple tokenization: English by space/punctuation, Chinese by characters, support emoji"""
+        # Method 1: Basic tokenization (word + punctuation)
+        basic_tokens = self._TOKENIZER_REGEX.findall(text)
+
+        # Method 2: Character-by-character processing of Chinese characters and emoji (closer to real tokenizer behavior)
+        refined_tokens = []
+        for token in basic_tokens:
+            # If it is pure Chinese or emoji, split into single characters
+            if all(self._is_cjk_or_emoji(char) for char in token):
+                refined_tokens.extend(list(token))
+            else:
+                refined_tokens.append(token)
+        return refined_tokens
+
+    @staticmethod
+    def _is_cjk_or_emoji(char: str) -> bool:
+        """Determine if it is a CJK character or emoji"""
+        if len(char) != 1:
+            return False
+        cp = ord(char)
+        # CJK Unified Ideographs
+        if 0x4E00 <= cp <= 0x9FFF:
+            return True
+        # Emoji range (simplified)
+        if (
+            (0x1F600 <= cp <= 0x1F64F)  # emoticons
+            or (0x1F300 <= cp <= 0x1F5FF)  # symbols & pictographs
+            or (0x1F680 <= cp <= 0x1F6FF)  # transport & map
+            or (0x1F1E0 <= cp <= 0x1F1FF)  # flags (iOS)
+            or (0x2600 <= cp <= 0x26FF)  # misc symbols
+        ):
+            return True
+        return False
+
+    def _fallback_token_estimate(self, text: str) -> int:
+        """Reuse parent class fallback logic"""
+        return super()._fallback_token_estimate(text)
 
 
 # === Global Tokenizer factory (thread-safe + LRU cache)===
-
-
 @lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
 def get_token_counter(model_name: str) -> TokenCounter:
     """
-    Get the token counter for the corresponding model, priority:
-    1. transformers (Llama/Qwen/Other HuggingFace models)
-    2. tiktoken (GPT series or other models) - default
-    3. Rule-based fallback - only when tiktoken fails
+    Get the token counter for the corresponding model.
     """
-    model_lower = model_name.lower().strip()
-
     try:
-        # Check if the model is a HuggingFace model (Llama/Qwen etc.)
-        # Extended matching patterns, including more possible model name formats
-        huggingface_patterns = [
-            "llama",
-            "qwen",
-            "baichuan",
-            "chatglm",
-            "models--qwen",
-            "models--llama",
-            "models--baichuan",
-            "models--chatglm",
-            "--qwen--",
-            "--llama--",
-            "--baichuan--",
-            "--chatglm--",
-        ]
-
-        if AutoTokenizer is not None and any(
-            pattern in model_lower for pattern in huggingface_patterns
-        ):
-            try:
-                logger.debug(f"Using transformers tokenizer for model: {model_name}")
-                return TransformersTokenCounter(model_name)
-            except Exception as e:
-                logger.info(f"Falling back from transformers tokenizer due to: {e}")
-
-        # Use tiktoken (for GPT series or other models)
+        # Use tiktoken
         if tiktoken:
             try:
                 logger.debug(f"Using tiktoken for model: {model_name}")
@@ -155,15 +162,8 @@ def get_token_counter(model_name: str) -> TokenCounter:
 
 
 # === Core function: Efficient token counting (without caching the text itself!)===
-
-
 def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
     """
-    High-performance token counting function, for streaming stress testing.
-
-    ⚠️ Note: Do not cache the token results of long texts! This will cause memory explosion.
-    We only cache tokenizer instances.
-
     Args:
         text (str): Input text
         model_name (str): Model name (determines tokenizer type)
@@ -183,4 +183,8 @@ def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
         )
         # Final fallback
         utf8_bytes = len(text.encode("utf-8", errors="ignore"))
-        return max(1, utf8_bytes // DEFAULT_TOKEN_RATIO)
+        chinese_chars = len([c for c in text if "\u4e00" <= c <= "\u9fff"])
+        est_tokens = chinese_chars + max(
+            0, (utf8_bytes - chinese_chars * 3) // DEFAULT_TOKEN_RATIO_EN
+        )
+        return max(1, int(est_tokens))

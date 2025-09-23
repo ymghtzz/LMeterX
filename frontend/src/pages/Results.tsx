@@ -817,9 +817,11 @@ const TaskResults: React.FC = () => {
                             />
                           </span>
                         }
-                        value={
-                          CompletionResult?.rps || firstTokenResult?.rps || '-'
-                        }
+                        value={(() => {
+                          const rpsValue =
+                            CompletionResult?.rps || firstTokenResult?.rps;
+                          return rpsValue ? Number(rpsValue).toFixed(2) : '-';
+                        })()}
                         precision={2}
                       />
                     </Col>

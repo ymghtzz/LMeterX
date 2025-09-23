@@ -2,197 +2,26 @@
 Author: Charm
 Copyright (c) 2025, All Rights Reserved.
 
-Stream processing and error handling for the stress testing engine.
 """
 
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import orjson
-from locust import events
 
-from config.base import DEFAULT_API_PATH, DEFAULT_PROMPT, DEFAULT_TIMEOUT, HTTP_OK
+from config.base import DEFAULT_API_PATH, DEFAULT_PROMPT
 from config.business import METRIC_TTOC, METRIC_TTT
-from engine.core import ConfigManager, FieldMapping, GlobalConfig, StreamMetrics
-from utils.logger import logger
+from engine.core import (
+    ConfigManager,
+    FieldMapping,
+    GlobalConfig,
+    GlobalStateManager,
+    StreamMetrics,
+)
+from utils.error_handler import ErrorResponse
+from utils.event_handler import EventManager
 
-
-# === ERROR HANDLING ===
-class ErrorHandler:
-    """Centralized error handling for various scenarios."""
-
-    @staticmethod
-    def check_json_error(json_data: Dict[str, Any]) -> Optional[str]:
-        """Check if JSON data contains error conditions."""
-        if not isinstance(json_data, dict):
-            return None
-
-        try:
-            # Check for various error indicators
-            code = json_data.get("code", 0)
-            error = json_data.get("error", "")
-            output_object = json_data.get("object", "")
-            event_error = json_data.get("event", "")
-
-            # API-specific error checks
-            error_details = json_data.get("error", {})
-            if isinstance(error_details, dict):
-                error_type = error_details.get("type", "")
-                error_message = error_details.get("message", "")
-                if error_type or error_message:
-                    return f"API error - type: {error_type}, message: {error_message}"
-
-            if code < 0:
-                return f"Response contains error code: {json_data}"
-
-            if error and str(error).strip():
-                return f"Response contains error: {json_data}"
-
-            if output_object == "error":
-                return f"Response object type is error: {json_data}"
-
-            if event_error == "error":
-                return f"Response event type is error: {json_data}"
-
-            return None
-        except Exception as e:
-            # Enhanced logging for parsing errors
-            return f"Error parsing response JSON for error checking: {e}"
-
-    @staticmethod
-    def handle_general_exception(
-        error_msg: str,
-        task_logger,
-        response=None,
-        response_time: float = 0,
-        additional_context: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Centralized handler for logging exceptions during requests."""
-        # Enhanced error logging with context
-        context_info = ""
-        if additional_context:
-            context_info = f" | Context: {additional_context}"
-
-        full_error_msg = f"{error_msg}{context_info}"
-        task_logger.error(full_error_msg)
-
-        try:
-            EventManager.fire_failure_event(
-                name="failure",
-                response_time=response_time,
-                response_length=0,
-                exception=Exception(full_error_msg),
-            )
-        except Exception as fire_err:
-            # Never let event firing escalate; log and continue
-            task_logger.warning(f"Failed to emit failure event: {fire_err}")
-
-
-# === EVENT MANAGEMENT ===
-class EventManager:
-    """Manages Locust events and metrics."""
-
-    @staticmethod
-    def fire_failure_event(
-        name: str = "failure",
-        response_time: float = 0.0,
-        response_length: int = 0,
-        exception: Optional[Exception] = None,
-    ) -> None:
-        """Fire failure events with proper Locust event format."""
-        # Enhanced safety checks for all parameters
-        try:
-            response_time = (
-                float(response_time)
-                if isinstance(response_time, (int, float)) and response_time >= 0
-                else 0.0
-            )
-        except Exception:
-            response_time = 0.0
-
-        try:
-            response_length = (
-                int(response_length)
-                if isinstance(response_length, (int, float)) and response_length >= 0
-                else 0
-            )
-        except Exception:
-            response_length = 0
-
-        exception_info = exception or Exception("Request failed")
-
-        try:
-            # Use the correct Locust event API based on version
-            if hasattr(events, "request_failure"):
-                # Legacy Locust version
-                events.request_failure.fire(
-                    request_type="POST",
-                    name=name,
-                    response_time=int(response_time),
-                    response_length=int(response_length),
-                    exception=exception_info,
-                )
-            else:
-                # Modern Locust version
-                events.request.fire(
-                    request_type="POST",
-                    name=name,
-                    response_time=int(response_time),
-                    response_length=int(response_length),
-                    exception=exception_info,
-                    success=False,
-                )
-        except Exception as e:
-            # Never crash on metrics emission
-            logger.warning(f"Failed to fire failure event: {e}")
-
-    @staticmethod
-    def fire_metric_event(
-        name: str, response_time: float, response_length: int
-    ) -> None:
-        """Fire metric events."""
-        # Enhanced safety checks for all parameters
-        try:
-            response_time = (
-                float(response_time)
-                if isinstance(response_time, (int, float)) and response_time >= 0
-                else 0.0
-            )
-        except Exception:
-            response_time = 0.0
-
-        try:
-            response_length = (
-                int(response_length)
-                if isinstance(response_length, (int, float)) and response_length >= 0
-                else 0
-            )
-        except Exception:
-            response_length = 0
-
-        name = str(name) if name is not None else "metric"
-
-        try:
-            # Use the correct Locust event API based on version
-            if hasattr(events, "request_success"):
-                # Legacy Locust version
-                events.request_success.fire(
-                    request_type="metric",
-                    name=name,
-                    response_time=int(response_time),
-                    response_length=int(response_length),
-                )
-            else:
-                # Modern Locust version
-                events.request.fire(
-                    request_type="metric",
-                    name=name,
-                    response_time=int(response_time),
-                    response_length=int(response_length),
-                    success=True,
-                )
-        except Exception as e:
-            logger.warning(f"Failed to fire metric event '{name}': {e}")
+global_state = GlobalStateManager()
 
 
 # === STREAM PROCESSING ===
@@ -434,7 +263,7 @@ class StreamProcessor:
                 return True, None, metrics  # Normal stream end
 
             # Check for JSON errors
-            error_msg = ErrorHandler.check_json_error(chunk_data)
+            error_msg = ErrorResponse._handle_json_error(chunk_data)
             if error_msg:
                 return True, error_msg, metrics  # Error occurred
 
@@ -457,11 +286,11 @@ class StreamProcessor:
 
 
 # === REQUEST HANDLERS ===
-class RequestHandler:
+class PayloadBuilder:
     """Handles different types of API requests."""
 
     def __init__(self, config: GlobalConfig, task_logger) -> None:
-        """Initialize the RequestHandler with configuration and logger.
+        """Initialize the PayloadBuilder with configuration and logger.
 
         Args:
             config: Global configuration object
@@ -535,7 +364,7 @@ class RequestHandler:
                 "headers": self.config.headers,
                 "catch_response": True,
                 "name": request_name,
-                # Removed "verify": False and timeout, these are not valid for FastHttpUser
+                "verify": False,
             }
 
             if self.config.cookies:
@@ -706,11 +535,11 @@ class RequestHandler:
 
 
 # === STREAM HANDLERS ===
-class StreamHandler:
+class APIClient:
     """Handles streaming and non-streaming request processing."""
 
     def __init__(self, config: GlobalConfig, task_logger) -> None:
-        """Initialize the StreamHandler with configuration and logger.
+        """Initialize the APIClient with configuration and logger.
 
         Args:
             config: Global configuration object
@@ -718,108 +547,30 @@ class StreamHandler:
         """
         self.config = config
         self.task_logger = task_logger
+        # Create ErrorResponse instance
+        self.error_handler = ErrorResponse(config, task_logger)
 
-    @staticmethod
-    def _iter_stream_lines(response) -> Any:
-        """Yield complete SSE lines using \n\n as delimiter."""
-        # Case 1: requests.Response with iter_lines
-        if hasattr(response, "iter_lines") and callable(response.iter_lines):
-            for line in response.iter_lines():
-                if line:
-                    yield (
-                        line
-                        if isinstance(line, (bytes, bytearray))
-                        else str(line).encode("utf-8", errors="ignore")
-                    )
+    def _iter_stream_lines(self, response) -> Any:
+        """Yield complete SSE lines using \n\n as delimiter. Robust version for HttpUser."""
+        # For HttpUser, response is a requests.Response object
+        if not hasattr(response, "iter_lines"):
+            self.task_logger.error("Response object does not support streaming.")
             return
 
-        # Case 2: FastHttp-like response with stream
-        stream_obj = getattr(response, "stream", None)
-        if stream_obj is not None:
-            buffer = b""
-            try:
-                while True:
-                    chunk = stream_obj.read(8192)
-                    if not chunk:
-                        break
-                    buffer += chunk
-
-                    # Process all complete data blocks (delimited by \n\n)
-                    while b"\n\n" in buffer:
-                        part, buffer = buffer.split(b"\n\n", 1)
-                        part = part.strip()
-                        if not part:
-                            continue
-
-                        if part.startswith(b"data:"):
-                            data_content = part[5:].strip()  # 去掉 'data:'
-                            if data_content != b"[DONE]":
-                                yield data_content
-
-                if buffer.strip():
-                    buffer = buffer.strip()
-                    if buffer == b"[DONE]" or buffer.startswith(b"data:"):
-                        data_content = (
-                            buffer[5:].strip()
-                            if buffer.startswith(b"data:")
-                            else buffer
-                        )
-                        yield data_content
-
-            except Exception as e:
-                if buffer.strip():
-                    yield buffer.strip()
-                raise e
-            return
-
-        # Case 3: Fallback to .text
-        text = getattr(response, "text", "") or ""
-        for line in text.splitlines():
-            line = line.strip()
-            if line.startswith("data:"):
-                data = line[5:].strip()
-                if data and data != "[DONE]":
-                    yield data.encode("utf-8", errors="ignore")
-
-    @staticmethod
-    def _iter_stream_lines_old(response) -> Any:
-        """Yield response lines as bytes for both requests and FastHttp responses."""
-        # Case 1: requests.Response with iter_lines
-        if hasattr(response, "iter_lines") and callable(response.iter_lines):
-            for line in response.iter_lines():
-                if line is not None:
-                    yield (
-                        line
-                        if isinstance(line, (bytes, bytearray))
-                        else str(line).encode("utf-8", errors="ignore")
-                    )
-            return
-
-        # Case 2: FastHttp-like response with stream
-        stream_obj = getattr(response, "stream", None)
-        if stream_obj is not None:
-            buffer = b""
-            try:
-                while True:
-                    chunk = stream_obj.read(8192)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        if line:
-                            yield line.strip()
-            except Exception:
-                if buffer:
-                    yield buffer.strip()
-            return
-
-        # Case 3: Fallback to .text
-        text = getattr(response, "text", "") or ""
-        for part in text.splitlines():
-            part = part.strip()
-            if part:
-                yield part.encode("utf-8", errors="ignore")
+        try:
+            for line in response.iter_lines(
+                chunk_size=8192, decode_unicode=False, delimiter=b"\n"
+            ):
+                if not line:
+                    continue
+                # Ensure line is bytes
+                if isinstance(line, str):
+                    line = line.encode("utf-8", errors="ignore")
+                yield line
+        except Exception as e:
+            self.task_logger.error(f"Error iterating over stream lines: {e}")
+            # Yield any remaining buffer if possible, but don't let it crash the whole test.
+            pass
 
     def handle_stream_request(
         self, client, base_request_kwargs: Dict[str, Any], start_time: float
@@ -841,7 +592,9 @@ class StreamHandler:
         try:
             actual_start_time = time.time()
             with client.post(self.config.api_path, **request_kwargs) as response:
-                if self._handle_response_error(response, start_time, request_name):
+                if self.error_handler._handle_status_code_error(
+                    response, start_time, request_name
+                ):
                     return "", "", usage
 
                 try:
@@ -860,11 +613,10 @@ class StreamHandler:
                         if should_break:
                             if error_message:
                                 # Error occurred, mark failure and exit
-                                ErrorHandler.handle_general_exception(
-                                    error_message,
-                                    self.task_logger,
-                                    response,
-                                    (time.time() - start_time) * 1000,
+                                self.error_handler._handle_general_exception_event(
+                                    error_msg=error_message,
+                                    response=response,
+                                    response_time=(time.time() - start_time) * 1000,
                                     additional_context={
                                         "chunk_preview": (
                                             chunk if chunk else "No chunk data"
@@ -895,12 +647,7 @@ class StreamHandler:
                             completion_time = (
                                 current_time - metrics.first_output_token_time
                             ) * 1000
-
-                        EventManager.fire_metric_event(
-                            METRIC_TTOC,
-                            completion_time,
-                            0,
-                        )
+                        EventManager.fire_metric_event(METRIC_TTOC, completion_time, 0)
                         EventManager.fire_metric_event(METRIC_TTT, total_time, 0)
                         response.success()
 
@@ -911,24 +658,28 @@ class StreamHandler:
                         response.success()  # Still mark as success since we got response
 
                 except OSError as e:
-                    self._handle_stream_error(e, response, start_time, request_name)
+                    self.error_handler._handle_stream_error(
+                        e, response, start_time, request_name
+                    )
                     return "", "", usage
                 except (orjson.JSONDecodeError, ValueError) as e:
                     response_time = (time.time() - start_time) * 1000
-                    ErrorHandler.handle_general_exception(
-                        f"Stream data parsing error: {e}",
-                        self.task_logger,
-                        response,
-                        response_time,
+                    self.error_handler._handle_general_exception_event(
+                        error_msg=f"Stream data parsing error: {e}",
+                        response=response,
+                        response_time=response_time,
+                        additional_context={
+                            "api_path": self.config.api_path,
+                            "request_name": request_name,
+                        },
                     )
                     return "", "", usage
         except (ConnectionError, TimeoutError) as e:
             response_time = (time.time() - start_time) * 1000
-            ErrorHandler.handle_general_exception(
-                f"Connection error: {e}",
-                self.task_logger,
-                response,
-                response_time,
+            self.error_handler._handle_general_exception_event(
+                error_msg=f"Connection error: {e}",
+                response=response,
+                response_time=response_time,
                 additional_context={
                     "api_path": self.config.api_path,
                     "request_name": request_name,
@@ -937,11 +688,11 @@ class StreamHandler:
             return "", "", usage
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
-            ErrorHandler.handle_general_exception(
-                f"Unexpected error: {e}",
-                self.task_logger,
-                response,
-                response_time,
+            self.task_logger.error(f"Stream processing error: {e}")
+            self.error_handler._handle_general_exception_event(
+                error_msg=f"Unexpected error: {e}",
+                response=response,
+                response_time=response_time,
                 additional_context={
                     "api_path": self.config.api_path,
                     "request_name": request_name,
@@ -950,37 +701,40 @@ class StreamHandler:
             return "", "", usage
         return metrics.reasoning_content, metrics.content, metrics.usage
 
-    def _handle_stream_error(
-        self, e: OSError, response, start_time: float, request_name: str
-    ) -> None:
-        """Handle specific stream processing errors."""
-        error_details = str(e)
-        response_time = (time.time() - start_time) * 1000
-
-        if "Read timed out" in error_details:
-            self.task_logger.error(
-                f"Stream request timeout (current timeout: {DEFAULT_TIMEOUT} seconds): {error_details}."
-            )
-        elif "Connection" in error_details:
-            self.task_logger.error(f"Network connection error: {error_details}.")
-        else:
-            self.task_logger.error(f"Stream processing network error: {error_details}")
-
-        ErrorHandler.handle_general_exception(
-            error_details,
-            self.task_logger,
-            response,
-            response_time,
-            additional_context={
-                "api_path": self.config.api_path,
-                "request_name": request_name,
-            },
-        )
-
     def handle_non_stream_request(
         self, client, base_request_kwargs: Dict[str, Any], start_time: float
     ) -> Tuple[str, str, Dict[str, Optional[int]]]:
         """Handle non-streaming API request."""
+
+        json_payload = base_request_kwargs.get("json", {})
+        if isinstance(json_payload, dict) and json_payload.get("stream") is True:
+            error_msg = (
+                "Payload contains 'stream': true, but task is configured for non-streaming mode (stream_mode=False). "
+                "Please either set stream_mode=True in task config, or remove 'stream' field from payload."
+            )
+            self.task_logger.error(error_msg)
+            response_time = (time.time() - start_time) * 1000
+            self.error_handler._handle_general_exception_event(
+                error_msg=error_msg,
+                response=None,
+                response_time=response_time,
+                additional_context={
+                    "api_path": self.config.api_path,
+                    "request_name": base_request_kwargs.get(
+                        "name", "non_stream_mismatch"
+                    ),
+                },
+            )
+            return (
+                "",
+                "",
+                {
+                    "completion_tokens": None,
+                    "total_tokens": None,
+                },
+            )
+        self.task_logger.info(f"base_request_kwargs: {base_request_kwargs}")
+
         request_kwargs = {**base_request_kwargs, "stream": False}
         content, reasoning_content = "", ""
         field_mapping = ConfigManager.parse_field_mapping(
@@ -996,7 +750,9 @@ class StreamHandler:
             with client.post(self.config.api_path, **request_kwargs) as response:
                 total_time = (time.time() - start_time) * 1000
 
-                if self._handle_response_error(response, start_time, request_name):
+                if self.error_handler._handle_status_code_error(
+                    response, start_time, request_name
+                ):
                     return "", "", usage
 
                 try:
@@ -1004,23 +760,26 @@ class StreamHandler:
                     # self.task_logger.info(f"resp_json: {resp_json}")
                 except (orjson.JSONDecodeError, KeyError) as e:
                     self.task_logger.error(f"Failed to parse response JSON: {e}")
-                    ErrorHandler.handle_general_exception(
-                        str(e), self.task_logger, response, total_time
+                    self.error_handler._handle_general_exception_event(
+                        error_msg=str(e),
+                        response=response,
+                        response_time=total_time,
+                        additional_context={
+                            "api_path": self.config.api_path,
+                            "request_name": request_name,
+                        },
                     )
                     return "", "", usage
 
-                error_msg = ErrorHandler.check_json_error(resp_json)
+                error_msg = ErrorResponse._handle_json_error(resp_json)
                 if error_msg:
-                    ErrorHandler.handle_general_exception(
-                        error_msg,
-                        self.task_logger,
-                        response,
-                        total_time,
+                    self.error_handler._handle_general_exception_event(
+                        error_msg=error_msg,
+                        response=response,
+                        response_time=total_time,
                         additional_context={
                             "response_preview": (
-                                str(resp_json)[:200]
-                                if resp_json
-                                else "No response data"
+                                str(resp_json) if resp_json else "No response data"
                             ),
                             "api_path": self.config.api_path,
                             "request_name": request_name,
@@ -1064,70 +823,13 @@ class StreamHandler:
 
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
-            ErrorHandler.handle_general_exception(
-                str(e),
-                self.task_logger,
-                response,
-                total_time,
+            self.error_handler._handle_general_exception_event(
+                error_msg=f"Unexpected error: {e}",
+                response=response,
+                response_time=response_time,
                 additional_context={
                     "api_path": self.config.api_path,
                     "request_name": request_name,
                 },
             )
             return "", "", usage
-
-    def _handle_response_error(
-        self, response, start_time: float = 0, request_name: str = "failure"
-    ) -> bool:
-        """Handle HTTP status code errors."""
-        # Add safety checks for response object
-        if response is None:
-            error_msg = "Response object is None"
-            response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
-            ErrorHandler.handle_general_exception(
-                error_msg, self.task_logger, None, response_time
-            )
-            return True
-
-        # Safely get status code with fallback
-        try:
-            status_code = getattr(response, "status_code", None)
-            if status_code is None:
-                error_msg = "Response object has no status_code attribute"
-                response_time = (
-                    (time.time() - start_time) * 1000 if start_time > 0 else 0
-                )
-                ErrorHandler.handle_general_exception(
-                    error_msg, self.task_logger, response, response_time
-                )
-                return True
-
-            if status_code != HTTP_OK:
-                # Safely get response text
-                response_text = getattr(
-                    response, "text", "Unable to retrieve response text"
-                )
-                error_msg = f"Request failed with status {status_code}. Response: {response_text}"
-                response_time = (
-                    (time.time() - start_time) * 1000 if start_time > 0 else 0
-                )
-                ErrorHandler.handle_general_exception(
-                    error_msg, self.task_logger, response, response_time
-                )
-                return True
-        except Exception as e:
-            error_msg = f"Error checking response status: {e}"
-            response_time = (time.time() - start_time) * 1000 if start_time > 0 else 0
-            ErrorHandler.handle_general_exception(
-                error_msg,
-                self.task_logger,
-                response,
-                response_time,
-                additional_context={
-                    "api_path": self.config.api_path,
-                    "request_name": request_name,
-                },
-            )
-            return True
-
-        return False
