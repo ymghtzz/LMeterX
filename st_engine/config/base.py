@@ -29,34 +29,21 @@ else:
 
 # === HTTP CONSTANTS ===
 HTTP_OK = 200
-DEFAULT_TIMEOUT = 180
+DEFAULT_TIMEOUT = 120
 DEFAULT_WAIT_TIME_MIN = 1
-DEFAULT_WAIT_TIME_MAX = 3
+DEFAULT_WAIT_TIME_MAX = 2
 
 # === DEFAULT VALUES ===
 DEFAULT_PROMPT = "Tell me about the history of Artificial Intelligence."
 DEFAULT_API_PATH = "/chat/completions"
 DEFAULT_CONTENT_TYPE = "application/json"
 
-# === STREAMING CONSTANTS ===
-STREAM_END_MARKERS = ["[DONE]", "[END]", "DONE", "END"]
-STREAM_ERROR_MARKERS = ["[ERROR]", "ERROR"]
-MAX_CHUNK_SIZE = 1000  # Maximum chunk size to process
-MAX_OUTPUT_LENGTH = 1000000  # Maximum output length to prevent memory issues
-
 # === LOCUST CONFIGURATION ===
-LOCUST_STOP_TIMEOUT = 99
+LOCUST_STOP_TIMEOUT = 60
 LOCUST_WAIT_TIMEOUT_BUFFER = 30
-
-# === TOKENIZATION ===
-# Token estimation
-DEFAULT_TOKEN_RATIO = 4  # chars per token estimation
-TOKENIZER_CACHE_SIZE = 128
-TOKEN_COUNT_CACHE_SIZE = 8192
 
 # === DATA VALIDATION ===
 MAX_QUEUE_SIZE = 10000
-MIN_PROMPT_LENGTH = 1
 
 # === SENSITIVE DATA ===
 SENSITIVE_KEYS = ["authorization"]
@@ -79,20 +66,9 @@ __all__ = [
     "DEFAULT_PROMPT",
     "DEFAULT_API_PATH",
     "DEFAULT_CONTENT_TYPE",
-    # streaming
-    "STREAM_END_MARKERS",
-    "STREAM_ERROR_MARKERS",
-    "MAX_CHUNK_SIZE",
-    "MAX_OUTPUT_LENGTH",
     # locust
     "LOCUST_STOP_TIMEOUT",
     "LOCUST_WAIT_TIMEOUT_BUFFER",
-    # tokenization
-    "DEFAULT_TOKEN_RATIO",
-    "TOKENIZER_CACHE_SIZE",
-    "TOKEN_COUNT_CACHE_SIZE",
-    "MAX_QUEUE_SIZE",
-    "MIN_PROMPT_LENGTH",
     # sensitive
     "SENSITIVE_KEYS",
 ]

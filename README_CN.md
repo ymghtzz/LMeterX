@@ -10,7 +10,8 @@
 
 ## 📋 项目简介
 
-LMeterX 是一个专业的大语言模型性能测试平台，支持对 LLM 服务进行全面的负载测试。通过直观的 Web 界面，用户可以轻松创建和管理测试任务，实时监控测试过程，并获得详细的性能分析报告，为模型部署和性能优化提供可靠的数据支撑。
+LMeterX 是一个专业的大语言模型性能测试平台，支持基于大模型推理框架（如 LiteLLM、vLLM、TensorRT-LLM、LMDeploy 等）的模型推理服务，同时也支持对 Azure OpenAI、AWS Bedrock、Google Vertex AI 等主流云服务进行性能测试。通过直观的 Web 界面，可以轻松创建和管理测试任务，实时监控测试过程，并获得详细的性能分析报告，为模型部署和性能优化提供可靠的数据支撑。
+
 
 <div align="center">
   <img src="docs/images/images.gif" alt="LMeterX Demo" width="700"/>

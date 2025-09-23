@@ -66,9 +66,17 @@ services:
       DB_NAME: lmeterx
       # Multi-process configuration
       ENABLE_MULTIPROCESS: auto
-      LOCUST_CPU_CORES: 2.0
-      MULTIPROCESS_THRESHOLD: 1000
-      MIN_USERS_PER_PROCESS: 100             # Each process handles at least 100 users
+      LOCUST_CPU_CORES: 4.0
+      MULTIPROCESS_THRESHOLD: 1000           # Enable multiprocess only for 1000+ users
+      MIN_USERS_PER_PROCESS: 600             # Each process handles at least 500 users
+      # Process management and stability
+      PYTHONUNBUFFERED: 1                    # Ensure immediate log output
+      LOCUST_WORKER_HEARTBEAT_INTERVAL: 3    # Worker heartbeat interval (seconds)
+      LOCUST_MASTER_HEARTBEAT_INTERVAL: 3    # Master heartbeat check interval
+      LOCUST_MASTER_HEARTBEAT_TIMEOUT: 60    # Heartbeat timeout (seconds)
+      # Memory and performance tuning
+      MALLOC_ARENA_MAX: 2                    # Limit memory arenas for stability
+      PYTHONMALLOC: malloc                   # Use system malloc for better memory management
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files

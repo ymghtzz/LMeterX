@@ -9,10 +9,7 @@ import subprocess  # nosec B404
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from config.base import (  # Add import for upload folder path
-    ST_ENGINE_DIR,
-    UPLOAD_FOLDER,
-)
+from config.base import ST_ENGINE_DIR, UPLOAD_FOLDER
 from config.business import (
     TASK_STATUS_COMPLETED,
     TASK_STATUS_FAILED,
@@ -21,6 +18,10 @@ from config.business import (
     TASK_STATUS_RUNNING,
     TASK_STATUS_STOPPED,
     TASK_STATUS_STOPPING,
+)
+from engine.process_manager import (
+    cleanup_task_resources,
+    terminate_locust_process_group,
 )
 from engine.runner import LocustRunner
 from model.task import Task
@@ -247,7 +248,7 @@ class TaskService:
 
                         # If pgrep succeeds, the process exists and is now an orphan.
                         task_logger.warning(
-                            f"Found orphaned locust process for task {task.id} in '{task.status}' state. "
+                            f"Something went wrong with engine service."
                             f"Terminating it and marking task as FAILED."
                         )
                         try:
@@ -386,19 +387,7 @@ class TaskService:
                         session, locust_result, task.id
                     )
 
-                    # Get failure count from aggregated stats
-                    total_failures = 0
-                    aggregated_stats = None
-                    # Look for aggregated stats in the locust_stats list
-                    for stats_entry in locust_result.get("locust_stats", []):
-                        if stats_entry.get("metric_type") == "Aggregated":
-                            aggregated_stats = stats_entry
-                            break
-
-                    if aggregated_stats:
-                        total_failures = aggregated_stats.get("num_failures", 0)
-
-                    error_message = f"Task {task.id} completed with {total_failures} failed requests."
+                    error_message = f"Task {task.id} completed with failed requests."
                     task_logger.warning(f"{error_message}")
                     self.update_task_status(
                         session, task, TASK_STATUS_FAILED_REQUESTS, error_message
@@ -461,7 +450,62 @@ class TaskService:
 
     def stop_task(self, task_id: str) -> bool:
         """
-        Stops a running task by terminating its Locust process.
+        Stops a running task by delegating the termination to the LocustRunner.
+        This method is designed to be called from the API or UI.
+        Args:
+            task_id (str): The ID of the task to stop.
+        Returns:
+            bool: True if the stop command was successfully dispatched or the task was not running locally.
+                  False if an error occurred while trying to stop a local process.
+        """
+        task_logger = logger.bind(task_id=task_id)
+        try:
+            task_logger.info(f"Received stop request for task {task_id}.")
+
+            # Check if the process is managed by this runner instance
+            process = self.runner.process_dict.get(task_id)
+            if not process:
+                task_logger.warning(
+                    f"Task {task_id}: Process not found in runner's dictionary. "
+                    f"It might have finished, be on another node, or not started yet."
+                )
+                # Since we can't manage it, we assume the stop request is "successful" from this node's perspective.
+                # The reconciliation process will handle truly orphaned tasks.
+                return True
+
+            if process.poll() is not None:
+                task_logger.info(
+                    f"Task {task_id}: Process with PID {process.pid} has already terminated. Cleaning up local reference."
+                )
+                self.runner.process_dict.pop(task_id, None)
+                return True
+
+            # Delegate the complex termination logic to the process manager via the runner.
+            # We assume `terminate_locust_process_group` is robust and handles timeouts, signals, and cleanup.
+            success = terminate_locust_process_group(task_id, timeout=15.0)
+
+            if success:
+                task_logger.info(
+                    f"Successfully terminated process group for task {task_id}."
+                )
+                # Remove from local tracking after successful termination
+                self.runner.process_dict.pop(task_id, None)
+                return True
+            else:
+                task_logger.error(
+                    f"Failed to terminate process group for task {task_id}."
+                )
+                return False
+
+        except Exception as e:
+            task_logger.exception(
+                f"An unexpected error occurred while stopping task {task_id}: {e}"
+            )
+            return False
+
+    def stop_task_old(self, task_id: str) -> bool:
+        """
+        Stops a running task by terminating its Locust process with enhanced cleanup.
 
         Args:
             task_id (str): The ID of the task to stop.
@@ -471,41 +515,63 @@ class TaskService:
                   False if the stop attempt failed.
         """
         task_logger = logger.bind(task_id=task_id)
-        process = self.runner.process_dict.get(task_id)
 
-        if not process:
-            task_logger.warning(
-                f"Task {task_id}, Process not found in runner's dictionary. It might have finished or be on another node."
-            )
-            self.runner.process_dict.pop(task_id, None)
-            return True
-
-        if process.poll() is not None:
-            task_logger.info(
-                f"Task {task_id}, Process with PID {process.pid} has already terminated. Cleaning up."
-            )
-            self.runner.process_dict.pop(task_id, None)
-            return True
-
-        # Check if process is already being terminated to avoid duplicate signals
-        # Add a flag to track ongoing termination attempts
-        termination_key = f"{task_id}_terminating"
-        if hasattr(self.runner, "_terminating_processes"):
-            if termination_key in self.runner._terminating_processes:
-                task_logger.info(
-                    f"Task {task_id}, Process with PID {process.pid} is already being terminated. Skipping duplicate termination attempt."
-                )
-                return True
-        else:
-            self.runner._terminating_processes = set()
-
-        # Mark process as being terminated
-        self.runner._terminating_processes.add(termination_key)
-
-        task_logger.info(
-            f"Task {task_id}, Attempting to terminate process with PID {process.pid} (SIGTERM)."
-        )
         try:
+            # Step 1: Use enhanced multiprocess termination first
+            terminate_success = terminate_locust_process_group(task_id, timeout=15.0)
+            if terminate_success:
+                task_logger.info(
+                    f"Successfully terminated process group for task {task_id}"
+                )
+
+                # Clean up local tracking
+                self.runner.process_dict.pop(task_id, None)
+                if hasattr(self.runner, "_terminating_processes"):
+                    termination_key = f"{task_id}_terminating"
+                    self.runner._terminating_processes.discard(termination_key)
+
+                # Clean up task resources
+                cleanup_task_resources(task_id)
+                return True
+
+            # Step 2: Fallback to original process termination if multiprocess cleanup failed
+            process = self.runner.process_dict.get(task_id)
+
+            if not process:
+                task_logger.warning(
+                    f"Task {task_id}, Process not found in runner's dictionary. It might have finished or be on another node."
+                )
+                self.runner.process_dict.pop(task_id, None)
+                # Clean up task resources (do not force cleanup orphaned processes here)
+                cleanup_task_resources(task_id)
+                return True
+
+            if process.poll() is not None:
+                task_logger.info(
+                    f"Task {task_id}, Process with PID {process.pid} has already terminated. Cleaning up."
+                )
+                self.runner.process_dict.pop(task_id, None)
+                cleanup_task_resources(task_id)
+                return True
+
+            # Check if process is already being terminated to avoid duplicate signals
+            termination_key = f"{task_id}_terminating"
+            if hasattr(self.runner, "_terminating_processes"):
+                if termination_key in self.runner._terminating_processes:
+                    task_logger.info(
+                        f"Task {task_id}, Process with PID {process.pid} is already being terminated. Skipping duplicate termination attempt."
+                    )
+                    return True
+            else:
+                self.runner._terminating_processes = set()
+
+            # Mark process as being terminated
+            self.runner._terminating_processes.add(termination_key)
+
+            task_logger.info(
+                f"Task {task_id}, Attempting to terminate process with PID {process.pid} (SIGTERM)."
+            )
+
             # Check if process is still running before sending signal
             if process.poll() is not None:
                 task_logger.info(
@@ -513,6 +579,7 @@ class TaskService:
                 )
                 self.runner.process_dict.pop(task_id, None)
                 self.runner._terminating_processes.discard(termination_key)
+                cleanup_task_resources(task_id)
                 return True
 
             process.terminate()
@@ -522,6 +589,7 @@ class TaskService:
             )
             self.runner.process_dict.pop(task_id, None)
             self.runner._terminating_processes.discard(termination_key)
+            cleanup_task_resources(task_id)
             return True
         except subprocess.TimeoutExpired:
             task_logger.warning(

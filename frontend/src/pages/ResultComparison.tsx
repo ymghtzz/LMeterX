@@ -341,8 +341,22 @@ const ResultComparison: React.FC = () => {
       title: t('pages.resultComparison.modelName'),
       dataIndex: 'model_name',
       key: 'model_name',
+      width: 200,
+      ellipsis: true,
       render: (model: string) => (
-        <Tag color={getModelColor(model)}>{model}</Tag>
+        <Tooltip title={model} placement='topLeft'>
+          <Tag
+            color={getModelColor(model)}
+            style={{
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {model}
+          </Tag>
+        </Tooltip>
       ),
     },
     {
@@ -384,9 +398,24 @@ const ResultComparison: React.FC = () => {
       title: t('pages.resultComparison.modelName'),
       dataIndex: 'model_name',
       key: 'model_name',
-      // render: (model: string) => (
-      //   <Tag color={getModelColor(model)}>{model}</Tag>
-      // ),
+      width: 200,
+      ellipsis: true,
+      render: (model: string) => (
+        <Tooltip title={model} placement='topLeft'>
+          <span
+            // color={getModelColor(model)}
+            style={{
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              display: 'inline-block',
+            }}
+          >
+            {model}
+          </span>
+        </Tooltip>
+      ),
     },
     {
       title: t('pages.resultComparison.concurrentUsers'),
