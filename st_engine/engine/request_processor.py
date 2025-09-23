@@ -4,6 +4,7 @@ Copyright (c) 2025, All Rights Reserved.
 
 """
 
+import json
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -29,7 +30,7 @@ class StreamProcessor:
     """Handles streaming response processing."""
 
     @staticmethod
-    def get_field_value(data: Dict[str, Any], path: str) -> Any:
+    def get_field_value(data: Dict[str, Any], path: str) -> str:
         """Get value from nested dictionary using dot-separated path."""
         if not path or not isinstance(data, dict):
             return ""
@@ -58,185 +59,276 @@ class StreamProcessor:
                     else:
                         return ""
 
-            # Return the actual value, preserve original type
+            # Ensure we never return None, always return a string
             if current is None:
                 return ""
-            return current
+            return str(current) if current else ""
         except (KeyError, IndexError, TypeError, ValueError):
             return ""
 
     @staticmethod
-    def remove_chunk_prefix(chunk_str: str, field_mapping: FieldMapping) -> str:
-        """Remove prefix from chunk string based on field mapping configuration."""
-        if field_mapping.end_prefix:
-            return chunk_str.replace(field_mapping.end_prefix, "").strip()
-        elif field_mapping.stream_prefix and chunk_str.startswith(
-            field_mapping.stream_prefix
-        ):
-            return chunk_str[len(field_mapping.stream_prefix) :].strip()
-        else:
-            return chunk_str.strip()
-
-    @staticmethod
-    def check_stop_flag(processed_chunk: str, field_mapping: FieldMapping) -> bool:
-        """Check if the processed chunk matches the stop flag."""
-        stop_flag = (
-            field_mapping.stop_flag.strip() if field_mapping.stop_flag else "[DONE]"
-        )
-        return processed_chunk == stop_flag
-
-    @staticmethod
-    def check_end_field_stop(
-        processed_chunk: Dict[str, Any], field_mapping: FieldMapping
+    def check_stream_end_condition(
+        chunk_str: str, chunk_data: Dict[str, Any], field_mapping: FieldMapping
     ) -> bool:
-        """Check if end_field value matches stop flag."""
-        if not field_mapping.end_field:
+        """Check if the stream has ended based on various conditions."""
+        try:
+            # Check direct stop flag match
+            if field_mapping.stop_flag:
+                if field_mapping.end_prefix:
+                    end_stream = chunk_str.replace(field_mapping.end_prefix, "").strip()
+                else:
+                    end_stream = chunk_str.strip()
+
+                if end_stream == field_mapping.stop_flag:
+                    return True
+
+            # Check JSON end field condition
+            if field_mapping.end_condition and chunk_data:
+                end_value = StreamProcessor.get_field_value(
+                    chunk_data, field_mapping.end_condition
+                )
+                if end_value in [
+                    "stop",
+                    "complete",
+                    "done",
+                    "finished",
+                    "length",
+                    "content_filter",
+                ]:
+                    return True
+                if isinstance(end_value, bool) and end_value:
+                    return True
+
+            return False
+        except Exception:
             return False
 
-        stop_flag = (
-            field_mapping.stop_flag.strip() if field_mapping.stop_flag else "[DONE]"
-        )
-        end_value = StreamProcessor.get_field_value(
-            processed_chunk, field_mapping.end_field
-        )
-        # Convert to string for comparison
-        end_value = str(end_value) if end_value else ""
-        return end_value == stop_flag
-
     @staticmethod
-    def extract_metrics_from_chunk(
-        chunk_data: Dict[str, Any],
-        field_mapping: FieldMapping,
-        metrics: StreamMetrics,
-        start_time: float,
-        task_logger,
-    ) -> StreamMetrics:
-        """Extract and update metrics from chunk data."""
-        # Extract usage tokens
-        usage_extracted = False
-        if field_mapping.usage:
-            metrics.usage = StreamProcessor.get_field_value(
-                chunk_data, field_mapping.usage
-            )
-
-            if metrics.usage and isinstance(metrics.usage, dict):
-                has_completion_tokens = any(
-                    "completion" in key and value not in (None, 0)
-                    for key, value in metrics.usage.items()
-                    if isinstance(value, (int, float))
-                )
-
-                has_total_tokens = any(
-                    "total" in key and value not in (None, 0)
-                    for key, value in metrics.usage.items()
-                    if isinstance(value, (int, float))
-                )
-                if has_completion_tokens and has_total_tokens:
-                    usage_extracted = True
-
-        # Extract content
-        if field_mapping.content:
-            content_chunk = StreamProcessor.get_field_value(
-                chunk_data, field_mapping.content
-            )
-            # Convert to string for content fields
-            content_chunk = str(content_chunk) if content_chunk else ""
-            if (
-                content_chunk
-                and isinstance(content_chunk, str)
-                and content_chunk.strip()
-            ):
-
-                if not metrics.first_token_received:
-                    metrics.first_token_received = True
-                    metrics.first_output_token_time = time.time()
-                    if start_time > 0 and metrics.first_output_token_time:
-                        ttfot = (metrics.first_output_token_time - start_time) * 1000
-                        EventManager.fire_metric_event(
-                            "Time_to_first_output_token", ttfot, 0
-                        )
-                if not usage_extracted:
-                    metrics.content += content_chunk
-
-        # Extract reasoning content
-        if field_mapping.reasoning_content:
-            reasoning_chunk = StreamProcessor.get_field_value(
-                chunk_data, field_mapping.reasoning_content
-            )
-            # Convert to string for reasoning content fields
-            reasoning_chunk = str(reasoning_chunk) if reasoning_chunk else ""
-            if (
-                reasoning_chunk
-                and isinstance(reasoning_chunk, str)
-                and reasoning_chunk.strip()
-            ):
-
-                if not metrics.reasoning_is_active:
-                    metrics.reasoning_is_active = True
-                if not metrics.first_thinking_received:
-                    metrics.first_thinking_received = True
-                    metrics.first_thinking_token_time = time.time()
-                    if start_time > 0 and metrics.first_thinking_token_time:
-                        ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
-                        EventManager.fire_metric_event(
-                            "Time_to_first_reasoning_token", ttfrt, 0
-                        )
-                if not usage_extracted:
-                    metrics.reasoning_content += reasoning_chunk
-
-            elif (
-                metrics.reasoning_is_active
-                and not reasoning_chunk
-                and not metrics.reasoning_ended
-                and field_mapping.content  # Only if we have content in this chunk
-            ):
-                content_chunk = StreamProcessor.get_field_value(
-                    chunk_data, field_mapping.content
-                )
-                # Convert to string for content check
-                content_chunk = str(content_chunk) if content_chunk else ""
-                if (
-                    content_chunk
-                    and metrics.first_thinking_received
-                    and metrics.first_thinking_token_time
-                ):
-                    metrics.reasoning_ended = True
-                    current_time = time.time()
-                    ttrc = (current_time - metrics.first_thinking_token_time) * 1000
-                    EventManager.fire_metric_event(
-                        "Time_to_reasoning_completion", ttrc, 0
-                    )
-
-        return metrics
-
-    @staticmethod
-    def process_stream_chunk(
+    def process_chunk(
         chunk: bytes,
         field_mapping: FieldMapping,
         start_time: float,
         metrics: StreamMetrics,
         task_logger,
-    ) -> Tuple[bool, Optional[str], StreamMetrics]:
-        """
-        Process a single stream chunk according to the specified logic.
-
-        Returns:
-            (should_break, error_message, updated_metrics)
-            - should_break: True if should exit the stream loop
-            - error_message: Error message if there's an error, None otherwise
-            - updated_metrics: Updated metrics object
-        """
+    ) -> StreamMetrics:
+        """Process a single stream chunk and update metrics."""
         if not chunk:
-            return False, None, metrics
+            return metrics
 
         try:
             chunk_str = chunk.decode("utf-8", errors="replace").strip()
         except UnicodeDecodeError as e:
             task_logger.warning(f"Failed to decode chunk: {e}")
-            return False, None, metrics
+            return metrics
+
+        # Check direct stop flag match
+        if field_mapping.stop_flag and (
+            chunk_str == f"{field_mapping.end_prefix} {field_mapping.stop_flag}"
+            or chunk_str == field_mapping.stop_flag
+        ):
+            return metrics
+
+        # Remove stream prefix if present
+        if field_mapping.stream_prefix and chunk_str.startswith(
+            field_mapping.stream_prefix
+        ):
+            chunk_str = chunk_str[len(field_mapping.stream_prefix) :].strip()
 
         if not chunk_str:
-            return False, None, metrics
+            return metrics
+
+        content_chunk = ""
+        reasoning_chunk = ""
+        chunk_data = {}
+
+        try:
+            if field_mapping.data_format == "json":
+                chunk_data = json.loads(chunk_str)
+
+                if StreamProcessor.check_stream_end_condition(
+                    chunk_str, chunk_data, field_mapping
+                ):
+                    # task_logger.info(f"Stream end, response: {chunk_str}")
+                    return metrics
+
+                content_chunk = (
+                    StreamProcessor.get_field_value(chunk_data, field_mapping.content)
+                    if field_mapping.content
+                    else ""
+                )
+                reasoning_chunk = (
+                    StreamProcessor.get_field_value(
+                        chunk_data, field_mapping.reasoning_content
+                    )
+                    if field_mapping.reasoning_content
+                    else ""
+                )
+            else:
+                if StreamProcessor.check_stream_end_condition(
+                    chunk_str, {}, field_mapping
+                ):
+                    # task_logger.info(f"Stream end, response: {chunk_str}")
+                    return metrics
+                content_chunk = chunk_str
+
+        except (json.JSONDecodeError, IndexError, KeyError):
+            task_logger.error(f"Error processing chunk: {chunk_str}")
+            EventManager.fire_failure_event(
+                name="failure",
+                response_time=0,
+                response_length=0,
+                exception=Exception(f"Error processing chunk: {chunk_str}"),
+            )
+            return metrics
+
+        # Process content tokens with enhanced safety checks
+        if (
+            content_chunk
+            and isinstance(content_chunk, str)
+            and len(content_chunk.strip()) > 0
+        ):
+            # Ensure metrics.model_output is not None
+            if metrics.model_output is None:
+                task_logger.warning(
+                    "metrics.model_output was None, initializing to empty string"
+                )
+                metrics.model_output = ""
+
+            # Prevent memory issues by limiting output length
+            current_output_len = len(metrics.model_output)
+            content_chunk_len = len(content_chunk)
+
+            if current_output_len + content_chunk_len > MAX_OUTPUT_LENGTH:
+                task_logger.warning(
+                    f"Output length exceeded {MAX_OUTPUT_LENGTH} characters, truncating"
+                )
+                content_chunk = content_chunk[: MAX_OUTPUT_LENGTH - current_output_len]
+
+            metrics.model_output += content_chunk
+            if not metrics.first_token_received:
+                metrics.first_token_received = True
+                metrics.first_output_token_time = time.time()
+                # Enhanced safety check for start_time and time calculations
+                try:
+                    if (
+                        start_time is not None
+                        and start_time > 0
+                        and metrics.first_output_token_time is not None
+                    ):
+                        ttfot = (metrics.first_output_token_time - start_time) * 1000
+                        if ttfot >= 0:  # Ensure positive time difference
+                            EventManager.fire_metric_event(
+                                "Time_to_first_output_token", ttfot, len(content_chunk)
+                            )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating first output token time: {e}"
+                    )
+                # task_logger.info(f"Recv first output token: {content_chunk}")
+
+        # Process reasoning tokens with enhanced safety checks
+        if (
+            reasoning_chunk
+            and isinstance(reasoning_chunk, str)
+            and len(reasoning_chunk.strip()) > 0
+        ):
+            # Ensure metrics.reasoning_content is not None
+            if metrics.reasoning_content is None:
+                task_logger.warning(
+                    "metrics.reasoning_content was None, initializing to empty string"
+                )
+                metrics.reasoning_content = ""
+
+            # Prevent memory issues by limiting reasoning content length
+            current_reasoning_len = len(metrics.reasoning_content)
+            reasoning_chunk_len = len(reasoning_chunk)
+
+            if current_reasoning_len + reasoning_chunk_len > MAX_OUTPUT_LENGTH:
+                task_logger.warning(
+                    f"Reasoning content length exceeded {MAX_OUTPUT_LENGTH} characters, truncating"
+                )
+                reasoning_chunk = reasoning_chunk[
+                    : MAX_OUTPUT_LENGTH - current_reasoning_len
+                ]
+
+            metrics.reasoning_content += reasoning_chunk
+            if not metrics.reasoning_is_active:
+                metrics.reasoning_is_active = True
+            if not metrics.first_thinking_received:
+                metrics.first_thinking_received = True
+                metrics.first_thinking_token_time = time.time()
+                # Enhanced safety check for start_time and time calculations
+                try:
+                    if (
+                        start_time is not None
+                        and start_time > 0
+                        and metrics.first_thinking_token_time is not None
+                    ):
+                        ttfrt = (metrics.first_thinking_token_time - start_time) * 1000
+                        if ttfrt >= 0:  # Ensure positive time difference
+                            EventManager.fire_metric_event(
+                                "Time_to_first_reasoning_token",
+                                ttfrt,
+                                len(reasoning_chunk),
+                            )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating first reasoning token time: {e}"
+                    )
+                # task_logger.info(f"Recv first reasoning token: {reasoning_chunk}")
+        elif (
+            metrics.reasoning_is_active
+            and not reasoning_chunk
+            and not metrics.reasoning_ended
+            and content_chunk
+        ):
+            if (
+                metrics.first_thinking_received
+                and metrics.first_thinking_token_time is not None
+            ):
+                metrics.reasoning_ended = True
+                try:
+                    current_time = time.time()
+                    ttrc = (current_time - metrics.first_thinking_token_time) * 1000
+                    if ttrc >= 0:  # Ensure positive time difference
+                        # Ensure metrics.reasoning_content is not None before calling len()
+                        reasoning_content_len = (
+                            len(metrics.reasoning_content)
+                            if metrics.reasoning_content is not None
+                            else 0
+                        )
+                        EventManager.fire_metric_event(
+                            "Time_to_reasoning_completion",
+                            ttrc,
+                            reasoning_content_len,
+                        )
+                except Exception as e:
+                    task_logger.warning(
+                        f"Error calculating reasoning completion time: {e}"
+                    )
+                # task_logger.info(
+                #     f"Recv reasoning completion: {metrics.reasoning_content}"
+                # )
+
+        return metrics
+
+    @staticmethod
+    def check_chunk_error(
+        chunk: bytes, field_mapping: FieldMapping, task_logger
+    ) -> Optional[str]:
+        """Check streaming chunk for errors."""
+        try:
+            if not chunk or not isinstance(chunk, bytes):
+                return None
+
+            chunk_str = chunk.decode("utf-8", errors="replace").strip()
+
+            # Skip processing if it's a stop flag
+            if field_mapping.stop_flag and (
+                chunk_str == field_mapping.stop_flag
+                or chunk_str.endswith(field_mapping.stop_flag)
+            ):
+                return None
 
         # Remove prefix if present
         processed_chunk = StreamProcessor.remove_chunk_prefix(chunk_str, field_mapping)
@@ -304,23 +396,13 @@ class PayloadBuilder:
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Handle API requests with user-provided payload."""
         try:
-            # Ensure request_payload is available - generate default if empty
-            request_payload = self.config.request_payload
-            if not request_payload or not request_payload.strip():
-                # Generate default payload
-                default_payload = {
-                    "model": self.config.model_name or "your-model-name",
-                    "stream": self.config.stream_mode,
-                    "messages": [{"role": "user", "content": "Hi"}],
-                }
-                request_payload = orjson.dumps(default_payload).decode("utf-8")
-                self.task_logger.info(
-                    "Generated default request payload as none was provided"
-                )
+            if not self.config.request_payload:
+                self.task_logger.error("No request payload provided for API endpoint")
+                return None, None
 
             try:
-                payload = orjson.loads(str(request_payload))
-            except orjson.JSONDecodeError as e:
+                payload = json.loads(str(self.config.request_payload))
+            except json.JSONDecodeError as e:
                 self.task_logger.error(f"Invalid JSON in request payload: {e}")
                 return None, None
 
@@ -383,8 +465,12 @@ class PayloadBuilder:
     ) -> None:
         """Handle chat/completions API payload with image support."""
         try:
-            # Build messages list
+            # Build system message if configured
             messages: List[Dict[str, Any]] = []
+            if self.config.system_prompt:
+                messages.append(
+                    {"role": "system", "content": self.config.system_prompt}
+                )
 
             # Check for image data in prompt_data
             image_base64 = prompt_data.get("image_base64", "")
@@ -433,6 +519,9 @@ class PayloadBuilder:
             ):
                 if self.config.model_name:
                     payload["model"] = self.config.model_name
+                    self.task_logger.debug(
+                        f"Auto-set model field to: {self.config.model_name}"
+                    )
 
         except Exception as e:
             self.task_logger.warning(f"Failed to update chat/completions payload: {e}")
@@ -468,10 +557,7 @@ class PayloadBuilder:
                 self.config.field_mapping or ""
             )
             if field_mapping.prompt:
-                prompt_value = StreamProcessor.get_field_value(
-                    payload, field_mapping.prompt
-                )
-                return str(prompt_value) if prompt_value else ""
+                return StreamProcessor.get_field_value(payload, field_mapping.prompt)
             return ""
         except Exception:
             return ""
@@ -582,15 +668,12 @@ class APIClient:
             self.config.field_mapping or ""
         )
         response = None
-        actual_start_time = 0.0
+        has_failed = False
+        actual_request_start_time = 0.0
         request_name = base_request_kwargs.get("name", "failure")
-        usage: Dict[str, Optional[int]] = {
-            "completion_tokens": None,
-            "total_tokens": None,
-        }
 
         try:
-            actual_start_time = time.time()
+            actual_request_start_time = time.time()
             with client.post(self.config.api_path, **request_kwargs) as response:
                 if self.error_handler._handle_status_code_error(
                     response, start_time, request_name
@@ -651,11 +734,11 @@ class APIClient:
                         EventManager.fire_metric_event(METRIC_TTT, total_time, 0)
                         response.success()
 
-                    except Exception as e:
-                        self.task_logger.error(
-                            f"Error calculating streaming metrics: {e}"
-                        )
-                        response.success()  # Still mark as success since we got response
+                        except Exception as e:
+                            self.task_logger.error(
+                                f"Error calculating streaming metrics: {e}"
+                            )
+                            response.success()  # Still mark as success since we got response
 
                 except OSError as e:
                     self.error_handler._handle_stream_error(
@@ -685,7 +768,7 @@ class APIClient:
                     "request_name": request_name,
                 },
             )
-            return "", "", usage
+            has_failed = True
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             self.task_logger.error(f"Stream processing error: {e}")
@@ -698,8 +781,9 @@ class APIClient:
                     "request_name": request_name,
                 },
             )
-            return "", "", usage
-        return metrics.reasoning_content, metrics.content, metrics.usage
+            has_failed = True
+
+        return metrics.reasoning_content, metrics.model_output
 
     def handle_non_stream_request(
         self, client, base_request_kwargs: Dict[str, Any], start_time: float
@@ -736,16 +820,17 @@ class APIClient:
         self.task_logger.info(f"base_request_kwargs: {base_request_kwargs}")
 
         request_kwargs = {**base_request_kwargs, "stream": False}
-        content, reasoning_content = "", ""
+        model_output, reasoning_content = "", ""
         field_mapping = ConfigManager.parse_field_mapping(
             self.config.field_mapping or ""
         )
         request_name = base_request_kwargs.get("name", "failure")
-        usage: Dict[str, Optional[int]] = {
+        usage_tokens: Dict[str, Optional[int]] = {
             "completion_tokens": None,
             "total_tokens": None,
         }
 
+        has_failed = False
         try:
             with client.post(self.config.api_path, **request_kwargs) as response:
                 total_time = (time.time() - start_time) * 1000
@@ -806,8 +891,6 @@ class APIClient:
                         if field_mapping.content
                         else ""
                     )
-                    content = str(content) if content else ""
-
                     reasoning_content = (
                         StreamProcessor.get_field_value(
                             resp_json, field_mapping.reasoning_content
@@ -815,11 +898,56 @@ class APIClient:
                         if field_mapping.reasoning_content
                         else ""
                     )
-                    reasoning_content = (
-                        str(reasoning_content) if reasoning_content else ""
+
+                    # Extract token counts from usage field if available
+                    if "usage" in resp_json and isinstance(resp_json["usage"], dict):
+                        usage = resp_json["usage"]
+                        # Look for completion tokens
+                        for key, value in usage.items():
+                            if "completion" in key.lower() and isinstance(
+                                value, (int, float)
+                            ):
+                                usage_tokens["completion_tokens"] = int(value)
+                                break
+                        # Look for total tokens
+                        for key, value in usage.items():
+                            if "total" in key.lower() and isinstance(
+                                value, (int, float)
+                            ):
+                                usage_tokens["total_tokens"] = int(value)
+                                break
+
+                    # Only mark as success if no failures occurred
+                    if not has_failed:
+                        try:
+                            # Ensure output fields are not None before calling len()
+                            model_output_len = (
+                                len(model_output) if model_output is not None else 0
+                            )
+                            reasoning_content_len = (
+                                len(reasoning_content)
+                                if reasoning_content is not None
+                                else 0
+                            )
+
+                            EventManager.fire_metric_event(
+                                METRIC_TTT,
+                                total_time,
+                                model_output_len + reasoning_content_len,
+                            )
+                            response.success()
+                        except Exception as e:
+                            self.task_logger.error(
+                                f"Error calculating non-streaming metrics: {e}"
+                            )
+                            response.success()  # Still mark as success since we got response
+
+                except (json.JSONDecodeError, KeyError) as e:
+                    self.task_logger.error(f"Failed to parse response JSON: {e}")
+                    ErrorHandler.handle_general_exception(
+                        str(e), self.task_logger, response, total_time
                     )
-                response.success()
-                return reasoning_content, content, usage
+                    has_failed = True
 
         except Exception as e:
             response_time = (time.time() - start_time) * 1000

@@ -36,7 +36,6 @@ services:
       - DB_USER=root
       - DB_PASSWORD=lmeterx123
       - DB_NAME=lmeterx
-      - LOG_LEVEL=DEBUG
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
@@ -65,7 +64,6 @@ services:
       DB_USER: root
       DB_PASSWORD: lmeterx123
       DB_NAME: lmeterx
-      LOG_LEVEL: DEBUG
       # Multi-process configuration
       ENABLE_MULTIPROCESS: auto
       LOCUST_CPU_CORES: 4.0
@@ -84,22 +82,15 @@ services:
       - ./upload_files:/app/upload_files
     ports:
       - "5002:5002"
-    # Enhanced privileges for process management
-    privileged: false
-    security_opt:
-      - no-new-privileges:false
-    cap_add:
-      - SYS_PTRACE                           # Allow process tracing for monitoring
-      - KILL                                 # Allow killing processes
     # Resource limits for the container
     deploy:
       resources:
         limits:
-          cpus: '4.0'                           # Must match LOCUST_CPU_CORES
-          memory: 6G                            # Increased memory for multiprocess stability
+          cpus: '2.0'                           # Must match LOCUST_CPU_CORES
+          memory: 2G
         reservations:
-          cpus: '2.0'                           # Increased CPU reservation
-          memory: 2G                            # Increased memory reservation
+          cpus: '1.0'
+          memory: 1G
     healthcheck:
       test: [ "CMD", "curl", "-s", "-f", "http://localhost:5002/health" ]
       interval: 10s

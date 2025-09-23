@@ -44,7 +44,7 @@ def mask_sensitive_data(data: Union[dict, list]) -> Union[dict, list]:
                 else:
                     safe_dict[key] = mask_sensitive_data(value)
         except Exception as e:
-            logger.warning(f"Error masking sensitive data: {str(e)}")
+            logger.warning("Error masking sensitive data: %s" % str(e))
             return data
         return safe_dict
     elif isinstance(data, list):
@@ -259,7 +259,7 @@ async def extract_task_metrics(
 
     except Exception as e:
         logger.error(
-            f"Failed to extract metrics for task {task_id}: {str(e)}",
+            "Failed to extract metrics for task %s: %s" % (task_id, str(e)),
             exc_info=True,
         )
         return None

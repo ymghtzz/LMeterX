@@ -47,7 +47,6 @@ import {
 } from '@/api/services';
 import { useI18n } from '@/hooks/useI18n';
 import { BenchmarkJob } from '@/types/benchmark';
-import { CHAT_COMPLETIONS_FIELD_MAPPING } from '@/utils/constants';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -81,18 +80,19 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   const [activeTabKey, setActiveTabKey] = useState('1');
   // Add state to track upload loading
   const [uploading, setUploading] = useState(false);
-  // Add state to track if user manually modified request_payload
-  const [userModifiedPayload, setUserModifiedPayload] = useState(false);
 
-  // Get default field_mapping based on API path and stream mode
-  const getDefaultFieldMapping = (apiPath: string, streamMode?: boolean) => {
+  // Get default field_mapping based on API path
+  const getDefaultFieldMapping = (apiPath: string) => {
     if (apiPath === '/chat/completions') {
-      const isStreamMode = streamMode !== false; // Default to streaming if not specified
       return {
         prompt: 'messages.0.content',
-        ...(isStreamMode
-          ? CHAT_COMPLETIONS_FIELD_MAPPING.STREAMING
-          : CHAT_COMPLETIONS_FIELD_MAPPING.NON_STREAMING),
+        stream_prefix: 'data:',
+        data_format: 'json',
+        content: 'choices.0.delta.content',
+        reasoning_content: 'choices.0.delta.reasoning_content',
+        end_prefix: 'data:',
+        stop_flag: '[DONE]',
+        end_condition: '',
       };
     }
     // For non-chat/completions APIs, return empty values (only show placeholders)
@@ -102,26 +102,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       data_format: 'json',
       content: '',
       reasoning_content: '',
-      usage: '',
       end_prefix: '',
       stop_flag: '',
-      end_field: '',
+      end_condition: '',
     };
-  };
-
-  // Generate default request payload based on model and stream mode
-  const generateDefaultPayload = (model: string, streamMode: boolean) => {
-    const payload = {
-      model: model || 'your-model-name',
-      stream: streamMode,
-      messages: [
-        {
-          role: 'user',
-          content: 'Hi',
-        },
-      ],
-    };
-    return JSON.stringify(payload, null, 2);
   };
 
   // Tab navigation functions
@@ -226,11 +210,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     if (isFormReady && !isCopyMode && !initialData) {
       const currentApiPath =
         form.getFieldValue('api_path') || '/chat/completions';
-      const currentStreamMode = form.getFieldValue('stream_mode');
-      const defaultFieldMapping = getDefaultFieldMapping(
-        currentApiPath,
-        currentStreamMode
-      );
+      const defaultFieldMapping = getDefaultFieldMapping(currentApiPath);
       form.setFieldsValue({ field_mapping: defaultFieldMapping });
     }
   }, [isFormReady, isCopyMode, initialData, form]);
@@ -275,8 +255,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
   useEffect(() => {
     if (initialData) {
       setIsCopyMode(true);
-      // In copy mode, consider payload as manually modified to prevent auto-filling
-      setUserModifiedPayload(true);
 
       const dataToFill: any = { ...initialData };
 
@@ -294,6 +272,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       // use temp_task_id
       dataToFill.temp_task_id = tempTaskId;
+
+      // Ensure system_prompt are strings
+      dataToFill.system_prompt = dataToFill.system_prompt || '';
 
       // handle headers
       const currentHeaders = initialData.headers
@@ -347,10 +328,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         data_format: 'json',
         content: '',
         reasoning_content: '',
-        usage: '',
         end_prefix: '',
         stop_flag: '',
-        end_field: '',
+        end_condition: '',
       };
       dataToFill.request_payload = originalRequestPayload;
 
@@ -392,8 +372,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
       }
     } else if (!isCopyMode) {
       setIsCopyMode(false);
-      // Reset user modification tracking for new tasks
-      setUserModifiedPayload(false);
       // reset form fields
       const currentTempTaskId = form.getFieldValue('temp_task_id');
       if (currentTempTaskId !== tempTaskId) {
@@ -545,7 +523,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         'api_path',
         'model',
         'stream_mode',
-        // Remove request_payload from required fields for testing
+        'request_payload', // Always require request payload
       ];
 
       // Validate only the required fields for testing
@@ -553,19 +531,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
       // Get all form values after validation
       const values = form.getFieldsValue();
-
-      // Ensure request_payload is available - auto-generate if empty
-      if (!values.request_payload || !values.request_payload.trim()) {
-        const currentModel = values.model || '';
-        const currentStreamMode =
-          values.stream_mode !== undefined ? values.stream_mode : true;
-        values.request_payload = generateDefaultPayload(
-          currentModel,
-          currentStreamMode
-        );
-        // Update form with generated payload
-        form.setFieldsValue({ request_payload: values.request_payload });
-      }
 
       // Additional validation for request payload JSON format
       if (!values.request_payload) {
@@ -671,17 +636,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
     try {
       setSubmitting(true);
       const values = await form.validateFields();
-
-      // Ensure request_payload is available - auto-generate if empty
-      if (!values.request_payload || !values.request_payload.trim()) {
-        const currentModel = values.model || '';
-        const currentStreamMode =
-          values.stream_mode !== undefined ? values.stream_mode : true;
-        values.request_payload = generateDefaultPayload(
-          currentModel,
-          currentStreamMode
-        );
-      }
 
       if (values.cert_file) {
         try {
@@ -795,10 +749,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
         return false;
       }
 
-      // Request payload is no longer required for testing - will be auto-generated if empty
-      // if (!values.request_payload) {
-      //   return false;
-      // }
+      // Request payload is always required
+      if (!values.request_payload) {
+        return false;
+      }
 
       return true;
     } catch (error) {
@@ -864,20 +818,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'key']}
                       style={{ flex: 1, minWidth: '140px' }}
-                      rules={[
-                        {
-                          required: true,
-                          message: t(
-                            'components.createJobForm.headerNameRequired'
-                          ),
-                        },
-                        {
-                          max: 100,
-                          message: t(
-                            'components.createJobForm.headerNameLengthLimit'
-                          ),
-                        },
-                      ]}
                     >
                       <Input
                         placeholder={
@@ -888,7 +828,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                               )
                         }
                         disabled={isFixed}
-                        maxLength={100}
                         style={
                           isFixed
                             ? {
@@ -902,14 +841,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'value']}
                       style={{ flex: 2 }}
-                      rules={[
-                        {
-                          max: 1000,
-                          message: t(
-                            'components.createJobForm.headerValueLengthLimit'
-                          ),
-                        },
-                        ...(isAuth
+                      rules={
+                        isAuth
                           ? [
                               {
                                 required: false,
@@ -917,8 +850,8 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                                   'Please enter API key (include Bearer prefix if required)',
                               },
                             ]
-                          : []),
-                      ]}
+                          : []
+                      }
                     >
                       <Input
                         placeholder={
@@ -929,7 +862,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                               )
                         }
                         disabled={isFixed}
-                        maxLength={1000}
                         style={
                           isFixed
                             ? {
@@ -994,46 +926,22 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       {...restField}
                       name={[name, 'key']}
                       style={{ flex: 1, minWidth: '140px' }}
-                      rules={[
-                        {
-                          required: true,
-                          message: t(
-                            'components.createJobForm.cookieNameRequired'
-                          ),
-                        },
-                        {
-                          max: 100,
-                          message: t(
-                            'components.createJobForm.cookieNameLengthLimit'
-                          ),
-                        },
-                      ]}
                     >
                       <Input
                         placeholder={t(
                           'components.createJobForm.cookieNamePlaceholder'
                         )}
-                        maxLength={100}
                       />
                     </Form.Item>
                     <Form.Item
                       {...restField}
                       name={[name, 'value']}
                       style={{ flex: 2 }}
-                      rules={[
-                        {
-                          max: 1000,
-                          message: t(
-                            'components.createJobForm.cookieValueLengthLimit'
-                          ),
-                        },
-                      ]}
                     >
                       <Input
                         placeholder={t(
                           'components.createJobForm.cookieValuePlaceholder'
                         )}
-                        maxLength={1000}
                       />
                     </Form.Item>
                     <MinusCircleOutlined
@@ -1222,30 +1130,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 required: true,
                 message: t('components.createJobForm.pleaseEnterTaskName'),
               },
-              {
-                min: 1,
-                max: 100,
-                message: t('components.createJobForm.taskNameLengthLimit'),
-              },
-              {
-                validator: (_, value) => {
-                  if (!value || !value.trim()) {
-                    return Promise.reject(
-                      new Error(
-                        t('components.createJobForm.taskNameCannotBeEmpty')
-                      )
-                    );
-                  }
-                  return Promise.resolve();
-                },
-              },
             ]}
             normalize={value => value?.trim() || ''}
           >
             <Input
               placeholder={t('components.createJobForm.taskNamePlaceholder')}
-              maxLength={100}
-              showCount
             />
           </Form.Item>
         </Col>
@@ -1277,11 +1166,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     message: t('components.createJobForm.pleaseEnterApiUrl'),
                   },
                   {
-                    min: 1,
-                    max: 255,
-                    message: t('components.createJobForm.apiUrlLengthLimit'),
-                  },
-                  {
                     validator: (_, value) => {
                       if (!value?.trim()) return Promise.resolve();
 
@@ -1310,6 +1194,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
                       try {
                         const url = new URL(trimmedValue);
+                        // Additional validation: ensure hostname is present
                         if (!url.hostname || url.hostname.length === 0) {
                           return Promise.reject(
                             new Error(
@@ -1333,7 +1218,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 <Input
                   style={{ width: '70%' }}
                   placeholder='https://your-api-domain.com'
-                  maxLength={255}
                 />
               </Form.Item>
               <Form.Item
@@ -1344,35 +1228,12 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                     required: true,
                     message: t('components.createJobForm.pleaseEnterApiPath'),
                   },
-                  {
-                    min: 1,
-                    max: 255,
-                    message: t('components.createJobForm.apiPathLengthLimit'),
-                  },
-                  {
-                    validator: (_, value) => {
-                      if (!value?.trim()) return Promise.resolve();
-
-                      const trimmedValue = value.trim();
-                      if (!trimmedValue.startsWith('/')) {
-                        return Promise.reject(
-                          new Error(
-                            t(
-                              'components.createJobForm.apiPathMustStartWithSlash'
-                            )
-                          )
-                        );
-                      }
-                      return Promise.resolve();
-                    },
-                  },
                 ]}
                 normalize={value => value?.trim() || ''}
               >
                 <Input
                   style={{ width: '30%' }}
                   placeholder='/chat/completions'
-                  maxLength={255}
                 />
               </Form.Item>
             </div>
@@ -1397,31 +1258,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 required: true,
                 message: t('components.createJobForm.pleaseEnterModelName'),
               },
-              {
-                max: 255,
-                message: t('components.createJobForm.modelNameLengthLimit'),
-              },
-              {
-                validator: (_, value) => {
-                  if (!value || !value.trim()) {
-                    return Promise.reject(
-                      new Error(
-                        t('components.createJobForm.modelNameCannotBeEmpty')
-                      )
-                    );
-                  }
-                  return Promise.resolve();
-                },
-              },
             ]}
             normalize={value => value?.trim() || ''}
-            required
           >
-            <Input
-              placeholder='e.g. gpt-4, claude-3, internlm3-latest'
-              maxLength={255}
-              showCount
-            />
+            <Input placeholder='e.g. gpt-4, claude-3, internlm3-latest' />
           </Form.Item>
         </Col>
       </Row>
@@ -1513,9 +1353,9 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             }
             rules={[
               {
-                max: 50000,
+                required: true,
                 message: t(
-                  'components.createJobForm.requestPayloadLengthLimit'
+                  'components.createJobForm.pleaseEnterRequestPayload'
                 ),
               },
               {
@@ -1536,28 +1376,47 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             ]}
           >
             <TextArea
-              autoSize={{ minRows: 3, maxRows: 12 }}
+              rows={3}
               placeholder='{"model":"your-model-name","messages": [{"role": "user","content":"Hi"}],"stream": true}'
-              maxLength={50000}
-              showCount
-              onChange={e => {
-                // Track if user manually modified the payload
-                if (
-                  e.target.value !==
-                  generateDefaultPayload(
-                    form.getFieldValue('model') || '',
-                    form.getFieldValue('stream_mode') !== undefined
-                      ? form.getFieldValue('stream_mode')
-                      : true
-                  )
-                ) {
-                  setUserModifiedPayload(true);
-                }
-              }}
             />
           </Form.Item>
         </Col>
       </Row>
+
+      <Form.Item noStyle shouldUpdate>
+        {({ getFieldValue }) => {
+          const currentApiPath =
+            getFieldValue('api_path') || '/chat/completions';
+          return currentApiPath === '/chat/completions' ? (
+            <Row gutter={24}>
+              <Col span={24}>
+                <Form.Item
+                  name='system_prompt'
+                  label={
+                    <span>
+                      {t('components.createJobForm.systemPrompt')}
+                      <Tooltip
+                        title={t(
+                          'components.createJobForm.systemPromptTooltip'
+                        )}
+                      >
+                        <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                      </Tooltip>
+                    </span>
+                  }
+                >
+                  <TextArea
+                    rows={2}
+                    placeholder='You are a helpful AI assistant. Please provide clear and accurate responses.'
+                    maxLength={10000}
+                    showCount
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          ) : null;
+        }}
+      </Form.Item>
 
       {/* Advanced Settings - Collapsed by default */}
       <div>
@@ -1672,11 +1531,10 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                       }
                       rules={[
                         {
-                          type: 'number',
-                          min: 0,
-                          max: 1,
+                          required:
+                            inputType === 'default' && isChatCompletionsApi,
                           message: t(
-                            'components.createJobForm.chatTypeRangeLimit'
+                            'components.createJobForm.pleaseSelectDatasetType'
                           ),
                         },
                       ]}
@@ -1864,12 +1722,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 required: true,
                 message: t('components.createJobForm.pleaseEnterTestDuration'),
               },
-              {
-                type: 'number',
-                min: 1,
-                max: 172800,
-                message: t('components.createJobForm.durationRangeLimit'),
-              },
             ]}
           >
             <InputNumber
@@ -1901,14 +1753,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   'components.createJobForm.pleaseEnterConcurrentUsers'
                 ),
               },
-              {
-                type: 'number',
-                min: 1,
-                max: 5000,
-                message: t(
-                  'components.createJobForm.concurrentUsersRangeLimit'
-                ),
-              },
             ]}
           >
             <InputNumber
@@ -1938,12 +1782,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
               {
                 required: true,
                 message: t('components.createJobForm.pleaseEnterSpawnRate'),
-              },
-              {
-                type: 'number',
-                min: 1,
-                max: 100,
-                message: t('components.createJobForm.spawnRateRangeLimit'),
               },
             ]}
           >
@@ -2102,87 +1940,55 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                   getFieldValue(['field_mapping', 'data_format']) || 'json';
                 return (
                   dataFormat === 'json' && (
-                    <>
-                      <Row gutter={24}>
-                        <Col span={12}>
-                          <Form.Item
-                            name={['field_mapping', 'content']}
-                            label={
-                              <span>
-                                {t('components.createJobForm.contentFieldPath')}
-                                <Tooltip
-                                  title={t(
-                                    'components.createJobForm.contentFieldPathTooltip'
-                                  )}
-                                >
-                                  <InfoCircleOutlined
-                                    style={{ marginLeft: 5 }}
-                                  />
-                                </Tooltip>
-                              </span>
-                            }
-                            rules={[
-                              {
-                                required: dataFormat === 'json',
-                                message: t(
-                                  'components.createJobForm.pleaseSpecifyContentFieldPath'
-                                ),
-                              },
-                            ]}
-                          >
-                            <Input placeholder='choices.0.delta.content' />
-                          </Form.Item>
-                        </Col>
-
-                        <Col span={12}>
-                          <Form.Item
-                            name={['field_mapping', 'reasoning_content']}
-                            label={
-                              <span>
-                                {t(
-                                  'components.createJobForm.reasoningFieldPath'
+                    <Row gutter={24}>
+                      <Col span={12}>
+                        <Form.Item
+                          name={['field_mapping', 'content']}
+                          label={
+                            <span>
+                              {t('components.createJobForm.contentFieldPath')}
+                              <Tooltip
+                                title={t(
+                                  'components.createJobForm.contentFieldPathTooltip'
                                 )}
-                                <Tooltip
-                                  title={t(
-                                    'components.createJobForm.reasoningFieldPathTooltip'
-                                  )}
-                                >
-                                  <InfoCircleOutlined
-                                    style={{ marginLeft: 5 }}
-                                  />
-                                </Tooltip>
-                              </span>
-                            }
-                          >
-                            <Input placeholder='choices.0.delta.reasoning_content' />
-                          </Form.Item>
-                        </Col>
-                      </Row>
+                              >
+                                <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                              </Tooltip>
+                            </span>
+                          }
+                          rules={[
+                            {
+                              required: dataFormat === 'json',
+                              message: t(
+                                'components.createJobForm.pleaseSpecifyContentFieldPath'
+                              ),
+                            },
+                          ]}
+                        >
+                          <Input placeholder='choices.0.delta.content' />
+                        </Form.Item>
+                      </Col>
 
-                      <Row gutter={24} style={{ marginTop: 16 }}>
-                        <Col span={12}>
-                          <Form.Item
-                            name={['field_mapping', 'usage']}
-                            label={
-                              <span>
-                                {t('components.createJobForm.usageFieldPath')}
-                                <Tooltip
-                                  title={t(
-                                    'components.createJobForm.usageFieldPathTooltip'
-                                  )}
-                                >
-                                  <InfoCircleOutlined
-                                    style={{ marginLeft: 5 }}
-                                  />
-                                </Tooltip>
-                              </span>
-                            }
-                          >
-                            <Input placeholder='usage' />
-                          </Form.Item>
-                        </Col>
-                      </Row>
-                    </>
+                      <Col span={12}>
+                        <Form.Item
+                          name={['field_mapping', 'reasoning_content']}
+                          label={
+                            <span>
+                              {t('components.createJobForm.reasoningFieldPath')}
+                              <Tooltip
+                                title={t(
+                                  'components.createJobForm.reasoningFieldPathTooltip'
+                                )}
+                              >
+                                <InfoCircleOutlined style={{ marginLeft: 5 }} />
+                              </Tooltip>
+                            </span>
+                          }
+                        >
+                          <Input placeholder='choices.0.delta.reasoning_content' />
+                        </Form.Item>
+                      </Col>
+                    </Row>
                   )
                 );
               }}
@@ -2232,7 +2038,7 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
 
               <Col span={8}>
                 <Form.Item
-                  name={['field_mapping', 'end_field']}
+                  name={['field_mapping', 'end_condition']}
                   label={
                     <span>
                       {t('components.createJobForm.endFieldPath')}
@@ -2342,28 +2148,6 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
                 }
               >
                 <Input placeholder='choices.0.message.reasoning_content' />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Row gutter={24} style={{ marginTop: 16 }}>
-            <Col span={12}>
-              <Form.Item
-                name={['field_mapping', 'usage']}
-                label={
-                  <span>
-                    {t('components.createJobForm.usageFieldPath')}
-                    <Tooltip
-                      title={t(
-                        'components.createJobForm.usageFieldPathTooltip'
-                      )}
-                    >
-                      <InfoCircleOutlined style={{ marginLeft: 5 }} />
-                    </Tooltip>
-                  </span>
-                }
-              >
-                <Input placeholder='usage' />
               </Form.Item>
             </Col>
           </Row>
@@ -2486,36 +2270,14 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
           api_path: '/chat/completions',
           duration: '',
           model: '',
-          request_payload: generateDefaultPayload(
-            form.getFieldValue('model') || '',
-            form.getFieldValue('stream_mode') || true
-          ),
-          field_mapping: getDefaultFieldMapping('/chat/completions', true),
+          system_prompt: '',
+          request_payload: '',
+          field_mapping: getDefaultFieldMapping('/chat/completions'),
         }}
         onFinish={handleSubmit}
         onValuesChange={changedValues => {
           if ('stream_mode' in changedValues) {
             setStreamMode(changedValues.stream_mode);
-            // Update field_mapping default values when stream mode changes (but not in copy mode)
-            if (!isCopyMode) {
-              const currentApiPath =
-                form.getFieldValue('api_path') || '/chat/completions';
-              const newFieldMapping = getDefaultFieldMapping(
-                currentApiPath,
-                changedValues.stream_mode
-              );
-              form.setFieldsValue({ field_mapping: newFieldMapping });
-            }
-
-            // Auto-fill request_payload when stream_mode changes (only if user hasn't manually modified it)
-            if (!userModifiedPayload && !isCopyMode) {
-              const currentModel = form.getFieldValue('model') || '';
-              const newPayload = generateDefaultPayload(
-                currentModel,
-                changedValues.stream_mode
-              );
-              form.setFieldsValue({ request_payload: newPayload });
-            }
           }
           if ('concurrent_users' in changedValues) {
             setConcurrentUsers(changedValues.concurrent_users);
@@ -2524,26 +2286,11 @@ const CreateJobFormContent: React.FC<CreateJobFormProps> = ({
             handleApiPathChange(changedValues.api_path);
             // Update field_mapping default values when API path changes (but not in copy mode)
             if (!isCopyMode) {
-              const currentStreamMode = form.getFieldValue('stream_mode');
               const newFieldMapping = getDefaultFieldMapping(
-                changedValues.api_path,
-                currentStreamMode
+                changedValues.api_path
               );
               form.setFieldsValue({ field_mapping: newFieldMapping });
             }
-          }
-
-          // Auto-fill request_payload when model changes (only if user hasn't manually modified it)
-          if ('model' in changedValues && !userModifiedPayload && !isCopyMode) {
-            const currentStreamMode =
-              form.getFieldValue('stream_mode') !== undefined
-                ? form.getFieldValue('stream_mode')
-                : true;
-            const newPayload = generateDefaultPayload(
-              changedValues.model || '',
-              currentStreamMode
-            );
-            form.setFieldsValue({ request_payload: newPayload });
           }
 
           // Clear related fields when dataset source type changes
