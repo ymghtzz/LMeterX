@@ -1,8 +1,6 @@
 """
 Author: Charm
 Copyright (c) 2025, All Rights Reserved.
-
-Enhanced process monitor for robust multiprocess management.
 """
 
 import os

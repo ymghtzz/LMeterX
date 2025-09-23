@@ -8,7 +8,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
-import aiofiles
+import aiofiles  # type: ignore[import-untyped]
 from fastapi import HTTPException, Request, UploadFile
 from werkzeug.utils import secure_filename
 

@@ -4,34 +4,14 @@ Copyright (c) 2025, All Rights Reserved.
 """
 
 import base64
-import hashlib
 import json
 import os
 import queue
 import re
-import threading
-from functools import lru_cache
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-import tiktoken
-
-from config.base import (
-    DEFAULT_TOKEN_RATIO,
-    IMAGES_DIR,
-    MAX_QUEUE_SIZE,
-    PROMPTS_DIR,
-    SENSITIVE_KEYS,
-    TOKEN_COUNT_CACHE_SIZE,
-    TOKENIZER_CACHE_SIZE,
-)
+from config.base import IMAGES_DIR, MAX_QUEUE_SIZE, PROMPTS_DIR, SENSITIVE_KEYS
 from utils.logger import logger
-
-# Lightweight LRU cache for token counts to avoid repeated tokenization cost
-_token_count_cache: Dict[Tuple[str, str], int] = {}
-_token_count_cache_order: List[Tuple[str, str]] = []
-_token_count_cache_lock = threading.Lock()
-
-from gevent import queue as gevent_queue
 
 
 # === DATA CLASSES ===
@@ -456,185 +436,28 @@ def init_prompt_queue(
     )
 
 
-# === TOKEN PROCESSING ===
-@lru_cache(maxsize=TOKENIZER_CACHE_SIZE)
-def get_tokenizer(model_name: str) -> Optional[tiktoken.Encoding]:
-    """Gets the tokenizer for a specified model, using LRU cache to reduce creation overhead.
-
-    Args:
-        model_name (str): The name of the model to get the tokenizer for.
-
-    Returns:
-        tiktoken.Encoding: The tokenizer for the specified model, or None if failed.
+def wait_time_for_stats_sync(runner, concurrent_users: int) -> float:
     """
-    try:
-        # Get the appropriate encoder based on the model name
-        if "gpt-4" in model_name.lower():
-            return tiktoken.encoding_for_model("gpt-4")
-        elif "gpt-3.5" in model_name.lower():
-            return tiktoken.encoding_for_model("gpt-3.5-turbo")
-        elif "claude" in model_name.lower():
-            # Claude uses tokenization similar to GPT-4
-            return tiktoken.encoding_for_model("gpt-4")
-        else:
-            # Default to gpt-3.5-turbo encoder
-            return tiktoken.encoding_for_model("gpt-3.5-turbo")
-    except Exception as e:
-        logger.warning(
-            f"Failed to get tokenizer for {model_name}: {e}, will use simple estimation"
-        )
-        return None
+    Calculates wait time to ensure that all worker statistics are reported to the master.
 
+    Formula:
+        wait_time = base_delay +  user_count * user_factor
 
-def count_tokens(text: str, model_name: str = "gpt-3.5-turbo") -> int:
-    """Calculates the number of tokens in a text.
-
-    Args:
-        text (str): The text to calculate the number of tokens for.
-        model_name (str): The name of the model to use for tokenization.
-
-    Returns:
-        int: The number of tokens in the text.
+    Parameters can be adjusted, suitable for different scale stress tests.
     """
-    if not text or text == "":
-        return 0
-    try:
-        text_key = hashlib.md5(text.encode("utf-8", errors="ignore")).hexdigest()
-        cache_key = (text_key, model_name)
-        with _token_count_cache_lock:
-            cached = _token_count_cache.get(cache_key)
-            if cached is not None:
-                return cached
+    # ⚙️ Adjustable parameters (based on your system and network)
+    BASE_DELAY = 10.0  # Base delay, ensure last batch of data has time to be sent
+    USER_FACTOR = 0.1  # Add 10 second for each additional 100 users
+    # Calculate wait time
+    wait_time = BASE_DELAY + (concurrent_users * USER_FACTOR)
 
-        tokenizer = get_tokenizer(model_name)
-        if tokenizer:
-            tokens_len = len(tokenizer.encode(text))
-        else:
-            tokens_len = max(1, len(text) // DEFAULT_TOKEN_RATIO)
+    # Set upper limit, avoid extreme cases (e.g. 10000 users → wait too long)
+    MAX_WAIT_TIME = 60.0  # Avoid extreme cases (e.g. 10000 users → wait too long)
+    wait_time = min(
+        wait_time, MAX_WAIT_TIME
+    )  # Avoid extreme cases (e.g. 10000 users → wait too long)
 
-        with _token_count_cache_lock:
-            if cache_key not in _token_count_cache:
-                _token_count_cache[cache_key] = tokens_len
-                _token_count_cache_order.append(cache_key)
-                if len(_token_count_cache_order) > TOKEN_COUNT_CACHE_SIZE:
-                    old_key = _token_count_cache_order.pop(0)
-                    _token_count_cache.pop(old_key, None)
-
-        return tokens_len
-    except Exception as e:
-        logger.warning(
-            f"Token counting failed for {model_name}: {e}, using simple estimation"
-        )
-        return max(1, len(text) // DEFAULT_TOKEN_RATIO)
-
-
-# === METRICS PROCESSING ===
-def _drain_queue(q: Union[queue.Queue, gevent_queue.Queue]) -> List[int]:
-    """Safely drain all items from a queue."""
-    items = []
-    while not q.empty():
-        try:
-            items.append(q.get_nowait())
-        except (queue.Empty, gevent_queue.Empty):
-            break
-        except Exception as e:
-            # Be defensive: different queue implementations may raise different exceptions
-            logger.warning(f"Unexpected error draining queue: {e}")
-            break
-    return items
-
-
-def calculate_custom_metrics(
-    task_id: str,
-    global_task_queue: Dict[str, Union[queue.Queue, gevent_queue.Queue]],
-    exc_time: float,
-) -> Dict[str, int]:
-    """Calculates custom performance metrics.
-
-    Args:
-        task_id: Task identifier
-        global_task_queue: Dictionary containing token queues
-        exc_time: Execution time in seconds
-
-    Returns:
-        Dictionary containing calculated metrics
-    """
-    task_logger = logger.bind(task_id=task_id)
-
-    # Initialize metrics
-    metrics = {
-        "reqs_num": 0,
-        "completion_tokens": 0,
-        "all_tokens": 0,
-    }
-
-    try:
-        # Process completion tokens
-        completion_tokens_list = _drain_queue(
-            global_task_queue["completion_tokens_queue"]
-        )
-        completion_tokens = sum(completion_tokens_list)
-        metrics["reqs_num"] = len(completion_tokens_list)
-        metrics["completion_tokens"] = completion_tokens
-
-        # Process all tokens
-        all_tokens_list = _drain_queue(global_task_queue["all_tokens_queue"])
-        all_tokens = sum(all_tokens_list)
-        metrics["all_tokens"] = all_tokens
-
-        return metrics
-
-    except Exception as e:
-        task_logger.error(f"Failed to calculate custom metrics: {e}")
-        return metrics
-
-
-def get_locust_stats(task_id: str, environment_stats) -> List[Dict[str, Any]]:
-    """Gets and formats Locust statistics for database use.
-
-    Args:
-        task_id: Task identifier
-        environment_stats: Locust environment statistics
-
-    Returns:
-        List of formatted metrics dictionaries
-    """
-    task_logger = logger.bind(task_id=task_id)
-    all_metrics_list = []
-
-    try:
-        from datetime import datetime
-
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Collect all response times for percentile calculation (currently unused)
-        # all_response_times: List[float] = []
-
-        for name, endpoint in environment_stats.entries.items():
-            # Skip the aggregated entry that Locust automatically creates to avoid duplication
-            if name == ("Aggregated", None) or (
-                hasattr(name, "__iter__") and name[0] == "Aggregated"
-            ):
-                continue
-
-            raw_params = {
-                "task_id": task_id,
-                "metric_type": endpoint.name,
-                "num_requests": endpoint.num_requests,
-                "num_failures": endpoint.num_failures,
-                "avg_latency": endpoint.avg_response_time,
-                "min_latency": endpoint.min_response_time,
-                "max_latency": endpoint.max_response_time,
-                "median_latency": endpoint.median_response_time,
-                "p90_latency": endpoint.get_response_time_percentile(0.9),
-                "avg_content_length": endpoint.avg_content_length,
-                "rps": endpoint.total_rps,
-                "created_at": current_time,
-            }
-            all_metrics_list.append(raw_params)
-
-        return all_metrics_list
-
-    except Exception as e:
-        task_logger.error(f"Failed to get Locust statistics: {e}")
-        raise RuntimeError(f"Failed to get Locust statistics: {e}")
+    # Set lower limit, ensure at least 2 seconds
+    MIN_WAIT_TIME = 2.0  # Ensure at least 2 seconds
+    wait_time = max(wait_time, MIN_WAIT_TIME)
+    return wait_time

@@ -1,13 +1,10 @@
 """
 Author: Charm
 Copyright (c) 2025, All Rights Reserved.
-
-Core data structures and configuration management for the stress testing engine.
 """
 
 import json
-import multiprocessing as mp
-import ssl
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -15,19 +12,7 @@ from gevent import queue
 from gevent.lock import Semaphore
 
 from config.base import DEFAULT_API_PATH, DEFAULT_CONTENT_TYPE
-from config.multiprocess import should_use_multiprocessing_manager
 from utils.logger import logger
-
-
-# === UTILITY CLASSES ===
-class SimpleLock:
-    """Simple lock implementation as fallback when multiprocessing fails."""
-
-    def __enter__(self):
-        pass
-
-    def __exit__(self, *args):
-        pass
 
 
 # === DATA CLASSES ===
@@ -41,10 +26,9 @@ class StreamMetrics:
     reasoning_ended: bool = False
     first_output_token_time: Optional[float] = None
     first_thinking_token_time: Optional[float] = None
-    model_output: str = ""
+    content: str = ""
     reasoning_content: str = ""
-    # Usage information from streaming response
-    usage_tokens: Optional[Dict[str, Optional[int]]] = field(default=None)
+    usage: Optional[Dict[str, Optional[int]]] = field(default=None)
 
 
 @dataclass
@@ -59,7 +43,6 @@ class GlobalConfig:
     cookies: Optional[Dict[str, str]] = None
     request_payload: Optional[str] = None
     model_name: Optional[str] = None
-    system_prompt: Optional[str] = None
     user_prompt: Optional[str] = None
     stream_mode: bool = True
     chat_type: int = 0
@@ -79,170 +62,121 @@ class FieldMapping:
     data_format: str = "json"
     stop_flag: str = "[DONE]"
     end_prefix: str = ""
-    end_condition: str = ""
+    end_field: str = ""
     content: str = ""
     reasoning_content: str = ""
     prompt: str = ""
+    usage: str = ""
+
+
+@dataclass
+class TokenStats:
+    """Token stats for each request."""
+
+    reqs_count: int = 0
+    completion_tokens: int = 0
+    all_tokens: int = 0
 
 
 # === GLOBAL STATE MANAGEMENT ===
 class GlobalStateManager:
     """Manages global state for Locust testing."""
 
-    _global_config: Optional[GlobalConfig] = None
-    _global_task_queue: Optional[Dict[str, Any]] = None
-    _start_time: Optional[float] = None
-    _lock: Optional[Any] = None
-    _logger_cache: Dict[str, Any] = {}
-    _ssl_context: Optional[ssl.SSLContext] = None
+    _instance = None
+    _lock = threading.Lock()
 
-    @classmethod
-    def initialize_global_state(cls) -> None:
-        """Initialize global state with error handling."""
-        try:
-            # Check if we should use multiprocessing manager
-            use_multiprocessing = should_use_multiprocessing_manager()
-
-            # single process mode
-            if not use_multiprocessing:
-                if cls._lock is None:
-                    try:
-                        cls._lock = Semaphore(1)
-                    except Exception as e:
-                        logger.warning(f"Failed to create gevent semaphore: {e}")
-                        cls._lock = SimpleLock()
-
-                # create in-process queues
-                cls._global_task_queue = {
-                    "completion_tokens_queue": queue.Queue(),
-                    "all_tokens_queue": queue.Queue(),
-                }
-
-                cls._global_config = GlobalConfig()
-                cls._start_time = None
-                cls._logger_cache = {}
-                cls._ssl_context = None
-                return
-
-            # multiprocessing mode - use per-process queues
-            # Locust's Worker processes cannot access the Master process's shared queue
-            if use_multiprocessing:
-                logger.info("Multi-process mode detected - using per-process queues")
-                # In multi-process mode, each process uses its own queue, sharing data via messages
-
-            # Create lock - use gevent lock in multi-process mode
-            if cls._lock is None:
-                try:
-                    cls._lock = Semaphore(1)
-                except Exception as e:
-                    logger.warning(f"Failed to create gevent semaphore: {e}")
-                    # final fallback: use simple object as lock
-                    cls._lock = SimpleLock()
-
-            assert cls._lock is not None
+    def __new__(cls):
+        if cls._instance is None:
             with cls._lock:
-                cls._global_config = GlobalConfig()
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialize()
+        return cls._instance
 
-                # Always use single process queue - share data via messages in multi-process mode
-                cls._global_task_queue = {
-                    "completion_tokens_queue": queue.Queue(),
-                    "all_tokens_queue": queue.Queue(),
-                }
+    def _initialize(self):
+        """Initialize global state."""
+        self._config: Optional[GlobalConfig] = None
+        self._start_time: Optional[float] = None
+        self._token_stats = TokenStats()
+        self._logger_cache: Dict[str, Any] = {}
+        self._ssl_context: Optional[Any] = None
+        self._task_queue: Optional[Dict[str, queue.Queue]] = None
+        self._gevent_lock: Optional[Semaphore] = None
+        self._file_lock = threading.Lock()
 
-                cls._start_time = None
-                cls._logger_cache = {}
-                cls._ssl_context = None
+        self._worker_count: int = 0
+        self._concurrent_users: int = 0
 
+        # Initialize gevent lock
+        try:
+            self._gevent_lock = Semaphore(1)
         except Exception as e:
-            logger.error(f"Failed to initialize global state: {e}")
-            # Set fallback values to prevent further errors
-            if cls._global_config is None:
-                cls._global_config = GlobalConfig()
-            if cls._global_task_queue is None:
-                cls._global_task_queue = {
-                    "completion_tokens_queue": queue.Queue(),
-                    "all_tokens_queue": queue.Queue(),
-                }
-            if cls._lock is None:
-                # final fallback: use simple object as lock
-                cls._lock = SimpleLock()
+            logger.warning(f"Failed to create gevent semaphore: {e}")
+            self._gevent_lock = SimpleLock()
 
-    @classmethod
-    def get_global_config(cls) -> GlobalConfig:
-        """Thread-safe access to global configuration."""
-        if cls._global_config is None:
-            cls.initialize_global_state()
-        return cls._global_config  # type: ignore
+    @property
+    def config(self) -> GlobalConfig:
+        """Get global configuration."""
+        if self._config is None:
+            self._config = GlobalConfig()
+        return self._config
 
-    @classmethod
-    def get_global_task_queue(cls) -> Dict[str, queue.Queue]:
-        """Thread-safe access to global task queue."""
-        if cls._global_task_queue is None:
-            cls.initialize_global_state()
-        return cls._global_task_queue  # type: ignore
+    @property
+    def start_time(self) -> Optional[float]:
+        """Get test start time."""
+        return self._start_time
 
-    @classmethod
-    def set_start_time(cls, start_time: float) -> None:
-        """Set the test start time."""
-        if cls._lock is None:
-            cls.initialize_global_state()
-        assert cls._lock is not None
-        with cls._lock:  # type: ignore
-            cls._start_time = start_time
+    @start_time.setter
+    def start_time(self, value: float):
+        """Set test start time."""
+        self._start_time = value
 
-    @classmethod
-    def get_start_time(cls) -> Optional[float]:
-        """Get the test start time."""
-        return cls._start_time
+    @property
+    def token_stats(self) -> TokenStats:
+        """Get token stats."""
+        return self._token_stats
 
-    # --- Logger cache ---
-    @classmethod
-    def get_task_logger(cls, task_id: str):
-        """Get a cached bound logger for the given task id (reduces bind overhead)."""
+    @property
+    def worker_count(self) -> int:
+        return self._worker_count
+
+    @worker_count.setter
+    def worker_count(self, value: int):
+        self._worker_count = value
+
+    @property
+    def concurrent_users(self) -> int:
+        return self._concurrent_users
+
+    @concurrent_users.setter
+    def concurrent_users(self, value: int):
+        self._concurrent_users = value
+
+    def get_task_logger(self, task_id: str = ""):
+        """Get task logger."""
         if not task_id:
             return logger
-        if cls._lock is None:
-            cls.initialize_global_state()
-        assert cls._lock is not None
-        with cls._lock:  # type: ignore
-            if task_id not in cls._logger_cache:
-                cls._logger_cache[task_id] = logger.bind(task_id=task_id)
-            return cls._logger_cache[task_id]
 
-    # --- SSL Context cache ---
-    @classmethod
-    def build_ssl_context_if_needed(
-        cls, cert_config: Optional[Union[str, Tuple[str, str]]]
-    ) -> None:
-        """Build and cache SSL context once per process."""
-        if cls._ssl_context is not None:
-            return
-        if cls._lock is None:
-            cls.initialize_global_state()
-        assert cls._lock is not None
-        with cls._lock:  # type: ignore
-            if cls._ssl_context is not None:
-                return
-            try:
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                if cert_config:
-                    if isinstance(cert_config, tuple):
-                        cert_file, key_file = cert_config
-                        ssl_context.load_cert_chain(cert_file, key_file)
-                    elif isinstance(cert_config, str):
-                        ssl_context.load_cert_chain(cert_config)
-                cls._ssl_context = ssl_context
-            except Exception as e:
-                # Do not raise; leave as None to fallback gracefully
-                logger.warning(f"Failed to build SSL context: {e}")
-                cls._ssl_context = None
+        if self._gevent_lock is not None:
+            with self._gevent_lock:
+                if task_id not in self._logger_cache:
+                    self._logger_cache[task_id] = logger.bind(task_id=task_id)
+                return self._logger_cache[task_id]
+        else:
+            # Fallback when lock is None
+            if task_id not in self._logger_cache:
+                self._logger_cache[task_id] = logger.bind(task_id=task_id)
+            return self._logger_cache[task_id]
 
-    @classmethod
-    def get_ssl_context(cls) -> Optional[ssl.SSLContext]:
-        """Get the SSL context for secure connections."""
-        return cls._ssl_context
+
+class SimpleLock:
+    """Simple lock implementation as fallback when multiprocessing fails."""
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        pass
 
 
 # === CONFIGURATION MANAGEMENT ===
@@ -308,10 +242,11 @@ class ConfigManager:
                 data_format=mapping_dict.get("data_format", "json"),
                 stop_flag=mapping_dict.get("stop_flag", "[DONE]"),
                 end_prefix=mapping_dict.get("end_prefix", ""),
-                end_condition=mapping_dict.get("end_condition", ""),
+                end_field=mapping_dict.get("end_field", ""),
                 content=mapping_dict.get("content", ""),
                 reasoning_content=mapping_dict.get("reasoning_content", ""),
                 prompt=mapping_dict.get("prompt", ""),
+                usage=mapping_dict.get("usage", ""),
             )
         except (json.JSONDecodeError, TypeError):
             return FieldMapping()

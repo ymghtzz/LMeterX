@@ -5,22 +5,23 @@ Copyright (c) 2025, All Rights Reserved.
 
 import json
 import os
-import re
 import shutil
 import subprocess  # nosec B404
 import tempfile
 import threading
 import time
-from typing import List, Optional
+from queue import Queue
+from typing import List, Tuple
 
 import psutil
 
+from config.base import LOCUST_STOP_TIMEOUT, LOCUST_WAIT_TIMEOUT_BUFFER
 from config.multiprocess import (
     get_cpu_count,
     get_process_count,
     should_enable_multiprocess,
 )
-from engine.multiprocess_manager import (
+from engine.process_manager import (
     allocate_master_port,
     cleanup_all_locust_processes,
     cleanup_task_resources,
@@ -36,165 +37,38 @@ from utils.logger import logger
 class LocustRunner:
     """
     Enhanced Locust runner with robust multiprocess management.
-
-    Attributes:
-        process_dict (dict): A dictionary to store running subprocesses,
-                             mapping task IDs to process objects.
-        base_dir (str): The base directory of the engine, used to locate the locustfile.
     """
 
-    process_dict: dict[str, subprocess.Popen] = {}
+    _process_dict: dict[str, subprocess.Popen] = {}
 
-    def __init__(self, base_dir):
-        """
-        Initializes the LocustRunner.
-
-        Args:
-            base_dir (str): The base directory of the engine.
-        """
+    def __init__(self, base_dir: str):
         self.base_dir = base_dir
-        self._terminating_processes = set()
+        self._locustfile_path = os.path.join(self.base_dir, "engine", "locustfile.py")
 
     def run_locust_process(self, task: Task) -> dict:
         """
-        Runs a Locust test as a separate process with enhanced multiprocess management.
-
-        Args:
-            task (Task): The task object containing the test parameters.
-
-        Returns:
-            dict: A dictionary containing the results of the test execution,
-                  including status, stdout, stderr, return code, and
-                  the parsed Locust result JSON.
+        Run Locust test as a separate process with full lifecycle management.
         """
         task_logger = logger.bind(task_id=task.id)
-        process = None
-        is_multiprocess = False
+        task_logger.info(f"Starting Locust task {task.id}")
 
         try:
-            # Step 1: Clean up any existing Locust processes
-            cleanup_count = cleanup_all_locust_processes()
-            if cleanup_count > 0:
-                task_logger.info(
-                    f"Cleaned up {cleanup_count} existing Locust processes before starting new task"
-                )
+            # Step 1: Prepare environment
+            self._prepare_task(task, task_logger)
 
-            # Step 2: Force cleanup of orphaned processes
-            orphaned_count = force_cleanup_orphaned_processes()
-            if orphaned_count > 0:
-                task_logger.info(
-                    f"Cleaned up {orphaned_count} orphaned Locust processes"
-                )
+            # Step 2: Build and start process
+            cmd = self._build_locust_command(task, task_logger)
+            process = self._start_process(cmd, task, task_logger)
 
-            cmd = self._build_locust_command(task)
+            # Step 3: Monitor and capture output
+            stdout, stderr = self._monitor_and_capture(process, task, task_logger)
 
-            # Verify locustfile exists before executing
-            locustfile_path = cmd[2]  # The -f argument value
-            if not os.path.exists(locustfile_path):
-                error_msg = f"Locustfile not found at path: {locustfile_path}"
-                task_logger.error(error_msg)
-                return {
-                    "status": "FAILED",
-                    "stdout": "",
-                    "stderr": error_msg,
-                    "return_code": -1,
-                    "locust_result": {},
-                }
-
-            masked_cmd = mask_sensitive_command(cmd)
-            task_logger.info(
-                f"Task {task.id}, Executing Locust command: {' '.join(masked_cmd)}"
-            )
-
-            env = os.environ.copy()
-            env.update({"TASK_ID": str(task.id)})
-
-            # Check if multiprocess mode is enabled
-            is_multiprocess = should_enable_multiprocess(int(task.concurrent_users))
-
-            # Step 3: Start the Locust process
-            process = subprocess.Popen(  # nosec B603
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True,
-                env=env,
-                shell=False,
-            )
-            self.process_dict[str(task.id)] = process
-            task_logger.info(f"Started Locust process {process.pid}.")
-
-            # Step 4: Capture multiprocess PIDs if enabled
-            worker_pids = []
-            if is_multiprocess:
-                try:
-                    # Allocate a unique port for master process communication
-                    master_port = allocate_master_port(str(task.id))
-                    task_logger.info(f"Allocated port {master_port} for task {task.id}")
-
-                    # Wait for processes to start and capture worker PIDs
-                    worker_pids = self._capture_worker_processes(
-                        process.pid, str(task.id), task_logger
-                    )
-
-                    if worker_pids:
-                        # Register the process group
-                        register_locust_process_group(
-                            str(task.id), process.pid, worker_pids, master_port
-                        )
-                        task_logger.info(
-                            f"Registered process group: master={process.pid}, workers={worker_pids}"
-                        )
-                    else:
-                        task_logger.warning(
-                            f"No worker processes found for multiprocess task {task.id}"
-                        )
-
-                except Exception as e:
-                    task_logger.warning(f"Failed to register multiprocess group: {e}")
-
-            stdout, stderr = self._capture_process_output(
-                process, str(task.id), int(task.duration)
-            )
-
-            result_file = os.path.join(
-                tempfile.gettempdir(), "locust_result", str(task.id), "result.json"
-            )
-
-            if not os.path.exists(result_file):
-                error_msg = f"Locust result file not found at {result_file}"
-                task_logger.error(error_msg)
-                return {
-                    "status": "FAILED",
-                    "stdout": stdout,
-                    "stderr": stderr + f"\n{error_msg}",
-                    "return_code": process.returncode,
-                    "locust_result": {},
-                }
-
-            locust_result = self._load_locust_result(result_file, str(task.id))
-
-            # Determine the execution status based on the return code
-            if process.returncode == 0:
-                status = "COMPLETED"
-            else:
-                status = "FAILED_REQUESTS"
-                task_logger.warning(
-                    f"Locust process completed with test failures (exit code {process.returncode})."
-                )
-
-            return {
-                "status": status,
-                "stdout": stdout,
-                "stderr": stderr,
-                "return_code": process.returncode,
-                "locust_result": locust_result,
-            }
+            # Step 4: Finalize and load results
+            result = self._finalize_task(process, task, stdout, stderr, task_logger)
+            return result
 
         except Exception as e:
-            task_logger.exception(f"Failed to run Locust process: {e}")
+            task_logger.exception(f"Unhandled exception during Locust execution: {e}")
             return {
                 "status": "FAILED",
                 "stdout": "",
@@ -203,180 +77,39 @@ class LocustRunner:
                 "locust_result": {},
             }
         finally:
-            # Step 5: Enhanced cleanup
-            task_logger.info(f"Starting cleanup for task {task.id}")
-            try:
-                # Remove from our tracking first
-                if str(task.id) in self.process_dict:
-                    self.process_dict.pop(str(task.id), None)
-                    task_logger.debug(f"Removed task {task.id} from process dict")
+            # Ensure cleanup is attempted even if an exception occurs
+            # This is a safety net. `_finalize_task` should handle normal cleanup.
+            if task.id in self._process_dict:
+                task_logger.warning(
+                    f"Task {task.id} exited abnormally. Triggering emergency cleanup."
+                )
+                # We create a dummy process object just to satisfy the _cleanup_task signature.
+                # The actual PID might be invalid, but _cleanup_task will handle it gracefully.
+                dummy_process = subprocess.Popen(
+                    ["true"]
+                )  # This is a dummy, we just need an object with a `poll` method.
+                dummy_process.pid = -1  # Mark it as invalid
+                self._cleanup_task(task, dummy_process, task_logger)
 
-                # Enhanced multiprocess cleanup
-                if is_multiprocess:
-                    task_logger.info(
-                        f"Terminating multiprocess group for task {task.id}"
-                    )
-                    terminate_success = terminate_locust_process_group(
-                        str(task.id), timeout=15.0
-                    )
-                    if terminate_success:
-                        task_logger.info(
-                            f"Successfully terminated process group for task {task.id}"
-                        )
-                    else:
-                        task_logger.warning(
-                            f"Some processes may not have terminated cleanly for task {task.id}"
-                        )
+    def _prepare_task(self, task: Task, task_logger) -> None:
+        """Prepare task environment: cleanup, validate."""
+        cleanup_count = cleanup_all_locust_processes()
+        if cleanup_count > 0:
+            task_logger.info(f"Cleaned up {cleanup_count} existing Locust processes")
 
-                # Manual process cleanup as backup
-                if process and process.poll() is None:
-                    task_logger.info(
-                        f"Force terminating main process {process.pid} for task {task.id}"
-                    )
-                    try:
-                        process.terminate()
-                        process.wait(timeout=10)
-                        task_logger.info(f"Main process {process.pid} terminated")
-                    except subprocess.TimeoutExpired:
-                        task_logger.warning(f"Force killing main process {process.pid}")
-                        process.kill()
-                        process.wait()
+        orphaned_count = force_cleanup_orphaned_processes()
+        if orphaned_count > 0:
+            task_logger.info(f"Cleaned up {orphaned_count} orphaned processes")
 
-                # Clean up task resources
-                cleanup_task_resources(str(task.id))
-                task_logger.info(f"Cleanup completed for task {task.id}")
+        if not os.path.exists(self._locustfile_path):
+            raise FileNotFoundError(f"Locustfile not found at {self._locustfile_path}")
 
-                # Final verification - check for any remaining processes
-                remaining_processes = []
-                try:
-                    for proc in psutil.process_iter(["pid", "name", "cmdline"]):
-                        try:
-                            proc_info = proc.info
-                            cmdline = proc_info.get("cmdline", [])
-                            if any("locust" in str(arg).lower() for arg in cmdline):
-                                # Check if this process is related to our task
-                                if str(task.id) in str(cmdline):
-                                    remaining_processes.append(proc.pid)
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
-
-                    if remaining_processes:
-                        task_logger.warning(
-                            f"Found {len(remaining_processes)} remaining processes for task {task.id}: {remaining_processes}"
-                        )
-                        # Force kill remaining processes
-                        for pid in remaining_processes:
-                            try:
-                                proc = psutil.Process(pid)
-                                proc.kill()
-                                task_logger.info(
-                                    f"Force killed remaining process {pid}"
-                                )
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                continue
-                    else:
-                        task_logger.debug(
-                            f"No remaining processes found for task {task.id}"
-                        )
-
-                except Exception as e:
-                    task_logger.warning(f"Error during final process verification: {e}")
-
-            except Exception as e:
-                task_logger.error(f"Error during cleanup for task {task.id}: {e}")
-
-    def _capture_worker_processes(
-        self, master_pid: int, task_id: str, task_logger
-    ) -> List[int]:
-        """
-        Capture worker process PIDs for multiprocess Locust execution.
-
-        Args:
-            master_pid: The master process PID
-            task_id: Task identifier for logging
-            task_logger: Logger instance
-
-        Returns:
-            List of worker process PIDs
-        """
-        import time
-
-        worker_pids: List[int] = []
-        max_wait_time = 15  # Reduced wait time to 15 seconds
-        start_time = time.time()
-
-        try:
-            # Wait for worker processes to start
-            consecutive_stable_count = 0
-            last_count = 0
-
-            while time.time() - start_time < max_wait_time:
-                try:
-                    master_process = psutil.Process(master_pid)
-                    children = master_process.children(recursive=True)
-
-                    # Look for Locust worker processes
-                    current_worker_pids = []
-                    for child in children:
-                        try:
-                            cmdline = child.cmdline()
-                            # More specific check for Locust processes
-                            if (
-                                any("locust" in str(arg).lower() for arg in cmdline)
-                                and child.pid != master_pid
-                            ):
-                                current_worker_pids.append(child.pid)
-                        except (psutil.NoSuchProcess, psutil.AccessDenied):
-                            continue
-
-                    # Check for stability - count should be stable for several iterations
-                    if (
-                        len(current_worker_pids) == last_count
-                        and len(current_worker_pids) > 0
-                    ):
-                        consecutive_stable_count += 1
-                        if consecutive_stable_count >= 3:  # Stable for 3 iterations
-                            worker_pids = current_worker_pids
-                            break
-                    else:
-                        consecutive_stable_count = 0
-                        last_count = len(current_worker_pids)
-                        if current_worker_pids:
-                            worker_pids = current_worker_pids
-
-                    time.sleep(1)  # Check every 1 second
-
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    task_logger.warning(
-                        f"Master process {master_pid} no longer accessible"
-                    )
-                    break
-
-            task_logger.info(
-                f"Captured {len(worker_pids)} worker processes for task {task_id}: {worker_pids}"
-            )
-
-        except Exception as e:
-            task_logger.warning(f"Failed to capture worker processes: {e}")
-
-        return worker_pids
-
-    def _build_locust_command(self, task: Task) -> list:
-        """
-        Builds the command-line arguments for running Locust.
-
-        Args:
-            task (Task): The task object containing the test parameters.
-
-        Returns:
-            list: A list of command-line arguments for the subprocess.
-        """
-        # Fix the locustfile path - it should be in st_engine/engine/ directory
-        locustfile_path = os.path.join(self.base_dir, "engine", "locustfile.py")
-        command = [
+    def _build_locust_command(self, task: Task, task_logger) -> List[str]:
+        """Build Locust command based on task config."""
+        cmd = [
             "locust",
             "-f",
-            locustfile_path,
+            self._locustfile_path,
             "--host",
             task.target_host,
             "--users",
@@ -387,8 +120,6 @@ class LocustRunner:
             f"{task.duration}s",
             "--headless",
             "--only-summary",
-            "--stop-timeout",
-            "99",
             "--api_path",
             task.api_path or "/chat/completions",
             "--headers",
@@ -405,7 +136,6 @@ class LocustRunner:
             task.id,
         ]
 
-        # Add multi-process support if enabled and more than 1 process is configured
         cpu_count = get_cpu_count()
         concurrent_users = int(task.concurrent_users)
         process_count = get_process_count(concurrent_users, cpu_count)
@@ -414,100 +144,92 @@ class LocustRunner:
             should_enable_multiprocess(concurrent_users, cpu_count)
             and process_count > 1
         ):
-            command.extend(["--processes", str(process_count)])
-            task_logger = logger.bind(task_id=task.id)
+            cmd.extend(["--processes", str(process_count)])
             task_logger.info(
-                f"Enabling multi-process mode with {process_count} processes "
-                f"(CPU cores: {cpu_count}, concurrent users: {concurrent_users})"
+                f"Multi-process enabled: {process_count} workers (CPU={cpu_count}, users={concurrent_users})"
             )
 
-        # Add custom request payload if specified
-        if task.request_payload:
-            command.extend(["--request_payload", task.request_payload])
+        # Optional args
+        for key, value in [
+            ("request_payload", task.request_payload),
+            ("field_mapping", task.field_mapping),
+            ("test_data", task.test_data),
+            ("cert_file", task.cert_file),
+            ("key_file", task.key_file),
+        ]:
+            if value:
+                cmd.extend([f"--{key}", value])
 
-        # Add field mapping if specified
-        if task.field_mapping:
-            command.extend(["--field_mapping", task.field_mapping])
+        return cmd
 
-        # Add api_path if specified
-        if task.api_path:
-            command.extend(["--api_path", task.api_path])
+    def _start_process(
+        self, cmd: List[str], task: Task, task_logger
+    ) -> subprocess.Popen:
+        """Start Locust subprocess and register multiprocess group if needed."""
+        masked_cmd = mask_sensitive_command(cmd)
+        task_logger.info(f"Executing: {' '.join(masked_cmd)}")
 
-        # Add system prompt if specified
-        if task.system_prompt:
-            command.extend(["--system_prompt", task.system_prompt])
+        env = os.environ.copy()
+        env["TASK_ID"] = str(task.id)
+        env["LOCUST_CONCURRENT_USERS"] = str(task.concurrent_users)
+        task_logger.debug(
+            f"Setting LOCUST_CONCURRENT_USERS={env['LOCUST_CONCURRENT_USERS']} from task.concurrent_users={task.concurrent_users}"
+        )
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=env,
+            shell=False,
+        )
+        self._process_dict[task.id] = process
+        task_logger.info(f"Started Locust process PID={process.pid}")
 
-        # Add test_data if specified
-        if task.test_data:
-            command.extend(["--test_data", task.test_data])
+        # Handle multiprocess registration
+        if should_enable_multiprocess(int(task.concurrent_users)):
+            try:
+                master_port = allocate_master_port(task.id)
+                worker_pids = self._capture_worker_pids(
+                    process.pid, task.id, task_logger
+                )
+                if worker_pids:
+                    register_locust_process_group(
+                        task.id, process.pid, worker_pids, master_port
+                    )
+                    task_logger.info(
+                        f"Registered group: master={process.pid}, workers={worker_pids}"
+                    )
+                else:
+                    task_logger.warning("No worker processes detected")
+            except Exception as e:
+                task_logger.warning(f"Failed to register multiprocess group: {e}")
 
-        # Add certificate file parameters if they exist
-        if task.cert_file:
-            command.extend(["--cert_file", task.cert_file])
+        return process
 
-        if task.key_file:
-            command.extend(["--key_file", task.key_file])
+    def _monitor_and_capture(
+        self, process: subprocess.Popen, task: Task, task_logger
+    ) -> Tuple[str, str]:
+        """Monitor process execution and capture real-time output."""
+        stdout_queue: Queue[str] = Queue()
+        stderr_queue: Queue[str] = Queue()
 
-        return command
-
-    def _capture_process_output(
-        self, process: subprocess.Popen, task_id: str, task_duration_seconds: int
-    ):
-        """
-        Captures the stdout and stderr from the running subprocess in real-time.
-
-        This method uses separate threads to read the output pipes, preventing the
-        application from blocking. It also implements a robust timeout and
-        termination logic for the Locust process.
-
-        Args:
-            process (subprocess.Popen): The subprocess object.
-            task_id (str): The ID of the task, used for logging.
-            task_duration_seconds (int): The expected duration of the task.
-
-        Returns:
-            tuple[str, str]: A tuple containing the captured stdout and stderr as strings.
-        """
-        stdout: list[str] = []
-        stderr: list[str] = []
-        task_logger = logger.bind(task_id=task_id)
-
-        def read_output(pipe, lines, stream_name):
-            """Reads lines from a stream and appends them to a list."""
-            buffer = ""
-            while True:
-                try:
-                    # Read in larger chunks to reduce fragmentation
-                    chunk = pipe.read(1024)
-                    if not chunk:
-                        break
-
-                    buffer += chunk
-                    # Process complete lines
-                    while "\n" in buffer:
-                        line, buffer = buffer.split("\n", 1)
-                        if line.strip():  # Only process non-empty lines
-                            lines.append(line + "\n")
-
-                            # Write raw locust output to task log file using raw=True to avoid formatting issues
-                            task_logger.opt(raw=True).info(line + "\n")
-
-                except Exception as e:
-                    task_logger.error(f"Error reading {stream_name}: {e}")
-                    break
-
-            # Handle any remaining content in buffer
-            if buffer.strip():
-                lines.append(buffer)
-                task_logger.opt(raw=True).info(buffer.rstrip() + "\n")
-
-            pipe.close()
+        def read_stream(pipe, q, name):
+            try:
+                for line in iter(pipe.readline, ""):
+                    if line.strip():
+                        q.put(line)
+                        task_logger.opt(raw=True).info(line)
+                pipe.close()
+            except Exception as e:
+                task_logger.error(f"Error reading {name}: {e}")
 
         stdout_thread = threading.Thread(
-            target=read_output, args=(process.stdout, stdout, "stdout")
+            target=read_stream, args=(process.stdout, stdout_queue, "stdout")
         )
         stderr_thread = threading.Thread(
-            target=read_output, args=(process.stderr, stderr, "stderr")
+            target=read_stream, args=(process.stderr, stderr_queue, "stderr")
         )
 
         stdout_thread.daemon = True
@@ -515,101 +237,215 @@ class LocustRunner:
         stdout_thread.start()
         stderr_thread.start()
 
-        # Calculate a generous timeout for the process to complete.
-        # This includes the task duration, Locust's own stop timeout, and an extra buffer.
-        locust_stop_timeout_config = 99
-        wait_timeout_total = task_duration_seconds + locust_stop_timeout_config + 30
+        total_timeout = task.duration + LOCUST_STOP_TIMEOUT + LOCUST_WAIT_TIMEOUT_BUFFER
 
         try:
-            process.wait(timeout=wait_timeout_total)
+            process.wait(timeout=total_timeout)
             task_logger.info(
-                f"Locust process {process.pid} finished with return code {process.returncode}."
+                f"Process {process.pid} exited with code {process.returncode}"
             )
         except subprocess.TimeoutExpired:
             task_logger.error(
-                f"Locust process (PID: {process.pid}) "
-                f"timed out after {wait_timeout_total} seconds. Terminating."
+                f"Process {process.pid} timed out after {total_timeout}s. Terminating..."
             )
             process.terminate()
             try:
                 process.wait(timeout=10)
-                task_logger.warning(
-                    f"Locust process {process.pid} terminated with code {process.returncode}."
-                )
             except subprocess.TimeoutExpired:
-                task_logger.error(
-                    f"Locust process {process.pid} did not terminate gracefully after 10s. Killing."
-                )
+                task_logger.error("Process did not terminate gracefully. Killing...")
                 process.kill()
                 process.wait()
-                task_logger.error(
-                    f"Locust process {process.pid} killed. Return code: {process.returncode}."
+
+        stdout_thread.join(timeout=10)
+        stderr_thread.join(timeout=10)
+
+        # Drain queues
+        stdout = "".join(list(stdout_queue.queue))
+        stderr = "".join(list(stderr_queue.queue))
+
+        return stdout, stderr
+
+    def _finalize_task(
+        self,
+        process: subprocess.Popen,
+        task: Task,
+        stdout: str,
+        stderr: str,
+        task_logger,
+    ) -> dict:
+        """Load result and perform cleanup."""
+        result_file = os.path.join(
+            tempfile.gettempdir(), "locust_result", task.id, "result.json"
+        )
+
+        if not os.path.exists(result_file):
+            error_msg = f"Result file not found: {result_file}"
+            task_logger.error(error_msg)
+            locust_result = {}
+            status = "FAILED"
+        else:
+            locust_result = self._load_locust_result(result_file, task.id, task_logger)
+            status = "COMPLETED" if process.returncode == 0 else "FAILED_REQUESTS"
+            if status == "FAILED_REQUESTS":
+                task_logger.warning(
+                    f"Locust test completed with failures (exit code {process.returncode})"
                 )
-            stderr.append(f"Locust process timed out and was terminated/killed.\n")
-        except Exception as e:
-            task_logger.exception(
-                f"An error occurred while waiting for the Locust process {process.pid}: {e}"
-            )
 
-        # Wait for the output reading threads to finish.
-        join_timeout = 10
-        stdout_thread.join(timeout=join_timeout)
-        stderr_thread.join(timeout=join_timeout)
+        # Cleanup
+        self._cleanup_task(task, process, task_logger)
 
-        if stdout_thread.is_alive():
-            task_logger.warning(
-                f"Stdout reading thread for Locust process {process.pid} did not finish in {join_timeout}s."
-            )
-        if stderr_thread.is_alive():
-            task_logger.warning(
-                f"Stderr reading thread for Locust process {process.pid} did not finish in {join_timeout}s."
-            )
+        return {
+            "status": status,
+            "stdout": stdout,
+            "stderr": stderr,
+            "return_code": process.returncode,
+            "locust_result": locust_result,
+        }
 
-        return "".join(stdout), "".join(stderr)
+    def _cleanup_task(self, task: Task, process: subprocess.Popen, task_logger) -> None:
+        """Perform comprehensive cleanup after task completion."""
+        task_id = task.id
+        task_logger.info(f"Starting cleanup for task {task_id}")
 
-    def _load_locust_result(self, result_file: str, task_id: str):
-        """
-        Loads the Locust result JSON file.
+        # Remove from process dict (this is safe and should be done first)
+        self._process_dict.pop(task_id, None)
 
-        After loading, it cleans up the temporary result directory.
+        # Terminate multiprocess group if applicable
+        if should_enable_multiprocess(int(task.concurrent_users)):
+            terminate_locust_process_group(task_id, timeout=15.0)
 
-        Args:
-            result_file (str): The path to the Locust result JSON file.
-            task_id (str): The ID of the task, used for logging.
+        # Cleanup resources (sockets, temp files, etc.)
+        cleanup_task_resources(task_id)
 
-        Returns:
-            dict: The parsed JSON data from the result file, or an empty dict if an error occurs.
-        """
-        task_logger = logger.bind(task_id=task_id)
-        result_dir = os.path.dirname(result_file)
+        # Find and kill any remaining locust processes associated with this task
+        # This is a safety net for truly orphaned processes
+        remaining_pids = self._find_remaining_locust_processes(task_id)
+        for pid in remaining_pids:
+            try:
+                p = psutil.Process(pid)
+                p.kill()
+                task_logger.info(f"Force killed remaining orphaned process {pid}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        task_logger.info(f"Cleanup completed for task {task_id}")
+
+    def _cleanup_task_old(
+        self, task: Task, process: subprocess.Popen, task_logger
+    ) -> None:
+        """Perform comprehensive cleanup after task completion."""
+        task_id = task.id
+        task_logger.info(f"Starting cleanup for task {task_id}")
+
+        # Remove from process dict
+        self._process_dict.pop(task_id, None)
+
+        # Terminate multiprocess group
+        if should_enable_multiprocess(int(task.concurrent_users)):
+            terminate_locust_process_group(task_id, timeout=15.0)
+
+        # Ensure main process is dead
+        if process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+        # Cleanup resources
+        cleanup_task_resources(task_id)
+
+        # Kill any remaining locust processes tied to this task
+        remaining_pids = self._find_remaining_locust_processes(task_id)
+        for pid in remaining_pids:
+            try:
+                p = psutil.Process(pid)
+                p.kill()
+                task_logger.info(f"Force killed remaining process {pid}")
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+
+        task_logger.info(f"Cleanup completed for task {task_id}")
+
+    def _capture_worker_pids(
+        self, master_pid: int, task_id: str, task_logger
+    ) -> List[int]:
+        """Capture worker PIDs for multiprocess Locust."""
+        worker_pids: List[int] = []
+        start_time = time.time()
+        last_count = 0
+        stable_count = 0
+
+        while time.time() - start_time < 15:
+            try:
+                master = psutil.Process(master_pid)
+                children = master.children(recursive=True)
+                current_pids = []
+
+                for child in children:
+                    try:
+                        cmdline = child.cmdline()
+                        if cmdline and any(
+                            "locust" in str(arg).lower() for arg in cmdline
+                        ):
+                            current_pids.append(child.pid)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+
+                if len(current_pids) == last_count > 0:
+                    stable_count += 1
+                    if stable_count >= 3:
+                        worker_pids = current_pids
+                        break
+                else:
+                    stable_count = 0
+                    last_count = len(current_pids)
+                    if current_pids:
+                        worker_pids = current_pids
+
+                time.sleep(1)
+
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                task_logger.warning(f"Master process {master_pid} inaccessible")
+                break
+            except Exception as e:
+                task_logger.warning(f"Error capturing workers: {e}")
+                break
+
+        task_logger.debug(f"Captured {len(worker_pids)} workers: {worker_pids}")
+        return worker_pids
+
+    def _find_remaining_locust_processes(self, task_id: str) -> List[int]:
+        """Find any remaining locust processes associated with this task."""
+        pids = []
         try:
-            if not os.path.exists(result_file):
-                task_logger.error(f"Locust result file not found at {result_file}")
-                return {}
+            for proc in psutil.process_iter(["pid", "cmdline"]):
+                try:
+                    cmdline = proc.info.get("cmdline") or []
+                    if isinstance(cmdline, list) and any(
+                        "locust" in str(arg).lower() for arg in cmdline
+                    ):
+                        if task_id in str(cmdline):
+                            pids.append(proc.info["pid"])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except Exception as e:
+            logger.bind(task_id=task_id).warning(f"Error scanning processes: {e}")
+        return pids
 
+    def _load_locust_result(self, result_file: str, task_id: str, task_logger) -> dict:
+        """Load and return Locust result JSON."""
+        try:
             with open(result_file, "r") as f:
-                result_data = json.load(f)
-
-            return result_data
-
+                data = json.load(f)
+            result_dir = os.path.dirname(result_file)
+            if os.path.exists(result_dir):
+                shutil.rmtree(result_dir)
+            return data
         except json.JSONDecodeError:
-            task_logger.error(
-                f"Failed to decode JSON from {result_file}. The file might be corrupted or empty."
-            )
+            task_logger.error("Failed to decode JSON result file")
             return {}
         except Exception as e:
-            task_logger.exception(
-                f"An error occurred while loading Locust result file for task: {e}"
-            )
+            task_logger.exception(f"Error loading result: {e}")
             return {}
-        finally:
-            if os.path.exists(result_dir):
-                try:
-                    shutil.rmtree(result_dir)
-                    # task_logger.info(
-                    #     f"Cleaned up temporary result directory: {result_dir}"
-                    # )
-                except Exception as e:
-                    task_logger.error(
-                        f"Failed to clean up temporary result directory {result_dir}: {e}"
-                    )

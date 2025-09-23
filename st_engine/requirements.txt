@@ -10,3 +10,4 @@ greenlet
 fastapi
 uvicorn
 psutil>=5.9.0
+orjson
