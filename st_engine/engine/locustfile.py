@@ -27,7 +27,7 @@ from config.base import (
 )
 
 # Local imports after path setup
-from engine.core import (  # noqa: E402
+from engine.core import (
     CertificateManager,
     ConfigManager,
     GlobalStateManager,
@@ -112,10 +112,7 @@ def init_parser(parser):
         help="The unique identifier for the test task.",
     )
     parser.add_argument(
-        "--api_path",
-        type=str,
-        default=DEFAULT_API_PATH,
-        help="API path for the request.",
+        "--api_path", type=str, default="/chat/completions", help="API path to test."
     )
     parser.add_argument(
         "--headers", type=str, default="", help="Request headers in JSON format."
@@ -129,9 +126,7 @@ def init_parser(parser):
     parser.add_argument(
         "--model_name", type=str, default="", help="Name of the model to test."
     )
-    parser.add_argument(
-        "--system_prompt", type=str, default="", help="System prompt to use."
-    )
+
     parser.add_argument(
         "--stream_mode",
         type=str,
@@ -326,7 +321,7 @@ class LLMTestUser(HttpUser):
     # Align FastHttp timeouts with previous requests timeout
     connection_timeout = DEFAULT_TIMEOUT
     network_timeout = DEFAULT_TIMEOUT
-
+    socket_timeout = DEFAULT_TIMEOUT * 2
     # Class-level shared instances to reduce memory usage
     _shared_request_handler = None
     _shared_stream_handler = None
@@ -392,15 +387,15 @@ class LLMTestUser(HttpUser):
         self,
         user_prompt: str,
         reasoning_content: str,
-        model_output: str,
-        usage_tokens: Optional[Dict[str, Optional[int]]] = None,
+        content: str,
+        usage: Optional[Dict[str, Optional[int]]] = None,
     ) -> None:
         """Record token counts"""
         try:
             model_name = self.config.model_name or ""
             user_prompt = user_prompt or ""
             reasoning_content = reasoning_content or ""
-            model_output = model_output or ""
+            content = content or ""
 
             def extract_token_from_usage(usage, keywords):
                 """Extract the first valid integer value from the usage dictionary using fuzzy matching by keywords"""
@@ -505,9 +500,6 @@ class LLMTestUser(HttpUser):
             )
             return
 
-        # fix: remove request-level cert config, because it's already configured at session level
-        # original code: if global_config.cert_config: base_request_kwargs["cert"] = global_config.cert_config
-
         start_time = time.time()
         reasoning_content, content = "", ""
         usage: Dict[str, Optional[int]] = {
@@ -522,8 +514,10 @@ class LLMTestUser(HttpUser):
                         self.client, base_request_kwargs, start_time
                     )
                 )
+                # self.task_logger.debug(f"reasoning_content: {reasoning_content}")
+                # self.task_logger.debug(f"content: {content}")
             else:
-                reasoning_content, model_output, usage_tokens = (
+                reasoning_content, content, usage = (
                     self.stream_handler.handle_non_stream_request(
                         self.client, base_request_kwargs, start_time
                     )
@@ -553,10 +547,8 @@ class LLMTestUser(HttpUser):
                 },
             )
 
-        if reasoning_content or model_output or usage_tokens:
-            self._log_token_counts(
-                user_prompt or "", reasoning_content, model_output, usage_tokens
-            )
+        if reasoning_content or content or usage:
+            self._log_token_counts(user_prompt or "", reasoning_content, content, usage)
 
     def stop(self, force=False):
         """

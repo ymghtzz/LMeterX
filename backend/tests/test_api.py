@@ -122,7 +122,6 @@ class TestTaskAPI:
             "chat_type": 1,
             "stream_mode": True,
             "headers": [],
-            "system_prompt": "You are a helpful assistant",
         }
 
         # Mock service response
@@ -418,7 +417,6 @@ class TestErrorHandling:
             "chat_type": 1,
             "stream_mode": True,
             "headers": [],
-            "system_prompt": "You are a helpful assistant",
         }
 
         response = client.post("/api/tasks", json=task_data)

@@ -3,9 +3,10 @@ Author: Charm
 Copyright (c) 2025, All Rights Reserved.
 """
 
+import re
 from typing import Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, func
 
 from db.mysql import Base
@@ -83,8 +84,12 @@ class HeaderItem(BaseModel):
         fixed: A boolean indicating if the header is fixed (not used currently).
     """
 
-    key: str
-    value: str
+    key: str = Field(
+        ..., min_length=1, max_length=100, description="Header name (1-100 chars)"
+    )
+    value: str = Field(
+        ..., max_length=1000, description="Header value (max 1000 chars)"
+    )
     fixed: bool = True
 
 
@@ -97,8 +102,12 @@ class CookieItem(BaseModel):
         value: The cookie value.
     """
 
-    key: str
-    value: str
+    key: str = Field(
+        ..., min_length=1, max_length=100, description="Cookie name (1-100 chars)"
+    )
+    value: str = Field(
+        ..., max_length=1000, description="Cookie value (max 1000 chars)"
+    )
 
 
 class CertConfig(BaseModel):
@@ -110,8 +119,12 @@ class CertConfig(BaseModel):
         key_file: Path to the SSL private key file.
     """
 
-    cert_file: Optional[str] = Field(None, description="Path to the certificate file")
-    key_file: Optional[str] = Field(None, description="Path to the private key file")
+    cert_file: Optional[str] = Field(
+        None, max_length=255, description="Path to the certificate file (max 255 chars)"
+    )
+    key_file: Optional[str] = Field(
+        None, max_length=255, description="Path to the private key file (max 255 chars)"
+    )
 
 
 class TaskStopReq(BaseModel):
@@ -130,43 +143,168 @@ class TaskCreateReq(BaseModel):
     Request model for creating a new performance testing task.
     """
 
-    temp_task_id: str
-    name: str = Field(..., description="Name of the task")
-    target_host: str = Field(..., description="Target model API host")
-    api_path: str = Field(default="/chat/completions", description="API path to test")
-    model: Optional[str] = Field(default="", description="Name of the model to test")
-    duration: int = Field(
-        default=300, ge=1, description="Duration of the test in seconds"
+    temp_task_id: str = Field(..., max_length=100, description="Temporary task ID")
+    name: str = Field(..., min_length=1, max_length=100, description="Name of the task")
+    target_host: str = Field(
+        ..., min_length=1, max_length=255, description="Target model API host"
     )
-    concurrent_users: int = Field(..., ge=1, description="Number of concurrent users")
-    spawn_rate: int = Field(ge=1, description="Number of users to spawn per second")
+    api_path: str = Field(
+        default="/chat/completions", max_length=255, description="API path to test"
+    )
+    model: Optional[str] = Field(
+        default="", max_length=255, description="Name of the model to test"
+    )
+    duration: int = Field(
+        default=300,
+        ge=1,
+        le=172800,
+        description="Duration of the test in seconds (1-48 hours)",
+    )
+    concurrent_users: int = Field(
+        ..., ge=1, le=5000, description="Number of concurrent users (1-5000)"
+    )
+    spawn_rate: int = Field(
+        ge=1, le=100, description="Number of users to spawn per second (1-100)"
+    )
     chat_type: Optional[int] = Field(
-        default=0, ge=0, description="Type of chat interaction"
+        default=0,
+        ge=0,
+        le=1,
+        description="Type of chat interaction (0=text, 1=multimodal)",
     )
     stream_mode: bool = Field(
         default=True, description="Whether to use streaming response"
     )
     headers: List[HeaderItem] = Field(
-        default_factory=list, description="List of request headers"
+        default_factory=list,
+        description="List of request headers (max 50)",
     )
     cookies: List[CookieItem] = Field(
-        default_factory=list, description="List of request cookies"
+        default_factory=list,
+        description="List of request cookies (max 50)",
     )
     cert_config: Optional[CertConfig] = Field(
         default=None, description="Certificate configuration"
     )
-    system_prompt: Optional[str] = Field(
-        default="", description="System prompt for the model"
-    )
     request_payload: Optional[str] = Field(
-        default="", description="Custom request payload for non-chat APIs (JSON string)"
+        default="",
+        max_length=50000,
+        description="Custom request payload for non-chat APIs (JSON string, max 50000 chars)",
     )
     field_mapping: Optional[Dict[str, str]] = Field(
         default=None, description="Field mapping configuration for custom APIs"
     )
     test_data: Optional[str] = Field(
-        default="", description="Custom test data in JSONL format or file path"
+        default="",
+        max_length=1000000,
+        description="Custom test data in JSONL format or file path (max 1MB)",
     )
+
+    @validator("name")
+    def validate_name(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Name cannot be empty")
+        if len(v.strip()) > 100:
+            raise ValueError("Name length cannot exceed 100 characters")
+        return v.strip()
+
+    @validator("target_host")
+    def validate_target_host(cls, v):
+        if not v or not v.strip():
+            raise ValueError("API address cannot be empty")
+        v = v.strip()
+        if len(v) > 255:
+            raise ValueError("API address length cannot exceed 255 characters")
+        # 基本URL格式验证
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("API address must start with http:// or https://")
+        return v
+
+    @validator("api_path")
+    def validate_api_path(cls, v):
+        if not v or not v.strip():
+            raise ValueError("API path cannot be empty")
+        v = v.strip()
+        if len(v) > 255:
+            raise ValueError("API path length cannot exceed 255 characters")
+        if not v.startswith("/"):
+            raise ValueError("API path must start with /")
+        return v
+
+    @validator("model")
+    def validate_model(cls, v):
+        if v and len(v.strip()) > 255:
+            raise ValueError("Model name length cannot exceed 255 characters")
+        return v.strip() if v else ""
+
+    @validator("request_payload")
+    def validate_request_payload(cls, v, values):
+        """Ensure request_payload is never empty - auto-generate if needed"""
+        # If request_payload is empty, generate default payload
+        if not v or not v.strip():
+            model = values.get("model", "your-model-name")
+            stream_mode = values.get("stream_mode", True)
+
+            # Generate default payload for chat/completions API
+            default_payload = {
+                "model": model,
+                "stream": stream_mode,
+                "messages": [{"role": "user", "content": "Hi"}],
+            }
+
+            import json
+
+            return json.dumps(default_payload)
+
+        # Validate length
+        if len(v) > 50000:
+            raise ValueError("Request payload length cannot exceed 50000 characters")
+
+        # Validate JSON format
+        try:
+            import json
+
+            json.loads(v.strip())
+        except json.JSONDecodeError:
+            raise ValueError("Request payload must be a valid JSON format")
+
+        return v.strip()
+
+    @validator("headers")
+    def validate_headers(cls, v):
+        if len(v) > 50:
+            raise ValueError("Request header count cannot exceed 50")
+        for header in v:
+            if not header.key or not header.key.strip():
+                raise ValueError("Request header name cannot be empty")
+            if len(header.key.strip()) > 100:
+                raise ValueError(
+                    "Request header name length cannot exceed 100 characters"
+                )
+            if len(header.value) > 1000:
+                raise ValueError(
+                    "Request header value length cannot exceed 1000 characters"
+                )
+        return v
+
+    @validator("cookies")
+    def validate_cookies(cls, v):
+        if len(v) > 50:
+            raise ValueError("Cookie count cannot exceed 50")
+        for cookie in v:
+            if not cookie.key or not cookie.key.strip():
+                raise ValueError("Cookie name cannot be empty")
+            if len(cookie.key.strip()) > 100:
+                raise ValueError("Cookie name length cannot exceed 100 characters")
+            if len(cookie.value) > 1000:
+                raise ValueError("Cookie value length cannot exceed 1000 characters")
+        return v
+
+    @validator("test_data")
+    def validate_test_data(cls, v):
+        if v and len(v) > 1000000:  # 1MB
+            raise ValueError("Test data size cannot exceed 1MB")
+        return v
 
 
 class TaskResultItem(BaseModel):
@@ -320,7 +458,6 @@ class Task(Base):
     status = Column(String(32), nullable=False)
     target_host = Column(String(255), nullable=False)
     model = Column(String(100), nullable=True)
-    system_prompt = Column(Text, nullable=True)
     stream_mode = Column(String(20), nullable=False)
     concurrent_users = Column(Integer, nullable=False)
     spawn_rate = Column(Integer, nullable=False)

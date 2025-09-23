@@ -124,7 +124,7 @@ const BenchmarkJobs: React.FC = () => {
           reasoning_content: '',
           end_prefix: '',
           stop_flag: '',
-          end_condition: '',
+          end_field: '',
           ...fieldMappingObject, // Override with actual values
         };
 
@@ -139,7 +139,7 @@ const BenchmarkJobs: React.FC = () => {
           reasoning_content: '',
           end_prefix: '',
           stop_flag: '',
-          end_condition: '',
+          end_field: '',
         };
       }
 
