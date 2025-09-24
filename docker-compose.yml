@@ -20,7 +20,6 @@ services:
   # backend service
   backend:
     image: charmy1220/lmeterx-be:latest
-    container_name: lmeterx-backend
     restart: unless-stopped
     depends_on:
       mysql:
@@ -35,8 +34,6 @@ services:
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
-    ports:
-      - "5001:5001"
     healthcheck:
       test: [ "CMD", "curl", "-s", "-f", "http://localhost:5001/health" ]
       interval: 10s
@@ -47,7 +44,6 @@ services:
   # engine service
   engine:
     image: charmy1220/lmeterx-eng:latest
-    container_name: lmeterx-engine
     restart: unless-stopped
     depends_on:
       mysql:
@@ -60,7 +56,7 @@ services:
       DB_NAME: lmeterx
       # Multi-process configuration
       ENABLE_MULTIPROCESS: auto
-      LOCUST_CPU_CORES: 4.0
+      LOCUST_CPU_CORES: 2.0
       MULTIPROCESS_THRESHOLD: 1000           # Enable multiprocess only for 1000+ users
       MIN_USERS_PER_PROCESS: 600             # Each process handles at least 600 users
       # Process management and stability
@@ -74,14 +70,12 @@ services:
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
-    ports:
-      - "5002:5002"
     # Resource limits for the container
     deploy:
       resources:
         limits:
           cpus: '2.0'                        # Multi-process mode requires at least 2 cores
-          memory: 2G
+          memory: 4G
         reservations:
           cpus: '1.0'
           memory: 1G

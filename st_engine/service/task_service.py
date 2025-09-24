@@ -463,7 +463,7 @@ class TaskService:
             task_logger.info(f"Received stop request for task {task_id}.")
 
             # Check if the process is managed by this runner instance
-            process = self.runner.process_dict.get(task_id)
+            process = self.runner._process_dict.get(task_id)
             if not process:
                 task_logger.warning(
                     f"Task {task_id}: Process not found in runner's dictionary. "
@@ -477,7 +477,7 @@ class TaskService:
                 task_logger.info(
                     f"Task {task_id}: Process with PID {process.pid} has already terminated. Cleaning up local reference."
                 )
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 return True
 
             # Delegate the complex termination logic to the process manager via the runner.
@@ -489,7 +489,7 @@ class TaskService:
                     f"Successfully terminated process group for task {task_id}."
                 )
                 # Remove from local tracking after successful termination
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 return True
             else:
                 task_logger.error(
@@ -525,7 +525,7 @@ class TaskService:
                 )
 
                 # Clean up local tracking
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 if hasattr(self.runner, "_terminating_processes"):
                     termination_key = f"{task_id}_terminating"
                     self.runner._terminating_processes.discard(termination_key)
@@ -535,13 +535,13 @@ class TaskService:
                 return True
 
             # Step 2: Fallback to original process termination if multiprocess cleanup failed
-            process = self.runner.process_dict.get(task_id)
+            process = self.runner._process_dict.get(task_id)
 
             if not process:
                 task_logger.warning(
                     f"Task {task_id}, Process not found in runner's dictionary. It might have finished or be on another node."
                 )
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 # Clean up task resources (do not force cleanup orphaned processes here)
                 cleanup_task_resources(task_id)
                 return True
@@ -550,7 +550,7 @@ class TaskService:
                 task_logger.info(
                     f"Task {task_id}, Process with PID {process.pid} has already terminated. Cleaning up."
                 )
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 cleanup_task_resources(task_id)
                 return True
 
@@ -577,7 +577,7 @@ class TaskService:
                 task_logger.info(
                     f"Task {task_id}, Process with PID {process.pid} terminated naturally while preparing to stop it."
                 )
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 self.runner._terminating_processes.discard(termination_key)
                 cleanup_task_resources(task_id)
                 return True
@@ -587,7 +587,7 @@ class TaskService:
             task_logger.info(
                 f"Task {task_id}, Process terminated successfully via SIGTERM."
             )
-            self.runner.process_dict.pop(task_id, None)
+            self.runner._process_dict.pop(task_id, None)
             self.runner._terminating_processes.discard(termination_key)
             cleanup_task_resources(task_id)
             return True
@@ -601,7 +601,7 @@ class TaskService:
                     task_logger.info(
                         f"Task {task_id}, Process with PID {process.pid} terminated naturally during SIGTERM timeout."
                     )
-                    self.runner.process_dict.pop(task_id, None)
+                    self.runner._process_dict.pop(task_id, None)
                     self.runner._terminating_processes.discard(termination_key)
                     return True
 
@@ -610,7 +610,7 @@ class TaskService:
                 task_logger.info(
                     f"Task {task_id}, Process killed successfully via SIGKILL."
                 )
-                self.runner.process_dict.pop(task_id, None)
+                self.runner._process_dict.pop(task_id, None)
                 self.runner._terminating_processes.discard(termination_key)
                 return True
             except subprocess.TimeoutExpired:
@@ -630,7 +630,7 @@ class TaskService:
             task_logger.info(
                 f"Task {task_id}, Process with PID {process.pid} no longer exists (ProcessLookupError). Cleaning up."
             )
-            self.runner.process_dict.pop(task_id, None)
+            self.runner._process_dict.pop(task_id, None)
             self.runner._terminating_processes.discard(termination_key)
             return True
         except Exception as e:
@@ -646,7 +646,7 @@ class TaskService:
                     task_logger.info(
                         f"Task {task_id}, Process completed its natural shutdown successfully."
                     )
-                    self.runner.process_dict.pop(task_id, None)
+                    self.runner._process_dict.pop(task_id, None)
                     self.runner._terminating_processes.discard(termination_key)
                     return True
                 except subprocess.TimeoutExpired:
@@ -659,7 +659,7 @@ class TaskService:
                         task_logger.info(
                             f"Task {task_id}, Process force-killed successfully after natural shutdown timeout."
                         )
-                        self.runner.process_dict.pop(task_id, None)
+                        self.runner._process_dict.pop(task_id, None)
                         self.runner._terminating_processes.discard(termination_key)
                         return True
                     except Exception as kill_e:

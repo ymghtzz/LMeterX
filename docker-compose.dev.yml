@@ -24,7 +24,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: lmeterx-backend
     restart: unless-stopped
     depends_on:
       mysql:
@@ -39,8 +38,6 @@ services:
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
-    ports:
-      - "5001:5001"
     healthcheck:
       test: [ "CMD", "curl", "-s", "-f", "http://localhost:5001/health" ]
       interval: 10s
@@ -53,7 +50,6 @@ services:
     build:
       context: ./st_engine
       dockerfile: Dockerfile
-    container_name: lmeterx-engine
     restart: unless-stopped
     depends_on:
       mysql:
@@ -80,14 +76,12 @@ services:
     volumes:
       - ./logs:/logs
       - ./upload_files:/app/upload_files
-    ports:
-      - "5002:5002"
     # Resource limits for the container
     deploy:
       resources:
         limits:
           cpus: '2.0'                           # Must match LOCUST_CPU_CORES
-          memory: 2G
+          memory: 4G
         reservations:
           cpus: '1.0'
           memory: 1G
