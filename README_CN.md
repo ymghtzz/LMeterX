@@ -63,8 +63,17 @@ LMeterX 采用微服务架构，由四个核心组件构成：
 使用预构建的 Docker 镜像，一键启动所有服务：
 
 ```bash
-# 一键启动所有服务
+# 一键启动所有服务（默认各服务 1个实例）
 curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
+```
+### 多实例部署（支持并发压测任务）
+
+```bash
+# 下载部署文件 docker-compose.yml
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/MigoXLab/LMeterX/main/docker-compose.yml
+# 使用 --scale 启动多实例
+# 启动 2 个 backend + 2 个 engine（可根据需要调整数量）
+docker compose up -d --scale backend=2 --scale engine=2
 ```
 
 ### 使用指南
