@@ -65,6 +65,17 @@ Use pre-built Docker images to start all services with one click:
 # Download and run one-click deployment script
 curl -fsSL https://raw.githubusercontent.com/MigoXLab/LMeterX/main/quick-start.sh | bash
 ```
+
+### Multi-Instance Deployment (Supports Concurrent Testing Tasks)
+
+```bash
+# Download the deployment file docker-compose.yml
+curl -fsSL -o docker-compose.yml https://raw.githubusercontent.com/MigoXLab/LMeterX/main/docker-compose.yml
+# Start multiple instances using the --scale
+# Start 2 backends + 2 engines (the number can be adjusted as needed)
+docker compose up -d --scale backend=2 --scale engine=2
+```
+
 ### Usage Guide
 
 1. **Access Web Interface**: Open http://localhost:8080
