@@ -7,7 +7,8 @@ ENV CYPRESS_INSTALL_BINARY=0
 WORKDIR /app
 
 # Configure npm for better reliability
-RUN npm config set fetch-retry-mintimeout 20000 && \
+RUN npm config set registry https://registry.npmmirror.com/ && \
+    npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 3 && \
     npm config set audit-level moderate && \
