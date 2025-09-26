@@ -1,4 +1,4 @@
-FROM swr.cn-east-3.myhuaweicloud.com/insu-dev/mysql:5.7.39
+FROM arm64v8/mysql:8.4.6
 
 # 设置环境变量
 ENV MYSQL_ROOT_PASSWORD=lmeterx123
